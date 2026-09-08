@@ -1,6 +1,6 @@
 # Codex app-server protocol validation
 
-`codexcli_test` is the runnable `v0.0.1` prototype for ThreadPath. It validates the local Codex `app-server` protocol only; it does not provide an Electron shell or user interface.
+`threadpath-protocol` is the runnable `v0.0.1` prototype for ThreadPath. It validates the local Codex `app-server` protocol only; it does not provide an Electron shell or user interface.
 
 ## Prerequisites
 

@@ -8,13 +8,13 @@ ThreadPath for Codex 是一个面向 Codex CLI `app-server` 的独立桌面客�
 
 当前仓库处于原型验证阶段。实际可运行代码位于：
 
-- `codexcli_test/`
+- `threadpath-protocol/`
 
 根目录中的 `SPEC.md` 描述的是未来完整 Electron 应用的目标架构，不代表当前仓库已经实现了其中的目录和模块。
 
 ## 当前原型
 
-`codexcli_test` 是一个 Node.js + TypeScript 原型，用于验证本地 Codex `app-server` 协议。
+`threadpath-protocol` 是一个 Node.js + TypeScript 原型，用于验证本地 Codex `app-server` 协议。
 
 当前覆盖的协议流程包括：
 
@@ -31,7 +31,7 @@ ThreadPath for Codex 是一个面向 Codex CLI `app-server` 的独立桌面客�
 运行冒烟测试：
 
 ```powershell
-cd codexcli_test
+cd threadpath-protocol
 npm run smoke
 ```
 
@@ -81,10 +81,10 @@ npm run smoke
 
 ## 修改后的验证
 
-修改 `codexcli_test` 后，至少运行：
+修改 `threadpath-protocol` 后，至少运行：
 
 ```powershell
-cd codexcli_test
+cd threadpath-protocol
 npm run smoke
 ```
 
@@ -105,7 +105,7 @@ npx tsc --noEmit
 
 ## 文档更新规则
 
-- 修改运行方式、协议覆盖范围或测试结果时，更新 `codexcli_test/README.md`。
+- 修改运行方式、协议覆盖范围或测试结果时，更新 `threadpath-protocol/README.md`。
 - 修改长期架构目标时，更新 `SPEC.md`。
 - 修改版本路线或里程碑时，更新 `README-ROADMAP.md`。
 - 不要把一次性的本地测试结果写成普遍保证。

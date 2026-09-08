@@ -10,7 +10,7 @@
 
 ThreadPath for Codex 是一个独立的桌面客户端项目，目标是让 Codex CLI 对话更容易浏览、搜索和导航，并为未来的线程 Fork、树视图、DAG 可视化与分支比较提供基础。
 
-项目目前处于 `v0.0.1` 协议验证阶段。当前代码集中在 `codexcli_test/`，用于验证本地 Codex `app-server` 的通信协议和流式事件行为；Electron UI 属于后续版本。
+项目目前处于 `v0.0.1` 协议验证阶段。当前代码集中在 `threadpath-protocol/`，用于验证本地 Codex `app-server` 的通信协议和流式事件行为；Electron UI 属于后续版本。
 
 ### 当前能力
 
@@ -35,7 +35,7 @@ ThreadPath for Codex 是一个独立的桌面客户端项目，目标是让 Code
 运行协议冒烟测试：
 
 ```powershell
-cd codexcli_test
+cd threadpath-protocol
 npm run smoke
 ```
 
@@ -65,7 +65,7 @@ npm run smoke
 - [开发规范](SPEC.md)：目标架构、功能需求、测试策略和未来设计约束；
 - [Codex 指令](AGENTS.md)：供 Codex 使用的项目工作规则；
 - [项目路线图](README-ROADMAP.md)：版本计划和里程碑；
-- [`codexcli_test/README.md`](codexcli_test/README.md)：原型运行方式和协议验证记录。
+- [`threadpath-protocol/README.md`](threadpath-protocol/README.md)：原型运行方式和协议验证记录。
 
 ### 路线图
 
@@ -85,7 +85,7 @@ npm run smoke
 
 ThreadPath for Codex is an independent desktop client project designed to make Codex CLI conversations easier to browse, search, and navigate. It also lays the foundation for future thread forking, tree views, DAG visualization, and branch comparison.
 
-The project is currently in the `v0.0.1` protocol-validation stage. The active implementation lives in `codexcli_test/` and verifies communication with the local Codex `app-server`, including streaming event behavior; the Electron UI belongs to later releases.
+The project is currently in the `v0.0.1` protocol-validation stage. The active implementation lives in `threadpath-protocol/` and verifies communication with the local Codex `app-server`, including streaming event behavior; the Electron UI belongs to later releases.
 
 ### Current capabilities
 
@@ -110,7 +110,7 @@ Prerequisites:
 Run the protocol smoke test:
 
 ```powershell
-cd codexcli_test
+cd threadpath-protocol
 npm run smoke
 ```
 
@@ -140,7 +140,7 @@ npm run smoke
 - [Development specification](SPEC.md): target architecture, requirements, testing strategy, and future design constraints;
 - [Codex instructions](AGENTS.md): project rules for Codex;
 - [Roadmap](README-ROADMAP.md): release plan and milestones;
-- [`codexcli_test/README.md`](codexcli_test/README.md): prototype usage and protocol validation notes.
+- [`threadpath-protocol/README.md`](threadpath-protocol/README.md): prototype usage and protocol validation notes.
 
 ### Roadmap
 
