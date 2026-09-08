@@ -2,7 +2,7 @@ import { AppServerClient } from "./app-server-client.ts";
 import { AppServerError, getThreadId, getThreads, getTurnId, type JsonObject } from "./protocol.ts";
 
 const cwd = process.env.CODEX_SMOKE_CWD ?? "D:\\threadPath";
-const timeoutMs = Number(process.env.CODEX_SMOKE_TIMEOUT_MS ?? 120_000);
+const timeoutMs = Number(process.env.CODEX_SMOKE_TIMEOUT_MS ?? 300_000);
 const executable = process.env.CODEX_EXECUTABLE?.trim() || undefined;
 
 function log(message: string, value?: unknown): void {

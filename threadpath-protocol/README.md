@@ -53,7 +53,7 @@ initialize → initialized → thread/list → optional thread/read + thread/tur
 → thread/start (ephemeral) → turn/start → streaming notifications → terminal turn event
 ```
 
-Set `CODEX_SMOKE_CWD` to use another project directory, and `CODEX_SMOKE_TIMEOUT_MS` to change the per-request and terminal-event timeout:
+Set `CODEX_SMOKE_CWD` to use another project directory, and `CODEX_SMOKE_TIMEOUT_MS` to change the per-request and terminal-event timeout. The default is five minutes (`300_000` ms) because a real app-server turn may spend time starting tools, streaming, retrying a Responses connection, or falling back from WebSocket to HTTPS; the previous two-minute default could expire before a terminal turn event arrived.
 
 ```powershell
 $env:CODEX_SMOKE_CWD = "D:\another-project"
