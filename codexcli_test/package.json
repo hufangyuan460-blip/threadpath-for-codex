@@ -1,0 +1,14 @@
+{
+  "name": "codex-client-prototype",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "smoke": "node --experimental-strip-types src/app-server-smoke.ts",
+    "test": "node --experimental-strip-types src/transport-tests.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.0",
+    "typescript": "^7.0.2"
+  }
+}
