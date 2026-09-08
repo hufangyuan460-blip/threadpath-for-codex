@@ -3,6 +3,7 @@ import { AppServerError, getThreadId, getThreads, getTurnId, type JsonObject } f
 
 const cwd = process.env.CODEX_SMOKE_CWD ?? "D:\\threadPath";
 const timeoutMs = Number(process.env.CODEX_SMOKE_TIMEOUT_MS ?? 120_000);
+const executable = process.env.CODEX_EXECUTABLE?.trim() || undefined;
 
 function log(message: string, value?: unknown): void {
   if (value === undefined) console.log(`[smoke] ${message}`);
@@ -17,6 +18,7 @@ function asObject(value: unknown, description: string): JsonObject {
 async function main(): Promise<void> {
   const client = new AppServerClient({
     cwd,
+    executable,
     requestTimeoutMs: timeoutMs,
     onStderr: (text) => process.stderr.write(`[app-server] ${text}`),
     onProtocolWarning: (error) => log(`protocol warning: ${error.message}`),

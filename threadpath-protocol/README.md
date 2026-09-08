@@ -14,6 +14,21 @@ Install the development dependencies once:
 npm install
 ```
 
+### Windows: Codex is not on `PATH`
+
+The smoke test starts `codex` by default. If Windows cannot find that command, set `CODEX_EXECUTABLE` to the full path of `codex.exe` in the current PowerShell session:
+
+```powershell
+$env:CODEX_EXECUTABLE = "C:\path\to\codex.exe"
+npm run smoke
+```
+
+Omit or clear `CODEX_EXECUTABLE` to return to the default command:
+
+```powershell
+Remove-Item Env:CODEX_EXECUTABLE -ErrorAction SilentlyContinue
+```
+
 ## Verification
 
 Run the deterministic checks first. They start a local fake app-server and require neither Codex authentication nor network access:

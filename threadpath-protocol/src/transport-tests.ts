@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { AppServerClient } from "./app-server-client.ts";
-import { NetworkTimeoutError, ProcessError, ProtocolError, TimeoutError, getThreadId, getThreads, getTurnId, isJsonObject } from "./protocol.ts";
+import { AppServerError, NetworkTimeoutError, ProcessError, ProtocolError, TimeoutError, getThreadId, getThreads, getTurnId, isJsonObject } from "./protocol.ts";
 
 const cwd = process.cwd();
 const fakeServerPath = fileURLToPath(new URL("./fake-app-server.ts", import.meta.url));
@@ -48,6 +48,15 @@ async function verifyUnsupportedServerRequest(mode: string): Promise<void> {
   });
 }
 async function verifyTimeout(): Promise<void> { await withClient("completed", false, async (client) => { await assert.rejects(client.request("test/timeout"), TimeoutError); }); }
+async function verifyServerError(): Promise<void> {
+  await withClient("completed", false, async (client) => {
+    await assert.rejects(client.request("unknown/method"), (error: unknown) => {
+      assert.ok(error instanceof AppServerError);
+      assert.equal(error.category, "server");
+      return true;
+    });
+  });
+}
 async function verifyEarlyExit(): Promise<void> { await withClient("completed", false, async (client) => { await assert.rejects(client.request("test/exit"), ProcessError); }); }
 async function verifyNonJsonOutput(): Promise<void> {
   await withClient("non-json", false, async (client) => {
@@ -67,6 +76,7 @@ async function main(): Promise<void> {
   await verifyUnsupportedServerRequest("completed");
   await verifyUnsupportedServerRequest("server-request-string");
   await verifyTimeout();
+  await verifyServerError();
   await verifyEarlyExit();
   await verifyNonJsonOutput();
   await verifyLaunchFailure();
