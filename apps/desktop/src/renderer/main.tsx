@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 import type { AppInfo, ConnectionStateSnapshot, ConversationItemView, ConversationThreadView, ConversationUpdate, ThreadListItem } from "../shared/api";
 import { applyConversationUpdate, conversationUpdateKey } from "./conversation-state";
+import { chooseActiveTurnId } from "./scroll-state";
 
 type LoadState = "idle" | "loading" | "ready" | "empty" | "error";
 
@@ -25,12 +26,15 @@ function ConversationItem({ item }: { item: ConversationItemView }): React.JSX.E
   return <div className={`conversation-item text-item role-${item.role}`}><span className="item-label">{item.role}</span><p>{item.text}</p></div>;
 }
 
-function scrollToTurn(turnId: string): void {
+function scrollToTurn(turnId: string): boolean {
   const target = [...document.querySelectorAll<HTMLElement>("[data-turn-id]")].find((element) => element.dataset.turnId === turnId);
-  target?.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (target === undefined) return false;
+  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+  target.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "start" });
+  return true;
 }
 
-function Conversation({ thread, onNavigate }: { thread: ConversationThreadView; onNavigate: (turnId: string) => void }): React.JSX.Element {
+function Conversation({ thread, activeTurnId, onNavigate, setOutlineButton }: { thread: ConversationThreadView; activeTurnId: string | undefined; onNavigate: (turnId: string) => void; setOutlineButton: (turnId: string, element: HTMLButtonElement | null) => void }): React.JSX.Element {
   if (thread.turns.length === 0) {
     return <div className="conversation-empty"><p className="empty-kicker">Conversation</p><h2>No readable turns</h2><p>This thread has no conversation content available.</p></div>;
   }
@@ -41,7 +45,7 @@ function Conversation({ thread, onNavigate }: { thread: ConversationThreadView; 
         <ol className="outline-list">
           {thread.outline.map((entry) => (
             <li key={entry.turnId}>
-              <button type="button" className="outline-entry" onClick={() => onNavigate(entry.turnId)} aria-label={`Go to turn ${entry.index}: ${entry.label}`}>
+              <button ref={(element) => setOutlineButton(entry.turnId, element)} type="button" className={`outline-entry${entry.turnId === activeTurnId ? " active" : ""}`} onClick={() => onNavigate(entry.turnId)} aria-current={entry.turnId === activeTurnId ? "true" : undefined} aria-label={`Go to turn ${entry.index}: ${entry.label}`}>
                 <span className="outline-index">{entry.index}</span><span className="outline-copy"><strong>{entry.label}</strong><small>{entry.status}</small></span>
               </button>
             </li>
@@ -75,11 +79,14 @@ function App(): React.JSX.Element {
   const [selectedThread, setSelectedThread] = useState<ConversationThreadView | undefined>();
   const [selectedThreadState, setSelectedThreadState] = useState<LoadState>("idle");
   const [selectedThreadError, setSelectedThreadError] = useState<string | undefined>();
+  const [activeTurnId, setActiveTurnId] = useState<string | undefined>();
   const [inputText, setInputText] = useState("");
   const [startingTurn, setStartingTurn] = useState(false);
   const [runningTurnId, setRunningTurnId] = useState<string | undefined>();
   const [sendError, setSendError] = useState<string | undefined>();
   const seenUpdateKeys = useRef(new Set<string>());
+  const navigationTarget = useRef<string | undefined>(undefined);
+  const outlineButtons = useRef(new Map<string, HTMLButtonElement>());
 
   const loadThreads = useCallback(async (): Promise<void> => {
     setThreadLoadState("loading");
@@ -126,11 +133,15 @@ function App(): React.JSX.Element {
     if (selectedThreadId === undefined) {
       setSelectedThread(undefined);
       setSelectedThreadState("idle");
+      navigationTarget.current = undefined;
+      setActiveTurnId(undefined);
       setRunningTurnId(undefined);
       return;
     }
     let active = true;
     seenUpdateKeys.current.clear();
+    navigationTarget.current = undefined;
+    setActiveTurnId(undefined);
     setRunningTurnId(undefined);
     setSelectedThreadState("loading");
     setSelectedThreadError(undefined);
@@ -145,6 +156,66 @@ function App(): React.JSX.Element {
     });
     return () => { active = false; };
   }, [selectedThreadId]);
+
+  useEffect(() => {
+    if (selectedThread === undefined) {
+      setActiveTurnId(undefined);
+      return;
+    }
+    let frame = 0;
+    const updateActiveTurn = (): void => {
+      frame = 0;
+      const cards = [...document.querySelectorAll<HTMLElement>("[data-turn-id]")];
+      const snapshots = cards.map((card) => {
+        const rect = card.getBoundingClientRect();
+        return { turnId: card.dataset.turnId ?? "", top: rect.top, bottom: rect.bottom };
+      }).filter((item) => item.turnId !== "");
+      const target = navigationTarget.current;
+      if (target !== undefined && snapshots.some((item) => item.turnId === target)) {
+        setActiveTurnId(target);
+        return;
+      }
+      setActiveTurnId(chooseActiveTurnId(snapshots, 0, window.innerHeight));
+    };
+    const scheduleUpdate = (): void => {
+      if (frame === 0) frame = window.requestAnimationFrame(updateActiveTurn);
+    };
+    const clearProgrammaticTarget = (): void => {
+      navigationTarget.current = undefined;
+      scheduleUpdate();
+    };
+    window.addEventListener("scroll", scheduleUpdate, { passive: true });
+    window.addEventListener("resize", scheduleUpdate);
+    window.addEventListener("wheel", clearProgrammaticTarget, { passive: true });
+    window.addEventListener("touchstart", clearProgrammaticTarget, { passive: true });
+    window.addEventListener("scrollend", scheduleUpdate);
+    const resizeObserver = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(scheduleUpdate);
+    for (const card of document.querySelectorAll<HTMLElement>("[data-turn-id]")) resizeObserver?.observe(card);
+    scheduleUpdate();
+    return () => {
+      if (frame !== 0) window.cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", scheduleUpdate);
+      window.removeEventListener("resize", scheduleUpdate);
+      window.removeEventListener("wheel", clearProgrammaticTarget);
+      window.removeEventListener("touchstart", clearProgrammaticTarget);
+      window.removeEventListener("scrollend", scheduleUpdate);
+      resizeObserver?.disconnect();
+    };
+  }, [selectedThread]);
+
+  useEffect(() => {
+    if (activeTurnId === undefined) return;
+    const button = outlineButtons.current.get(activeTurnId);
+    if (button === undefined) return;
+    const panel = button.closest<HTMLElement>(".outline-panel");
+    if (panel === null) return;
+    const buttonRect = button.getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
+    if (buttonRect.top < panelRect.top || buttonRect.bottom > panelRect.bottom) {
+      const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+      button.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "nearest" });
+    }
+  }, [activeTurnId, selectedThread?.outline]);
 
   useEffect(() => window.threadPath.onConversationUpdate((update: ConversationUpdate) => {
     if (selectedThreadId === undefined || update.threadId !== selectedThreadId) return;
@@ -178,6 +249,17 @@ function App(): React.JSX.Element {
     }
   };
 
+  const handleNavigate = useCallback((turnId: string): void => {
+    if (!scrollToTurn(turnId)) return;
+    navigationTarget.current = turnId;
+    setActiveTurnId(turnId);
+  }, []);
+
+  const setOutlineButton = useCallback((turnId: string, element: HTMLButtonElement | null): void => {
+    if (element === null) outlineButtons.current.delete(turnId);
+    else outlineButtons.current.set(turnId, element);
+  }, []);
+
   const handleReconnect = async (): Promise<void> => {
     setReconnecting(true);
     try { setConnectionState(await window.threadPath.reconnect()); }
@@ -204,8 +286,8 @@ function App(): React.JSX.Element {
           {selectedThreadState === "idle" ? <div className="details-empty"><p className="empty-kicker">Conversation</p><h2>Select a thread</h2><p>Choose a thread to read its linear conversation.</p></div> : null}
           {selectedThreadState === "loading" ? <p className="panel-note">Loading conversation…</p> : null}
           {selectedThreadState === "error" ? <p className="error-summary">{selectedThreadError}</p> : null}
-          {selectedThreadState === "empty" && selectedThread !== undefined ? <Conversation thread={selectedThread} onNavigate={scrollToTurn} /> : null}
-          {selectedThreadState === "ready" && selectedThread !== undefined ? <Conversation thread={selectedThread} onNavigate={scrollToTurn} /> : null}
+          {selectedThreadState === "empty" && selectedThread !== undefined ? <Conversation thread={selectedThread} activeTurnId={activeTurnId} onNavigate={handleNavigate} setOutlineButton={setOutlineButton} /> : null}
+          {selectedThreadState === "ready" && selectedThread !== undefined ? <Conversation thread={selectedThread} activeTurnId={activeTurnId} onNavigate={handleNavigate} setOutlineButton={setOutlineButton} /> : null}
           {selectedThread !== undefined && selectedThreadState !== "loading" && selectedThreadState !== "error" ? (
             <form className="turn-composer" onSubmit={(event) => { event.preventDefault(); void handleStartTurn(); }}>
               <label htmlFor="turn-input">Send a message</label>
