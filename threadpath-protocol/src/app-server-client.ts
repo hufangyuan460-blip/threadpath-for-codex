@@ -13,6 +13,7 @@ export interface AppServerClientOptions {
   readonly cwd: string;
   readonly executable?: string;
   readonly args?: readonly string[];
+  readonly shell?: boolean;
   readonly requestTimeoutMs?: number;
   readonly env?: NodeJS.ProcessEnv;
   readonly onStderr?: (text: string) => void;
@@ -54,7 +55,7 @@ export class AppServerClient {
     this.onProtocolWarning = options.onProtocolWarning ?? (() => undefined);
     this.onFatalError = options.onFatalError ?? (() => undefined);
     this.clientInfo = { name: options.clientInfo?.name ?? "threadpath-protocol", title: options.clientInfo?.title ?? "ThreadPath protocol client", version: options.clientInfo?.version ?? "0.0.2" };
-    const spawnOptions: SpawnOptionsWithoutStdio = { cwd: options.cwd, env: options.env, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] };
+    const spawnOptions: SpawnOptionsWithoutStdio = { cwd: options.cwd, env: options.env, shell: options.shell ?? false, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] };
     this.child = spawn(options.executable ?? "codex", options.args ?? ["app-server", "--stdio"], spawnOptions);
     const lines = createInterface({ input: this.child.stdout });
     lines.on("line", (line: string) => this.handleLine(line));

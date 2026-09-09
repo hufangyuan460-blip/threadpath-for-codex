@@ -68,9 +68,11 @@ export class CodexProcessManager {
     let client: AppServerClient | undefined;
     try {
       this.validateConfiguration();
+      const executable = this.options.executable?.trim() || "codex";
       client = new AppServerClient({
         cwd: this.options.cwd,
-        executable: this.options.executable,
+        executable,
+        ...(process.platform === "win32" && /\.(cmd|bat)$/i.test(executable) ? { shell: true } : {}),
         requestTimeoutMs: this.options.requestTimeoutMs,
         onFatalError: (error) => {
           if (this.client === client) this.setError(error);

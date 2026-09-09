@@ -38,6 +38,9 @@ importers:
       electron-vite:
         specifier: ^4.0.0
         version: 4.0.0(vite@7.3.6(@types/node@24.13.3))
+      playwright-core:
+        specifier: 1.55.0
+        version: 1.55.0
       typescript:
         specifier: ^5.9.2
         version: 5.9.2
@@ -1102,6 +1105,11 @@ packages:
     resolution: {integrity: sha512-C3FsVNH1udSEX48gGX1xfvwTWfsYWj5U+8/uK15BGzIGrKoUpghX8hWZwa/OFnakBiiVNmBvemTJR5mcy7iPcg==}
     engines: {node: '>=4'}
 
+  playwright-core@1.55.0:
+    resolution: {integrity: sha512-GvZs4vU3U5ro2nZpeiwyb0zuFaqb9sUiAJuyrWpcGouD8y9/HLgGbNRjIph7zU9D3hnPaisMl9zG9CgFi/biIg==}
+    engines: {node: '>=18'}
+    hasBin: true
+
   postcss@8.5.28:
     resolution: {integrity: sha512-RRuzqDtt5Y9h3quz5hWhK+TPnsmVs6WwSU6LkJMeY4HstUEDuYTG8UJSdawMRzmzAtV+KEoG8N3Qg2qLy5vM/A==}
     engines: {node: ^10 || ^12 || >=14}
@@ -2152,6 +2160,8 @@ snapshots:
 
   pify@3.0.0:
     optional: true
+
+  playwright-core@1.55.0: {}
 
   postcss@8.5.28:
     dependencies:

@@ -55,6 +55,14 @@ jobs:
           $output | Tee-Object artifacts/build.log
           if ($exitCode -ne 0) { exit $exitCode }
 
+      - name: End-to-end desktop tests
+        shell: pwsh
+        run: |
+          $output = & pnpm.cmd test:e2e 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | Tee-Object artifacts/e2e.log
+          if ($exitCode -ne 0) { exit $exitCode }
+
       - name: Upload test results and build artifacts
         if: always()
         uses: actions/upload-artifact@v4

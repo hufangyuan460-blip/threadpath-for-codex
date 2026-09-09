@@ -7,6 +7,8 @@ import { ConversationService } from "./conversation-service";
 import type { AppInfo, ConnectionStateSnapshot } from "../shared/api";
 import { ProcessError } from "../../../../threadpath-protocol/src/protocol.ts";
 
+if (process.env.THREADPATH_E2E === "1") app.disableHardwareAcceleration();
+
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 let isQuitting = false;
 const processManager = new CodexProcessManager({
@@ -56,7 +58,7 @@ function createWindow(): void {
     minWidth: 760,
     minHeight: 480,
     webPreferences: {
-      preload: join(currentDirectory, "../preload/index.mjs"),
+      preload: join(currentDirectory, "../preload/index.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,

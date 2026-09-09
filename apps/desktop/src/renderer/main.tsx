@@ -9,6 +9,7 @@ import { chooseActiveTurnIdFromRange } from "./scroll-state";
 import { moveSearchSelection, searchNavigationTarget } from "./search-navigation";
 
 type LoadState = "idle" | "loading" | "ready" | "empty" | "error";
+type NavigateTurn = (turnId: string) => void;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -42,7 +43,7 @@ function SearchPanel({ query, results, selectedIndex, error, onQueryChange, onKe
   );
 }
 
-function Conversation({ thread, activeTurnId, searchQuery, searchResults, selectedSearchIndex, searchError, loadingMore, loadMoreError, onLoadMore, onSearchQueryChange, onSearchKeyDown, onNavigate, onVisibleTurn, onUserScroll, setOutlineButton }: { thread: ConversationThreadView; activeTurnId: string | undefined; searchQuery: string; searchResults: readonly SearchResult[]; selectedSearchIndex: number; searchError: string | undefined; loadingMore: boolean; loadMoreError: string | undefined; onLoadMore: () => void; onSearchQueryChange: (query: string) => void; onSearchKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void; onNavigate: (turnId: string) => void; onVisibleTurn: (turnId: string | undefined) => void; onUserScroll: () => void; setOutlineButton: (turnId: string, element: HTMLButtonElement | null) => void }): React.JSX.Element {
+function Conversation({ thread, activeTurnId, searchQuery, searchResults, selectedSearchIndex, searchError, loadingMore, loadMoreError, onLoadMore, onSearchQueryChange, onSearchKeyDown, onNavigate, onVisibleTurn, onUserScroll, setOutlineButton }: { thread: ConversationThreadView; activeTurnId: string | undefined; searchQuery: string; searchResults: readonly SearchResult[]; selectedSearchIndex: number; searchError: string | undefined; loadingMore: boolean; loadMoreError: string | undefined; onLoadMore: () => void; onSearchQueryChange: (query: string) => void; onSearchKeyDown: (event: React.KeyboardEvent<HTMLInputElement>, navigate: NavigateTurn) => void; onNavigate: (turnId: string) => void; onVisibleTurn: (turnId: string | undefined) => void; onUserScroll: () => void; setOutlineButton: (turnId: string, element: HTMLButtonElement | null) => void }): React.JSX.Element {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const scroller = useRef<HTMLElement | null>(null);
   const turnIndexById = new Map(thread.turns.map((turn, index) => [turn.id, index]));
@@ -54,6 +55,7 @@ function Conversation({ thread, activeTurnId, searchQuery, searchResults, select
     onNavigate(turnId);
   };
   const onRangeChanged = (range: ListRange): void => onVisibleTurn(chooseActiveTurnIdFromRange(thread.turns.map((turn) => turn.id), range));
+  const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>): void => onSearchKeyDown(event, navigate);
   const setScroller = (element: HTMLElement | Window | null): void => {
     if (scroller.current !== null) {
       scroller.current.removeEventListener("wheel", onUserScroll);
@@ -68,7 +70,7 @@ function Conversation({ thread, activeTurnId, searchQuery, searchResults, select
   return (
     <div className="conversation-layout">
       <nav className="outline-panel" aria-label="Turn outline">
-        <SearchPanel query={searchQuery} results={searchResults} selectedIndex={selectedSearchIndex} error={searchError} onQueryChange={onSearchQueryChange} onKeyDown={onSearchKeyDown} onNavigate={navigate} />
+        <SearchPanel query={searchQuery} results={searchResults} selectedIndex={selectedSearchIndex} error={searchError} onQueryChange={onSearchQueryChange} onKeyDown={handleSearchKeyDown} onNavigate={navigate} />
         <div className="outline-heading"><p className="empty-kicker">Outline</p><span>{thread.outline.length} turns</span></div>
         <ol className="outline-list">
           {thread.outline.map((entry) => (
@@ -322,7 +324,7 @@ function App(): React.JSX.Element {
     setActiveTurnId(turnId);
   }, [selectedThread]);
 
-  const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>): void => {
+  const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>, navigate: NavigateTurn): void => {
     if (event.key === "ArrowDown") {
       event.preventDefault();
       setSelectedSearchIndex((current) => moveSearchSelection(current, searchResults.length, "next"));
@@ -333,7 +335,7 @@ function App(): React.JSX.Element {
       const turnId = searchNavigationTarget(searchResults, selectedSearchIndex);
       if (turnId !== undefined) {
         event.preventDefault();
-        handleNavigate(turnId);
+        navigate(turnId);
       }
     }
   };
