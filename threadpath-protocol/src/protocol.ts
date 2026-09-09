@@ -4,11 +4,26 @@ export type JsonObject = { [key: string]: JsonValue };
 
 export type ErrorCategory = "configuration" | "process" | "protocol" | "timeout" | "network-timeout" | "server";
 
+export interface AppServerCapabilities {
+  readonly known: boolean;
+  readonly methods: readonly string[];
+  readonly events: readonly string[];
+}
+
+export interface CompatibilityInfo {
+  readonly status?: string;
+  readonly message?: string;
+}
+
 export interface InitializeResult {
   userAgent?: string;
   codexHome?: string;
   platformFamily?: string;
   platformOs?: string;
+  serverVersion?: string;
+  protocolVersion?: string;
+  capabilities: AppServerCapabilities;
+  compatibility?: CompatibilityInfo;
 }
 
 export interface StartThreadOptions {
@@ -43,6 +58,9 @@ export class ProcessError extends AppServerError {
 }
 export class ProtocolError extends AppServerError {
   constructor(message: string) { super(message, "protocol"); this.name = "ProtocolError"; }
+}
+export class CompatibilityError extends AppServerError {
+  constructor(message: string) { super(message, "protocol"); this.name = "CompatibilityError"; }
 }
 export class TimeoutError extends AppServerError {
   constructor(message: string) { super(message, "timeout"); this.name = "TimeoutError"; }
@@ -82,6 +100,49 @@ export function isJsonObject(value: unknown): value is JsonObject {
 export function readString(object: JsonObject, key: string): string | undefined {
   const value = object[key];
   return typeof value === "string" ? value : undefined;
+}
+
+function readStringList(value: JsonValue | undefined): string[] {
+  if (Array.isArray(value)) return value.flatMap((item) => typeof item === "string" ? [item] : []);
+  if (!isJsonObject(value)) return [];
+  return Object.entries(value).flatMap(([name, enabled]) => enabled === true ? [name] : []);
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+  return [...new Set(values)];
+}
+
+export function parseCapabilities(value: JsonValue | undefined): AppServerCapabilities {
+  if (!isJsonObject(value)) return { known: false, methods: [], events: [] };
+  const methodsValue = value.methods ?? value.supportedMethods;
+  const eventsValue = value.events ?? value.supportedEvents;
+  const methods = uniqueStrings(readStringList(methodsValue));
+  const events = uniqueStrings(readStringList(eventsValue));
+  return { known: methodsValue !== undefined || eventsValue !== undefined, methods, events };
+}
+
+export function parseInitializeResult(value: JsonValue): InitializeResult {
+  const object = isJsonObject(value) ? value : {};
+  const serverInfo = isJsonObject(object.serverInfo) ? object.serverInfo : undefined;
+  const capabilitySource = object.capabilities !== undefined
+    ? object.capabilities
+    : serverInfo?.capabilities;
+  const rawCompatibility = object.compatibility;
+  const compatibility = typeof rawCompatibility === "string"
+    ? { status: rawCompatibility }
+    : isJsonObject(rawCompatibility)
+      ? { status: readString(rawCompatibility, "status"), message: readString(rawCompatibility, "message") ?? readString(rawCompatibility, "reason") }
+      : undefined;
+  return {
+    userAgent: readString(object, "userAgent"),
+    codexHome: readString(object, "codexHome"),
+    platformFamily: readString(object, "platformFamily"),
+    platformOs: readString(object, "platformOs"),
+    serverVersion: readString(object, "serverVersion") ?? readString(object, "version") ?? (serverInfo === undefined ? undefined : readString(serverInfo, "version")),
+    protocolVersion: readString(object, "protocolVersion") ?? (serverInfo === undefined ? undefined : readString(serverInfo, "protocolVersion")),
+    capabilities: parseCapabilities(capabilitySource),
+    ...(compatibility === undefined ? {} : { compatibility }),
+  };
 }
 
 export function getThreads(value: JsonValue): ThreadSummary[] {

@@ -1,0 +1,2 @@
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"threadpath-protocol"},"capabilities":null}}
+{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"name":"fixture-app-server","version":"1.2.3"},"capabilities":{"methods":["thread/list","thread/start"],"events":["turn/completed","turn/failed","turn/interrupted"]}}}

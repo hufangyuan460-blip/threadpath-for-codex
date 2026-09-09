@@ -1,17 +1,17 @@
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { AppServerClient } from "./app-server-client.ts";
-import { type DiagnosticRecord, type ErrorCategory, AppServerError, NetworkTimeoutError, ProcessError, ProtocolError, TimeoutError, isJsonObject } from "./protocol.ts";
+import { type DiagnosticRecord, type ErrorCategory, AppServerError, CompatibilityError, NetworkTimeoutError, ProcessError, ProtocolError, TimeoutError, isJsonObject } from "./protocol.ts";
 
 const cwd = process.cwd();
 const fakeServerPath = fileURLToPath(new URL("./fake-app-server.ts", import.meta.url));
-function createFakeClient(mode: string, hasExistingThread = false, diagnostics?: DiagnosticRecord[]): AppServerClient {
+function createFakeClient(mode: string, hasExistingThread = false, diagnostics?: DiagnosticRecord[], capabilityMode = "absent"): AppServerClient {
   return new AppServerClient({
     cwd,
     executable: process.execPath,
     args: ["--experimental-strip-types", fakeServerPath],
     requestTimeoutMs: 250,
-    env: { ...process.env, FAKE_APP_SERVER_MODE: mode, FAKE_APP_SERVER_HAS_THREAD: String(hasExistingThread) },
+    env: { ...process.env, FAKE_APP_SERVER_MODE: mode, FAKE_APP_SERVER_HAS_THREAD: String(hasExistingThread), FAKE_APP_SERVER_CAPABILITIES: capabilityMode },
     onDiagnostic: diagnostics === undefined ? undefined : (record) => diagnostics.push(record),
   });
 }
@@ -84,6 +84,47 @@ async function verifyHighLevelErrors(): Promise<void> {
     const turn = await client.startTurn(thread.id, []);
     await assert.rejects(client.waitForTurnTerminal(turn.id, 25), TimeoutError);
   });
+}
+async function verifyCapabilities(): Promise<void> {
+  const completeClient = createFakeClient("completed", false, undefined, "complete");
+  try {
+    const initialized = await completeClient.initialize();
+    assert.equal(initialized.serverVersion, "fixture-1.0");
+    assert.equal(initialized.compatibility?.status, "compatible");
+    assert.equal(completeClient.capabilities.known, true);
+    assert.equal(completeClient.supports("thread/turns/list"), true);
+    assert.equal(completeClient.supports("turn/interrupted"), true);
+  } finally {
+    await completeClient.close();
+  }
+
+  const optionalClient = createFakeClient("completed", false, undefined, "optional-missing");
+  try {
+    await optionalClient.initialize();
+    assert.equal(optionalClient.supports("thread/read"), false);
+    assert.equal(optionalClient.supports("thread/turns/list"), false);
+    await assert.rejects(optionalClient.readThread("existing-thread"), CompatibilityError);
+    await assert.rejects(optionalClient.listTurns("existing-thread"), CompatibilityError);
+  } finally {
+    await optionalClient.close();
+  }
+
+  const requiredClient = createFakeClient("completed", false, undefined, "required-missing");
+  try {
+    await assert.rejects(requiredClient.initialize(), CompatibilityError);
+  } finally {
+    await requiredClient.close();
+  }
+
+  const legacyClient = createFakeClient("completed");
+  try {
+    const initialized = await legacyClient.initialize();
+    assert.equal(initialized.capabilities.known, false);
+    assert.equal(legacyClient.supports("thread/list"), true);
+    assert.equal(legacyClient.supports("future/method"), false);
+  } finally {
+    await legacyClient.close();
+  }
 }
 async function verifyDiagnostics(): Promise<void> {
   const diagnostics: DiagnosticRecord[] = [];
@@ -165,6 +206,7 @@ async function main(): Promise<void> {
   await verifyTimeout();
   await verifyServerError();
   await verifyHighLevelErrors();
+  await verifyCapabilities();
   await verifyDiagnostics();
   await verifyDiagnosticErrorCategories();
   await verifyEarlyExit();

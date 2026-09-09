@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { errorFromServer, getThread, getThreads, getTurns, isJsonObject, terminalTurnEvent, type JsonObject } from "./protocol.ts";
+import { errorFromServer, getThread, getThreads, getTurns, isJsonObject, parseInitializeResult, terminalTurnEvent, type JsonObject } from "./protocol.ts";
 
 const fixtureDirectory = fileURLToPath(new URL("../fixtures/", import.meta.url));
 
@@ -25,6 +25,26 @@ async function main(): Promise<void> {
   assert.equal(initializeError.length, 2);
   assert.equal(asObject(initializeError[0]).method, "initialize");
   assert.equal(errorFromServer(asObject(initializeError[1]).error).category, "server");
+
+  const completeCapabilities = parseInitializeResult(asObject((await readJsonLines("initialize-capabilities-complete.jsonl"))[1]).result);
+  assert.equal(completeCapabilities.serverVersion, "1.2.3");
+  assert.equal(completeCapabilities.protocolVersion, "2026-01");
+  assert.equal(completeCapabilities.capabilities.known, true);
+  assert.deepEqual(completeCapabilities.capabilities.methods, ["thread/list", "thread/read", "thread/turns/list", "thread/start", "turn/start"]);
+  assert.deepEqual(completeCapabilities.capabilities.events, ["turn/completed", "turn/failed", "turn/interrupted"]);
+  assert.equal(completeCapabilities.compatibility?.status, "compatible");
+
+  const optionalCapabilities = parseInitializeResult(asObject((await readJsonLines("initialize-capabilities-optional-missing.jsonl"))[1]).result);
+  assert.equal(optionalCapabilities.capabilities.known, true);
+  assert.equal(optionalCapabilities.capabilities.methods.includes("thread/read"), false);
+  assert.equal(optionalCapabilities.capabilities.methods.includes("thread/turns/list"), false);
+
+  const requiredCapabilities = parseInitializeResult(asObject((await readJsonLines("initialize-capabilities-required-missing.jsonl"))[1]).result);
+  assert.equal(requiredCapabilities.capabilities.methods.includes("turn/start"), false);
+
+  const legacyInitialize = parseInitializeResult(asObject((await readJsonLines("initialize-no-capabilities.jsonl"))[1]).result);
+  assert.equal(legacyInitialize.capabilities.known, false);
+  assert.equal(legacyInitialize.serverVersion, "0.9.0");
 
   const emptyThreads = await readJsonLines("thread-list-empty.jsonl");
   assert.equal(emptyThreads.length, 2);

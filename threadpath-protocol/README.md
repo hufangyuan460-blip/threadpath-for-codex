@@ -101,6 +101,14 @@ The small client exposes distinct errors for configuration, child-process lifecy
 
 An empty `thread/list` is valid. In that case the live smoke test skips the read operations and continues with a new ephemeral thread.
 
+## Capability detection
+
+`initialize()` also returns and stores the server version, protocol version, compatibility information, and a typed capability set. Callers can inspect `client.capabilities` and use `client.supports("thread/turns/list")` before selecting a protocol path.
+
+The minimum method set for the current live flow is `thread/list`, `thread/start`, and `turn/start`. `thread/read` and `thread/turns/list` are optional because an empty thread list is valid. The terminal events `turn/completed`, `turn/failed`, and `turn/interrupted` are checked when received. If the server explicitly reports a missing capability, the client raises a `CompatibilityError` before making that method call (or while waiting for an unsupported terminal event).
+
+Older app-servers that omit capability information remain supported in compatibility mode: the client allows the protocol methods and terminal events implemented by this prototype, while `supports()` returns `false` for unknown names. Unknown fields in initialize responses are ignored, so newer servers can add metadata without breaking this client.
+
 ## Known limits
 
 - The fake server proves transport behavior, not compatibility with every Codex CLI version.

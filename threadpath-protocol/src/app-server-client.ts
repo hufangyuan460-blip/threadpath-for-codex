@@ -1,9 +1,11 @@
 import { spawn, type ChildProcessWithoutNullStreams, type SpawnOptionsWithoutStdio } from "node:child_process";
 import { createInterface } from "node:readline";
-import { type JsonObject, type JsonValue, type DiagnosticRecord, type InitializeResult, type StartThreadOptions, type TerminalTurnEvent, type Thread, type ThreadSummary, type Turn, type TurnInput, AppServerError, ConfigurationError, ProcessError, ProtocolError, TimeoutError, errorFromServer, getThread, getThreads, getTurnId, getTurns, isJsonObject, terminalTurnEvent } from "./protocol.ts";
+import { type AppServerCapabilities, type JsonObject, type JsonValue, type DiagnosticRecord, type InitializeResult, type StartThreadOptions, type TerminalTurnEvent, type Thread, type ThreadSummary, type Turn, type TurnInput, AppServerError, CompatibilityError, ConfigurationError, ProcessError, ProtocolError, TimeoutError, errorFromServer, getThread, getThreads, getTurnId, getTurns, isJsonObject, parseInitializeResult, terminalTurnEvent } from "./protocol.ts";
 
 type RequestId = number;
 type JsonRpcId = number | string;
+const FALLBACK_SUPPORTED_CAPABILITIES = ["thread/list", "thread/read", "thread/turns/list", "thread/start", "turn/start", "turn/completed", "turn/failed", "turn/interrupted"] as const;
+const REQUIRED_METHODS = ["thread/list", "thread/start", "turn/start"] as const;
 type NotificationListener = (event: { method: string; params: JsonObject }) => void;
 interface PendingRequest { method: string; resolve: (value: JsonValue) => void; reject: (error: Error) => void; timeout: NodeJS.Timeout; startedAt: number; }
 interface PendingTurn { resolve: (event: TerminalTurnEvent) => void; reject: (error: Error) => void; timeout: NodeJS.Timeout; startedAt: number; }
@@ -29,6 +31,7 @@ export class AppServerClient {
   private readonly onProtocolWarning: (error: ProtocolError) => void;
   private readonly clientInfo: { name: string; title: string; version: string };
   private readonly onDiagnostic: (record: DiagnosticRecord) => void;
+  private capabilitiesState: AppServerCapabilities = { known: false, methods: [], events: [] };
   private nextRequestId = 1;
   private closing = false;
   private fatalError: Error | undefined;
@@ -61,6 +64,13 @@ export class AppServerClient {
 
   onNotification(listener: NotificationListener): () => void { this.notificationListeners.add(listener); return () => this.notificationListeners.delete(listener); }
 
+  get capabilities(): AppServerCapabilities { return this.capabilitiesState; }
+
+  supports(name: string): boolean {
+    if (!this.capabilitiesState.known) return FALLBACK_SUPPORTED_CAPABILITIES.includes(name as typeof FALLBACK_SUPPORTED_CAPABILITIES[number]);
+    return this.capabilitiesState.methods.includes(name) || this.capabilitiesState.events.includes(name);
+  }
+
   request(method: string, params: JsonObject = {}): Promise<JsonValue> {
     if (this.fatalError !== undefined) return Promise.reject(this.fatalError);
     const id = this.nextRequestId++;
@@ -89,16 +99,14 @@ export class AppServerClient {
   async initialize(): Promise<InitializeResult> {
     const response = await this.request("initialize", { clientInfo: this.clientInfo, capabilities: null });
     this.notify("initialized");
-    const object = this.requireObject(response, "initialize");
-    return {
-      userAgent: typeof object.userAgent === "string" ? object.userAgent : undefined,
-      codexHome: typeof object.codexHome === "string" ? object.codexHome : undefined,
-      platformFamily: typeof object.platformFamily === "string" ? object.platformFamily : undefined,
-      platformOs: typeof object.platformOs === "string" ? object.platformOs : undefined,
-    };
+    const result = parseInitializeResult(this.requireObject(response, "initialize"));
+    this.capabilitiesState = result.capabilities;
+    for (const method of REQUIRED_METHODS) this.requireCapability(method);
+    return result;
   }
 
   async listThreads(options: { archived?: boolean; limit?: number } = {}): Promise<ThreadSummary[]> {
+    this.requireCapability("thread/list");
     const response = await this.request("thread/list", {
       archived: options.archived ?? false,
       limit: options.limit ?? 10,
@@ -109,6 +117,7 @@ export class AppServerClient {
   }
 
   async readThread(threadId: string): Promise<Thread> {
+    this.requireCapability("thread/read");
     const response = await this.request("thread/read", { threadId, includeTurns: true });
     const thread = getThread(this.requireObject(response, "thread/read"));
     if (thread === undefined) throw new ProtocolError("thread/read response did not contain a thread id");
@@ -116,6 +125,7 @@ export class AppServerClient {
   }
 
   async listTurns(threadId: string, limit = 10): Promise<Turn[]> {
+    this.requireCapability("thread/turns/list");
     const response = await this.request("thread/turns/list", { threadId, limit });
     const object = this.requireObject(response, "thread/turns/list");
     if (!Array.isArray(object.data)) throw new ProtocolError("thread/turns/list response is missing a turn list");
@@ -123,6 +133,7 @@ export class AppServerClient {
   }
 
   async startThread(options: StartThreadOptions): Promise<Thread> {
+    this.requireCapability("thread/start");
     const params: JsonObject = { cwd: options.cwd };
     if (options.ephemeral !== undefined) params.ephemeral = options.ephemeral;
     if (options.approvalPolicy !== undefined) params.approvalPolicy = options.approvalPolicy;
@@ -134,6 +145,7 @@ export class AppServerClient {
   }
 
   async startTurn(threadId: string, input: readonly TurnInput[]): Promise<Turn> {
+    this.requireCapability("turn/start");
     const response = await this.request("turn/start", {
       threadId,
       input: input.map((item) => ({ type: item.type, text: item.text })),
@@ -212,6 +224,17 @@ export class AppServerClient {
     this.onDiagnostic({ event: "notification", method, status: "received" });
     const event = terminalTurnEvent(method, params);
     if (event !== undefined) {
+      if (this.capabilitiesState.known && !this.supports(event.method)) {
+        const error = new CompatibilityError(`app-server does not support terminal event ${event.method}`);
+        const pending = this.pendingTurns.get(event.turnId);
+        if (pending === undefined) this.warn(new ProtocolError(error.message));
+        else {
+          this.pendingTurns.delete(event.turnId);
+          clearTimeout(pending.timeout);
+          pending.reject(error);
+        }
+        return;
+      }
       const pending = this.pendingTurns.get(event.turnId);
       if (pending === undefined) this.terminalTurns.set(event.turnId, event);
       else {
@@ -231,6 +254,9 @@ export class AppServerClient {
   private requireObject(value: JsonValue, method: string): JsonObject {
     if (!isJsonObject(value)) throw new ProtocolError(`${method} response must be a JSON object`);
     return value;
+  }
+  private requireCapability(name: string): void {
+    if (this.capabilitiesState.known && !this.supports(name)) throw new CompatibilityError(`app-server does not support ${name}`);
   }
   private emitRequestFailure(requestId: number, method: string, startedAt: number, error: Error): void {
     this.onDiagnostic({ event: "request.failed", method, status: "failed", requestId, startedAt: new Date(startedAt).toISOString(), durationMs: Date.now() - startedAt, errorCategory: error instanceof AppServerError ? error.category : "process" });

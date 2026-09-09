@@ -3,9 +3,27 @@ import { isJsonObject, type JsonObject, type JsonValue } from "./protocol.ts";
 
 const mode = process.env.FAKE_APP_SERVER_MODE ?? "completed";
 const hasExistingThread = process.env.FAKE_APP_SERVER_HAS_THREAD === "true";
+const capabilityMode = process.env.FAKE_APP_SERVER_CAPABILITIES ?? "absent";
 let probeRequestId: number | undefined;
 let serverRequestId: number | string | undefined;
 function send(message: JsonObject): void { process.stdout.write(`${JSON.stringify(message)}\n`); }
+function initializeResult(): JsonObject {
+  const result: JsonObject = { serverInfo: { name: "fake-app-server", version: "fixture-1.0" } };
+  if (capabilityMode === "complete" || capabilityMode === "optional-missing" || capabilityMode === "required-missing") {
+    const methods = capabilityMode === "required-missing"
+      ? ["thread/list", "thread/start"]
+      : capabilityMode === "optional-missing"
+        ? ["thread/list", "thread/start", "turn/start"]
+        : ["thread/list", "thread/read", "thread/turns/list", "thread/start", "turn/start"];
+    result.capabilities = {
+      methods,
+      events: ["turn/completed", "turn/failed", "turn/interrupted"],
+      futureCapabilityField: true,
+    };
+    result.compatibility = { status: "compatible", futureField: "ignored" };
+  }
+  return result;
+}
 if (mode === "non-json") process.stdout.write("this is not JSON\n");
 const lines = createInterface({ input: process.stdin });
 lines.on("line", (line: string) => {
@@ -26,7 +44,7 @@ lines.on("line", (line: string) => {
     return;
   }
   switch (message.method) {
-    case "initialize": send({ jsonrpc: "2.0", id, result: { serverInfo: { name: "fake-app-server" } } }); break;
+    case "initialize": send({ jsonrpc: "2.0", id, result: initializeResult() }); break;
     case "thread/list": send({ jsonrpc: "2.0", id, result: { data: hasExistingThread ? [{ id: "existing-thread", title: "Existing" }] : [] } }); break;
     case "thread/read": send({ jsonrpc: "2.0", id, result: { thread: { id: "existing-thread", turns: [] } } }); break;
     case "thread/turns/list": send({ jsonrpc: "2.0", id, result: { data: [] } }); break;
