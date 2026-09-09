@@ -1,1 +1,2 @@
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"threadpath-protocol"},"capabilities":null}}
 {"jsonrpc":"2.0","id":1,"error":{"code":"unauthorized","message":"Authentication required"}}

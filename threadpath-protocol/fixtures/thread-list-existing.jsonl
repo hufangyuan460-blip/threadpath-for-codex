@@ -1,1 +1,2 @@
-{"jsonrpc":"2.0","id":2,"result":{"data":[{"id":"thread-1","title":"Fixture thread","status":"completed"}]}}
+{"jsonrpc":"2.0","id":2,"method":"thread/list","params":{"archived":false,"limit":10}}
+{"jsonrpc":"2.0","id":2,"result":{"data":[{"id":"thread-1","title":"Fixture thread","status":"completed","futureField":"ignored"}]}}

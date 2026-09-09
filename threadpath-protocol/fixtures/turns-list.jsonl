@@ -1,1 +1,2 @@
+{"jsonrpc":"2.0","id":4,"method":"thread/turns/list","params":{"threadId":"thread-1","limit":10}}
 {"jsonrpc":"2.0","id":4,"result":{"data":[{"id":"turn-1","status":"completed"}]}}

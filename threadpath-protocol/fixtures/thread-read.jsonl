@@ -1,1 +1,2 @@
+{"jsonrpc":"2.0","id":3,"method":"thread/read","params":{"threadId":"thread-1","includeTurns":true}}
 {"jsonrpc":"2.0","id":3,"result":{"thread":{"id":"thread-1","title":"Fixture thread","turns":[{"id":"turn-1","status":"completed"}]}}}

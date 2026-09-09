@@ -1,0 +1,2 @@
+{"jsonrpc":"2.0","id":5,"method":"thread/start","params":{"cwd":"D:\\threadPath","ephemeral":true}}
+{"jsonrpc":"2.0","id":5,"result":{"thread":{"id":"thread-new","title":"New fixture thread"}}}

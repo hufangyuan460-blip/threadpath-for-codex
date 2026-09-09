@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { errorFromServer, isJsonObject, terminalTurnEvent } from "./protocol.ts";
+import { errorFromServer, getThread, getThreads, getTurns, isJsonObject, terminalTurnEvent, type JsonObject } from "./protocol.ts";
 
 const fixtureDirectory = fileURLToPath(new URL("../fixtures/", import.meta.url));
 
@@ -10,32 +10,56 @@ async function readJsonLines(name: string): Promise<unknown[]> {
   return content.split(/\r?\n/).filter((line) => line.trim() !== "").map((line) => JSON.parse(line) as unknown);
 }
 
+function asObject(value: unknown): JsonObject {
+  if (!isJsonObject(value)) throw new Error("fixture message must be a JSON object");
+  return value;
+}
+
 async function main(): Promise<void> {
   const initialize = await readJsonLines("initialize-success.jsonl");
-  assert.equal(initialize.length, 1);
-  assert.ok(isJsonObject(initialize[0]));
-  assert.ok(isJsonObject(initialize[0].result));
+  assert.equal(initialize.length, 2);
+  assert.equal(asObject(initialize[0]).method, "initialize");
+  assert.ok(isJsonObject(asObject(initialize[1]).result));
 
   const initializeError = await readJsonLines("initialize-error.jsonl");
-  assert.ok(isJsonObject(initializeError[0]));
-  assert.equal(errorFromServer(initializeError[0].error).category, "server");
+  assert.equal(initializeError.length, 2);
+  assert.equal(asObject(initializeError[0]).method, "initialize");
+  assert.equal(errorFromServer(asObject(initializeError[1]).error).category, "server");
 
-  assert.equal((await readJsonLines("thread-list-empty.jsonl")).length, 1);
-  assert.equal((await readJsonLines("thread-list-existing.jsonl")).length, 1);
-  assert.equal((await readJsonLines("thread-read.jsonl")).length, 1);
-  assert.equal((await readJsonLines("turns-list.jsonl")).length, 1);
+  const emptyThreads = await readJsonLines("thread-list-empty.jsonl");
+  assert.equal(emptyThreads.length, 2);
+  assert.deepEqual(getThreads(asObject(emptyThreads[1]).result), []);
+  const existingThreads = await readJsonLines("thread-list-existing.jsonl");
+  assert.equal(existingThreads.length, 2);
+  assert.deepEqual(getThreads(asObject(existingThreads[1]).result), [{ id: "thread-1", title: "Fixture thread", status: "completed" }]);
+  const threadRead = await readJsonLines("thread-read.jsonl");
+  assert.equal(threadRead.length, 2);
+  assert.equal(getThread(asObject(threadRead[1]).result)?.turns?.[0]?.id, "turn-1");
+  const turnsList = await readJsonLines("turns-list.jsonl");
+  assert.equal(turnsList.length, 2);
+  assert.deepEqual(getTurns(asObject(turnsList[1]).result), [{ id: "turn-1", status: "completed" }]);
+
+  for (const [name, method] of [["thread-start.jsonl", "thread/start"], ["turn-start.jsonl", "turn/start"]] as const) {
+    const messages = await readJsonLines(name);
+    assert.equal(messages.length, 2);
+    assert.equal(asObject(messages[0]).method, method);
+  }
+
+  const delta = await readJsonLines("turn-delta.jsonl");
+  assert.equal(delta.length, 1);
+  assert.equal(asObject(delta[0]).method, "item/agentMessage/delta");
 
   for (const [name, outcome] of [["turn-completed.jsonl", "completed"], ["turn-failed.jsonl", "failed"], ["turn-interrupted.jsonl", "interrupted"]] as const) {
     const messages = await readJsonLines(name);
     assert.equal(messages.length, 1);
-    assert.ok(isJsonObject(messages[0]));
-    assert.ok(isJsonObject(messages[0].params));
-    assert.equal(terminalTurnEvent(String(messages[0].method), messages[0].params)?.outcome, outcome);
+    const message = asObject(messages[0]);
+    assert.equal(terminalTurnEvent(String(message.method), asObject(message.params))?.outcome, outcome);
   }
 
   const serverError = await readJsonLines("server-error.jsonl");
-  assert.ok(isJsonObject(serverError[0]));
-  assert.equal(errorFromServer(serverError[0].error).category, "server");
+  assert.equal(serverError.length, 2);
+  assert.equal(asObject(serverError[0]).method, "thread/list");
+  assert.equal(errorFromServer(asObject(serverError[1]).error).category, "server");
 
   const unknownRequest = await readJsonLines("unknown-request-id.jsonl");
   assert.ok(isJsonObject(unknownRequest[0]));

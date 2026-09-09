@@ -1,0 +1,2 @@
+{"jsonrpc":"2.0","id":6,"method":"turn/start","params":{"threadId":"thread-new","input":[{"type":"text","text":"Reply with fixture text"}]}}
+{"jsonrpc":"2.0","id":6,"result":{"turn":{"id":"turn-new"}}}

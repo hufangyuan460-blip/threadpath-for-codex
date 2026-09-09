@@ -1,1 +1,2 @@
-{"jsonrpc":"2.0","id":5,"error":{"code":"invalid_request","message":"Request is invalid"}}
+{"jsonrpc":"2.0","id":5,"method":"thread/list","params":{"archived":false,"limit":10}}
+{"jsonrpc":"2.0","id":5,"error":{"code":"invalid_request","message":"Request is invalid","futureField":"ignored"}}

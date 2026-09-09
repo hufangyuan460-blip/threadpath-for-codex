@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","method":"item/agentMessage/delta","params":{"threadId":"thread-new","turnId":"turn-new","delta":"fixture text"}}

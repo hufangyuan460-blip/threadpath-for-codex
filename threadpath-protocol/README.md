@@ -42,6 +42,8 @@ The test suite covers JSONL framing, request ID correlation, server errors, unsu
 
 Representative JSONL messages are versioned under `fixtures/` and checked by the fixture test. Process exit and timeout fixtures intentionally describe the absence of a valid response; their live behavior is exercised by the fake app-server process tests.
 
+When a supported app-server message changes, update the smallest relevant fixture and its assertions together. Keep request and response IDs matched, keep notification fixtures ID-free, and use redacted stable values. Unknown fields should remain in representative fixtures when they verify forward-compatible parsing; do not add local authentication data, full conversation content, or machine-specific thread IDs.
+
 ## Reusable client API
 
 `src/app-server-client.ts` keeps the generic `request(method, params)` method at the protocol boundary and exposes typed operations for callers:
