@@ -42,6 +42,18 @@ export interface ConversationThreadView {
 
 export type ThreadDetails = ConversationThreadView;
 
+export type ConversationUpdate =
+  | { readonly type: "turn/started"; readonly threadId: string; readonly turnId: string }
+  | { readonly type: "item/started"; readonly threadId: string; readonly turnId: string; readonly itemId: string; readonly itemType?: string; readonly itemName?: string }
+  | { readonly type: "item/agentMessage/delta"; readonly threadId: string; readonly turnId: string; readonly itemId: string; readonly delta: string }
+  | { readonly type: "item/completed"; readonly threadId: string; readonly turnId: string; readonly itemId: string; readonly status: "running" | "completed" | "failed" | "unknown"; readonly itemType?: string; readonly itemName?: string; readonly summary?: string }
+  | { readonly type: "turn/completed" | "turn/failed" | "turn/interrupted"; readonly threadId: string; readonly turnId: string; readonly message?: string };
+
+export interface StartTurnResult {
+  readonly threadId: string;
+  readonly turnId: string;
+}
+
 export interface DesktopApi {
   readonly getAppInfo: () => Promise<AppInfo>;
   readonly getConnectionState: () => Promise<ConnectionStateSnapshot>;
@@ -50,4 +62,6 @@ export interface DesktopApi {
   readonly reconnect: () => Promise<ConnectionStateSnapshot>;
   readonly listThreads: () => Promise<ThreadListItem[]>;
   readonly readThread: (threadId: string) => Promise<ThreadDetails>;
+  readonly startTurn: (threadId: string, text: string) => Promise<StartTurnResult>;
+  readonly onConversationUpdate: (listener: (update: ConversationUpdate) => void) => () => void;
 }

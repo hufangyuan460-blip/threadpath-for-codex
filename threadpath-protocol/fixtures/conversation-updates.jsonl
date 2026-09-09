@@ -1,0 +1,11 @@
+{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thread-1","turnId":"turn-live"}}
+{"jsonrpc":"2.0","method":"item/started","params":{"threadId":"thread-1","turnId":"turn-live","item":{"id":"item-live","type":"agentMessage"}}}
+{"jsonrpc":"2.0","method":"item/agentMessage/delta","params":{"threadId":"thread-1","turnId":"turn-live","itemId":"item-live","delta":"Hello"}}
+{"jsonrpc":"2.0","method":"item/agentMessage/delta","params":{"threadId":"thread-1","turnId":"turn-live","itemId":"item-live","delta":" world"}}
+{"jsonrpc":"2.0","method":"item/agentMessage/delta","params":{"threadId":"thread-1","turnId":"turn-live","itemId":"item-live","delta":" world"}}
+{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thread-1","turnId":"turn-live","item":{"id":"item-tool","type":"commandExecution","name":"shell","status":"completed","summary":"Finished"}}}
+{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thread-1","turn":{"id":"turn-live"}}}
+{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thread-1","turn":{"id":"turn-live"}}}
+{"jsonrpc":"2.0","method":"turn/failed","params":{"threadId":"thread-failed","turn":{"id":"turn-failed"},"error":{"message":"Turn failed"}}}
+{"jsonrpc":"2.0","method":"turn/interrupted","params":{"threadId":"thread-interrupted","turn":{"id":"turn-interrupted"},"error":{"message":"Turn interrupted"}}}
+{"jsonrpc":"2.0","method":"item/agentMessage/delta","params":{"threadId":"old-thread","turnId":"old-turn","itemId":"old-item","delta":"stale"}}

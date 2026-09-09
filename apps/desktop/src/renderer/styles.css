@@ -49,6 +49,13 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.02em; }
 .tool-unknown { color: #b9c3d2; background: #343e4c; }
 .conversation-empty { display: grid; min-height: 300px; place-content: center; max-width: 500px; }
 .conversation-empty p:not(.empty-kicker), .partial-note { color: #9eabbc; line-height: 1.6; }
+.turn-composer { display: grid; gap: 10px; margin-top: 24px; padding: 18px; border: 1px solid #303c4d; border-radius: 14px; background: #141b25cc; }
+.turn-composer label { color: #b9c7d9; font-size: 13px; font-weight: 700; }
+.turn-composer textarea { width: 100%; resize: vertical; padding: 12px; border: 1px solid #3a485c; border-radius: 9px; color: #e8edf5; background: #101620; font: inherit; line-height: 1.5; }
+.turn-composer textarea:focus { outline: 2px solid #6082af; outline-offset: 1px; }
+.turn-composer textarea:disabled { cursor: wait; opacity: .65; }
+.composer-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.composer-status { color: #8290a1; font-size: 12px; }
 .panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
 .panel-heading h2 { margin: 0; font-size: 22px; }
 .panel-note { color: #8290a1; line-height: 1.6; }

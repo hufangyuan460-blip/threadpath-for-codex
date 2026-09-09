@@ -35,6 +35,10 @@ function registerApi(): void {
   ipcMain.handle("app:reconnect", async (): Promise<ConnectionStateSnapshot> => publicConnectionState(await processManager.reconnect()));
   ipcMain.handle("threads:list", async () => withReadyConnection(() => threadService.listThreads()));
   ipcMain.handle("threads:read", async (_event, threadId: unknown) => withReadyConnection(() => conversationService.readThread(threadId)));
+  ipcMain.handle("conversation:start-turn", async (_event, threadId: unknown, text: unknown) => withReadyConnection(() => conversationService.startTurn(threadId, text)));
+  conversationService.onConversationUpdate((update) => {
+    for (const window of BrowserWindow.getAllWindows()) window.webContents.send("conversation:update", update);
+  });
 }
 
 async function withReadyConnection<T>(action: () => Promise<T>): Promise<T> {

@@ -1,7 +1,8 @@
-import { StrictMode, useCallback, useEffect, useState } from "react";
+import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
-import type { AppInfo, ConnectionStateSnapshot, ConversationItemView, ConversationThreadView, ThreadListItem } from "../shared/api";
+import type { AppInfo, ConnectionStateSnapshot, ConversationItemView, ConversationThreadView, ConversationUpdate, ThreadListItem } from "../shared/api";
+import { applyConversationUpdate, conversationUpdateKey } from "./conversation-state";
 
 type LoadState = "idle" | "loading" | "ready" | "empty" | "error";
 
@@ -55,6 +56,11 @@ function App(): React.JSX.Element {
   const [selectedThread, setSelectedThread] = useState<ConversationThreadView | undefined>();
   const [selectedThreadState, setSelectedThreadState] = useState<LoadState>("idle");
   const [selectedThreadError, setSelectedThreadError] = useState<string | undefined>();
+  const [inputText, setInputText] = useState("");
+  const [startingTurn, setStartingTurn] = useState(false);
+  const [runningTurnId, setRunningTurnId] = useState<string | undefined>();
+  const [sendError, setSendError] = useState<string | undefined>();
+  const seenUpdateKeys = useRef(new Set<string>());
 
   const loadThreads = useCallback(async (): Promise<void> => {
     setThreadLoadState("loading");
@@ -101,9 +107,12 @@ function App(): React.JSX.Element {
     if (selectedThreadId === undefined) {
       setSelectedThread(undefined);
       setSelectedThreadState("idle");
+      setRunningTurnId(undefined);
       return;
     }
     let active = true;
+    seenUpdateKeys.current.clear();
+    setRunningTurnId(undefined);
     setSelectedThreadState("loading");
     setSelectedThreadError(undefined);
     void window.threadPath.readThread(selectedThreadId).then((thread) => {
@@ -117,6 +126,38 @@ function App(): React.JSX.Element {
     });
     return () => { active = false; };
   }, [selectedThreadId]);
+
+  useEffect(() => window.threadPath.onConversationUpdate((update: ConversationUpdate) => {
+    if (selectedThreadId === undefined || update.threadId !== selectedThreadId) return;
+    if (seenUpdateKeys.current.has(conversationUpdateKey(update))) return;
+    seenUpdateKeys.current.add(conversationUpdateKey(update));
+    if (update.type === "turn/completed" || update.type === "turn/failed" || update.type === "turn/interrupted") {
+      setRunningTurnId((current) => current === update.turnId ? undefined : current);
+    }
+    setSelectedThread((current) => current === undefined ? current : applyConversationUpdate(current, update));
+  }), [selectedThreadId]);
+
+  const handleStartTurn = async (): Promise<void> => {
+    const text = inputText.trim();
+    if (selectedThreadId === undefined || connectionState.state !== "ready" || text === "" || startingTurn || runningTurnId !== undefined) return;
+    setSendError(undefined);
+    setStartingTurn(true);
+    try {
+      const result = await window.threadPath.startTurn(selectedThreadId, text);
+      setSelectedThread((current) => {
+        if (current === undefined || current.id !== result.threadId) return current;
+        const turnId = result.turnId;
+        if (current.turns.some((turn) => turn.id === turnId)) return current;
+        return { ...current, turns: [...current.turns, { id: turnId, index: current.turns.length + 1, status: "running", createdAt: new Date().toISOString(), items: [{ kind: "text", id: `${turnId}:user`, role: "user", text }] }] };
+      });
+      setRunningTurnId(result.turnId);
+      setInputText("");
+    } catch (error: unknown) {
+      setSendError(errorMessage(error));
+    } finally {
+      setStartingTurn(false);
+    }
+  };
 
   const handleReconnect = async (): Promise<void> => {
     setReconnecting(true);
@@ -146,6 +187,14 @@ function App(): React.JSX.Element {
           {selectedThreadState === "error" ? <p className="error-summary">{selectedThreadError}</p> : null}
           {selectedThreadState === "empty" && selectedThread !== undefined ? <Conversation thread={selectedThread} /> : null}
           {selectedThreadState === "ready" && selectedThread !== undefined ? <Conversation thread={selectedThread} /> : null}
+          {selectedThread !== undefined && selectedThreadState !== "loading" && selectedThreadState !== "error" ? (
+            <form className="turn-composer" onSubmit={(event) => { event.preventDefault(); void handleStartTurn(); }}>
+              <label htmlFor="turn-input">Send a message</label>
+              <textarea id="turn-input" value={inputText} onChange={(event) => setInputText(event.target.value)} placeholder="Write a plain-text turn…" rows={3} disabled={connectionState.state !== "ready" || startingTurn || runningTurnId !== undefined} />
+              <div className="composer-footer"><span className="composer-status">{startingTurn ? "Starting…" : runningTurnId === undefined ? "Ready" : "Turn running…"}</span><button type="submit" disabled={connectionState.state !== "ready" || inputText.trim() === "" || startingTurn || runningTurnId !== undefined}>{startingTurn ? "Starting…" : runningTurnId === undefined ? "Send" : "Running…"}</button></div>
+              {sendError === undefined ? null : <p className="error-summary">{sendError}</p>}
+            </form>
+          ) : null}
         </section>
       </section>
       <footer className="footer"><span>{appInfo === undefined ? "ThreadPath" : `ThreadPath ${appInfo.version}`}</span>{connectionState.state === "error" || connectionState.state === "stopped" ? <button type="button" onClick={() => void handleReconnect()} disabled={reconnecting}>{reconnecting ? "Reconnecting…" : "Reconnect"}</button> : null}{connectionState.error === undefined ? null : <span className="footer-error">{connectionState.error}</span>}</footer>

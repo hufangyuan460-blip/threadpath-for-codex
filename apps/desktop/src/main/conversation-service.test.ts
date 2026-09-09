@@ -2,8 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { getThread, isJsonObject, ProtocolError, type JsonObject, type Thread } from "../../../../threadpath-protocol/src/protocol.ts";
-import { ConversationService, toConversationThreadView } from "./conversation-service.ts";
-import type { ThreadClient, ThreadClientProvider } from "./thread-service";
+import { ConversationService, toConversationThreadView, type ConversationClient, type ConversationClientProvider } from "./conversation-service.ts";
 
 const fixturePath = fileURLToPath(new URL("../../../../threadpath-protocol/fixtures/conversation-thread.jsonl", import.meta.url));
 
@@ -22,11 +21,14 @@ async function readFixtureThread(): Promise<Thread> {
 
 async function main(): Promise<void> {
   const fixtureThread = await readFixtureThread();
-  const client: ThreadClient = {
+  let notificationListener: ((event: { method: string; params: JsonObject }) => void) | undefined;
+  const client: ConversationClient = {
     listThreads: async () => [],
     readThread: async () => fixtureThread,
+    startTurn: async () => ({ id: "turn-live" }),
+    onNotification: (listener) => { notificationListener = listener; return () => { notificationListener = undefined; }; },
   };
-  const provider: ThreadClientProvider = { getReadyClient: () => client };
+  const provider: ConversationClientProvider = { getReadyClient: () => client };
   const service = new ConversationService(provider);
   const view = await service.readThread("thread-conversation");
 
@@ -53,7 +55,18 @@ async function main(): Promise<void> {
   assert.deepEqual(toConversationThreadView({ id: "empty", turns: [] }), { id: "empty", title: "Untitled thread", status: "unknown", turns: [] });
 
   await assert.rejects(service.readThread(" invalid-id"), (error: unknown) => error instanceof Error && error.name === "ConfigurationError");
-  const failingProvider: ThreadClientProvider = { getReadyClient: () => ({ ...client, readThread: async () => { throw new ProtocolError("fixture read failed"); } }) };
+  const updates: string[] = [];
+  const unsubscribe = service.onConversationUpdate((update) => updates.push(update.type));
+  const started = await service.startTurn("thread-conversation", " live input ");
+  assert.deepEqual(started, { threadId: "thread-conversation", turnId: "turn-live" });
+  await assert.rejects(service.startTurn("thread-conversation", "second input"), ProtocolError);
+  assert.ok(notificationListener);
+  notificationListener?.({ method: "turn/started", params: { threadId: "thread-conversation", turnId: "turn-live" } });
+  notificationListener?.({ method: "turn/completed", params: { threadId: "thread-conversation", turnId: "turn-live", turn: { id: "turn-live" } } });
+  assert.deepEqual(updates, ["turn/started", "turn/completed"]);
+  unsubscribe();
+  await assert.rejects(service.startTurn("thread-conversation", ""), (error: unknown) => error instanceof Error && error.name === "ConfigurationError");
+  const failingProvider: ConversationClientProvider = { getReadyClient: () => ({ ...client, readThread: async () => { throw new ProtocolError("fixture read failed"); } }) };
   await assert.rejects(new ConversationService(failingProvider).readThread("thread-conversation"), ProtocolError);
   console.log("[desktop-test] conversation service checks passed");
 }
