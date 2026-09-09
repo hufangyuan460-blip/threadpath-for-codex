@@ -69,7 +69,7 @@ export class NetworkTimeoutError extends AppServerError {
   constructor(message: string, code?: JsonValue) { super(message, "network-timeout", code); this.name = "NetworkTimeoutError"; }
 }
 
-export interface ThreadSummary { id: string; title?: string; status?: string; }
+export interface ThreadSummary { id: string; title?: string; status?: string; turnCount?: number; createdAt?: string; }
 export interface Thread extends ThreadSummary { turns?: Turn[]; }
 export interface Turn { id: string; status?: string; }
 export interface TurnEvent { method: string; params: JsonObject; }
@@ -100,6 +100,11 @@ export function isJsonObject(value: unknown): value is JsonObject {
 export function readString(object: JsonObject, key: string): string | undefined {
   const value = object[key];
   return typeof value === "string" ? value : undefined;
+}
+
+export function readNumber(object: JsonObject, key: string): number | undefined {
+  const value = object[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function readStringList(value: JsonValue | undefined): string[] {
@@ -151,7 +156,9 @@ export function getThreads(value: JsonValue): ThreadSummary[] {
   return source.flatMap((item) => {
     if (!isJsonObject(item)) return [];
     const id = readString(item, "id");
-    return id === undefined ? [] : [{ id, title: readString(item, "title"), status: readString(item, "status") }];
+    const turnCount = readNumber(item, "turnCount");
+    const createdAt = readString(item, "createdAt");
+    return id === undefined ? [] : [{ id, title: readString(item, "title"), status: readString(item, "status"), ...(turnCount === undefined ? {} : { turnCount }), ...(createdAt === undefined ? {} : { createdAt }) }];
   });
 }
 
@@ -160,10 +167,14 @@ export function getThread(value: JsonValue): Thread | undefined {
   const source = isJsonObject(value.thread) ? value.thread : value;
   const id = readString(source, "id");
   if (id === undefined) return undefined;
+  const turnCount = readNumber(source, "turnCount");
+  const createdAt = readString(source, "createdAt");
   return {
     id,
     title: readString(source, "title"),
     status: readString(source, "status"),
+    ...(turnCount === undefined ? {} : { turnCount }),
+    ...(createdAt === undefined ? {} : { createdAt }),
     turns: Array.isArray(source.turns)
       ? source.turns.flatMap((item) => {
           if (!isJsonObject(item)) return [];

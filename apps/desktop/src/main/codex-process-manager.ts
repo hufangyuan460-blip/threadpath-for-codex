@@ -33,6 +33,11 @@ export class CodexProcessManager {
     return this.snapshot;
   }
 
+  getReadyClient(): AppServerClient {
+    if (this.snapshot.state !== "ready" || this.client === undefined) throw new ProcessError(this.snapshot.error ?? "Codex app-server is not ready");
+    return this.client;
+  }
+
   async connect(): Promise<ConnectionStateSnapshot> {
     if (this.snapshot.state === "ready") return this.snapshot;
     if (this.connectionAttempt !== undefined) return this.connectionAttempt;

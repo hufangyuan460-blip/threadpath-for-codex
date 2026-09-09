@@ -6,7 +6,7 @@
     "dev": "pnpm --filter @threadpath/desktop dev",
     "typecheck": "pnpm --filter threadpath-protocol typecheck && pnpm --filter @threadpath/desktop typecheck",
     "build": "pnpm --filter @threadpath/desktop build",
-    "test": "pnpm --filter threadpath-protocol test",
+    "test": "pnpm --filter threadpath-protocol test && pnpm --filter @threadpath/desktop test",
     "smoke": "pnpm --filter threadpath-protocol smoke"
   }
 }

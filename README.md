@@ -10,7 +10,7 @@
 
 ThreadPath for Codex 是一个独立的桌面客户端项目，目标是让 Codex CLI 对话更容易浏览、搜索和导航，并为未来的线程 Fork、树视图、DAG 可视化与分支比较提供基础。
 
-项目已完成 `v0.0.1` 协议验证和 `M0` 桌面应用外壳，当前进入 `M1-A` 生命周期接入。协议代码集中在 `threadpath-protocol/`，Electron 主进程现在负责 app-server 的连接生命周期；线程读取和对话 UI 仍未接入。
+项目已完成 `v0.0.1` 协议验证、`M0` 桌面应用外壳和 `M1-A` 生命周期接入，当前完成 `M1-B` 的线程列表与元数据读取闭环。协议代码集中在 `threadpath-protocol/`，Electron 主进程管理 app-server 和线程应用服务；当前仍不展示消息正文、工具输出或流式内容。
 
 ### 当前能力
 
@@ -23,6 +23,8 @@ ThreadPath for Codex 是一个独立的桌面客户端项目，目标是让 Code
 - 以 fake app-server 覆盖已有/空线程、三种回合终态和关键故障路径；
 - 提供 `apps/desktop/` M0 安全桌面外壳，启用 context isolation 并禁用 renderer Node 集成；
 - 由 Electron 主进程管理 app-server 连接状态、初始化、关闭和重连；
+- 在主进程通过类型化服务加载线程列表，并读取选中线程的安全元数据视图；
+- renderer 仅通过 preload 使用受限的线程列表和读取 API；
 - 为未来的 Electron 桌面客户端积累协议事实。
 
 ### 快速开始
@@ -72,7 +74,8 @@ npm run smoke
 ### 路线图
 
 - `M0`：安全 Electron 桌面应用外壳，暂不连接 app-server；
-- `M1-A`：主进程接入 app-server 生命周期，renderer 仅显示连接状态，不读取线程；
+- `M1-A`：主进程接入 app-server 生命周期，renderer 仅显示连接状态；
+- `M1-B`：线程列表与线程元数据读取，暂不显示消息正文；
 - `v0.0.1`：Codex app-server 协议验证、JSONL/JSON-RPC 传输与可重复故障测试；
 - `v0.0.2`：可复用的类型化协议客户端、版本化 fixture 和脱敏诊断事件日志；
 - `v0.1.0`：线性对话基础、线程/回合加载、导航和搜索；
@@ -90,7 +93,7 @@ npm run smoke
 
 ThreadPath for Codex is an independent desktop client project designed to make Codex CLI conversations easier to browse, search, and navigate. It also lays the foundation for future thread forking, tree views, DAG visualization, and branch comparison.
 
-The project has completed `v0.0.1` protocol validation and `M0` desktop shell setup, and is now entering `M1-A` lifecycle integration. The Electron main process manages the app-server connection lifecycle; thread loading and conversation UI are not connected yet.
+The project has completed `v0.0.1` protocol validation, the `M0` desktop shell, and `M1-A` lifecycle integration, and now has the `M1-B` thread-list and metadata-reading loop. The Electron main process owns the app-server and thread application service; message bodies, tool output, and streaming content are still not rendered.
 
 ### Current capabilities
 
@@ -103,6 +106,8 @@ The project has completed `v0.0.1` protocol validation and `M0` desktop shell se
 - Uses a fake app-server to cover existing/empty thread lists, three terminal turn outcomes, and key failure paths;
 - Provides an `apps/desktop/` M0 secure desktop shell with context isolation and renderer Node integration disabled;
 - Lets the Electron main process own app-server connection, initialization, shutdown, and reconnection;
+- Loads threads and reads selected-thread metadata through typed main-process services;
+- Exposes only restricted thread-list and thread-read APIs through preload;
 - Builds protocol knowledge for the future Electron desktop client.
 
 ### Quick start
@@ -152,7 +157,8 @@ npm run smoke
 ### Roadmap
 
 - `M0`: secure Electron desktop application shell without app-server integration;
-- `M1-A`: main-process app-server lifecycle integration with renderer connection status only;
+- `M1-A`: main-process app-server lifecycle integration with renderer connection status;
+- `M1-B`: thread list and thread metadata reading without message rendering;
 - `v0.0.1`: Codex app-server protocol validation, JSONL/JSON-RPC transport, and repeatable failure tests;
 - `v0.0.2`: reusable typed protocol client APIs, versioned fixtures, and redacted diagnostic event logging;
 - `v0.1.0`: linear conversation foundation, thread/turn loading, navigation, and search;
