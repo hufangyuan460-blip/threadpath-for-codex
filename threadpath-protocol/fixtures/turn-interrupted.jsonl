@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","method":"turn/interrupted","params":{"turn":{"id":"turn-1"},"error":{"code":"interrupted","message":"Turn was interrupted"}}}

@@ -70,6 +70,7 @@ npm run smoke
 ### 路线图
 
 - `v0.0.1`：Codex app-server 协议验证、JSONL/JSON-RPC 传输与可重复故障测试；
+- `v0.0.2`：可复用的类型化协议客户端、版本化 fixture 和脱敏诊断事件日志；
 - `v0.1.0`：线性对话基础、线程/回合加载、导航和搜索；
 - `v0.2.0`：稳定性强化、诊断、性能和无障碍优化；
 - `v0.3.0`：Fork 与分支领域模型基础；
@@ -145,6 +146,7 @@ npm run smoke
 ### Roadmap
 
 - `v0.0.1`: Codex app-server protocol validation, JSONL/JSON-RPC transport, and repeatable failure tests;
+- `v0.0.2`: reusable typed protocol client APIs, versioned fixtures, and redacted diagnostic event logging;
 - `v0.1.0`: linear conversation foundation, thread/turn loading, navigation, and search;
 - `v0.2.0`: hardening, diagnostics, performance, and accessibility improvements;
 - `v0.3.0`: fork and branch domain-model groundwork;

@@ -40,6 +40,25 @@ npm test
 
 The test suite covers JSONL framing, request ID correlation, server errors, unsupported server requests, malformed stdout, client request timeouts, early process exit, startup failure, both existing and empty thread lists, and all three terminal turn events: `turn/completed`, `turn/failed`, and `turn/interrupted`.
 
+Representative JSONL messages are versioned under `fixtures/` and checked by the fixture test. Process exit and timeout fixtures intentionally describe the absence of a valid response; their live behavior is exercised by the fake app-server process tests.
+
+## Reusable client API
+
+`src/app-server-client.ts` keeps the generic `request(method, params)` method at the protocol boundary and exposes typed operations for callers:
+
+```text
+initialize()
+listThreads(options)
+readThread(threadId)
+listTurns(threadId)
+startThread(options)
+startTurn(threadId, input)
+waitForTurnTerminal(turnId)
+close()
+```
+
+Callers can subscribe to notifications with `onNotification`. Optional `onDiagnostic` records request IDs, methods, durations, terminal outcomes, and error categories without recording complete payloads or conversation text.
+
 Run the live protocol smoke test separately:
 
 ```powershell
