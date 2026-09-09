@@ -1,0 +1,8 @@
+{"jsonrpc":"2.0","id":10,"method":"thread/turns/list","params":{"threadId":"thread-page","limit":2}}
+{"jsonrpc":"2.0","id":10,"result":{"data":[{"id":"turn-3","status":"completed","createdAt":"2026-01-03T00:00:00Z","items":[{"id":"item-3","type":"agentMessage","role":"assistant","text":"Newest turn"}]},{"id":"turn-2","status":"completed","createdAt":"2026-01-02T00:00:00Z","items":[{"id":"item-2","type":"userMessage","role":"user","text":"Middle turn"}]}],"nextCursor":"cursor-older"}}
+{"jsonrpc":"2.0","id":11,"method":"thread/turns/list","params":{"threadId":"thread-page","limit":2,"cursor":"cursor-older"}}
+{"jsonrpc":"2.0","id":11,"result":{"data":[{"id":"turn-1","status":"completed","createdAt":"2026-01-01T00:00:00Z","items":[{"id":"item-1","type":"userMessage","role":"user","text":"Old turn"}]},{"id":"turn-2","status":"completed","createdAt":"2026-01-02T00:00:00Z","items":[{"id":"item-2","type":"userMessage","role":"user","text":"Middle turn with more context"},{"id":"item-2b","type":"agentMessage","role":"assistant","text":"Additional context"}]}],"nextCursor":"cursor-empty"}}
+{"jsonrpc":"2.0","id":12,"method":"thread/turns/list","params":{"threadId":"thread-page","limit":2,"cursor":"cursor-empty"}}
+{"jsonrpc":"2.0","id":12,"result":{"data":[],"nextCursor":"cursor-final"}}
+{"jsonrpc":"2.0","id":13,"method":"thread/turns/list","params":{"threadId":"thread-page","limit":2,"cursor":"cursor-final"}}
+{"jsonrpc":"2.0","id":13,"result":{"data":[]}}

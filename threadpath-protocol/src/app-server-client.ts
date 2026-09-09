@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams, type SpawnOptionsWithoutStdio } from "node:child_process";
 import { createInterface } from "node:readline";
-import { type AppServerCapabilities, type JsonObject, type JsonValue, type DiagnosticRecord, type InitializeResult, type StartThreadOptions, type TerminalTurnEvent, type Thread, type ThreadSummary, type Turn, type TurnInput, AppServerError, CompatibilityError, ConfigurationError, ProcessError, ProtocolError, TimeoutError, errorFromServer, getThread, getThreads, getTurnId, getTurns, isJsonObject, parseInitializeResult, terminalTurnEvent } from "./protocol.ts";
+import { type AppServerCapabilities, type JsonObject, type JsonValue, type DiagnosticRecord, type InitializeResult, type StartThreadOptions, type TerminalTurnEvent, type Thread, type ThreadSummary, type Turn, type TurnInput, type TurnListOptions, type TurnPage, AppServerError, CompatibilityError, ConfigurationError, ProcessError, ProtocolError, TimeoutError, errorFromServer, getThread, getThreads, getTurnId, getTurnPage, isJsonObject, parseInitializeResult, terminalTurnEvent } from "./protocol.ts";
 
 type RequestId = number;
 type JsonRpcId = number | string;
@@ -127,12 +127,15 @@ export class AppServerClient {
     return thread;
   }
 
-  async listTurns(threadId: string, limit = 10): Promise<Turn[]> {
+  async listTurns(threadId: string, options: TurnListOptions | number = {}): Promise<TurnPage> {
     this.requireCapability("thread/turns/list");
-    const response = await this.request("thread/turns/list", { threadId, limit });
+    const normalized = typeof options === "number" ? { limit: options } : options;
+    const params: JsonObject = { threadId, limit: normalized.limit ?? 10 };
+    if (normalized.cursor !== undefined) params.cursor = normalized.cursor;
+    const response = await this.request("thread/turns/list", params);
     const object = this.requireObject(response, "thread/turns/list");
     if (!Array.isArray(object.data)) throw new ProtocolError("thread/turns/list response is missing a turn list");
-    return getTurns(object);
+    return getTurnPage(object);
   }
 
   async startThread(options: StartThreadOptions): Promise<Thread> {

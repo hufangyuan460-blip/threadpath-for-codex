@@ -9,6 +9,7 @@ const desktopApi: DesktopApi = {
   reconnect: () => ipcRenderer.invoke("app:reconnect"),
   listThreads: () => ipcRenderer.invoke("threads:list"),
   readThread: (threadId) => ipcRenderer.invoke("threads:read", threadId),
+  loadMoreTurns: (threadId) => ipcRenderer.invoke("conversation:load-more", threadId),
   searchTurns: (threadId, query) => ipcRenderer.invoke("search:turns", threadId, query),
   startTurn: (threadId, text) => ipcRenderer.invoke("conversation:start-turn", threadId, text),
   onConversationUpdate: (listener) => {

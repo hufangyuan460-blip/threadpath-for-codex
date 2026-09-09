@@ -28,6 +28,14 @@ export interface ConversationTurnView {
   readonly items: readonly ConversationItemView[];
 }
 
+export interface ConversationPagingState {
+  readonly orderedTurnIds: readonly string[];
+  readonly nextCursor?: string;
+  readonly hasMore: boolean;
+  readonly isLoadingMore: boolean;
+  readonly loadMoreError?: string;
+}
+
 export type ConversationItemView =
   | { readonly kind: "text"; readonly id: string; readonly role: "user" | "assistant" | "system"; readonly text: string }
   | { readonly kind: "tool"; readonly id: string; readonly name: string; readonly status: "running" | "completed" | "failed" | "unknown"; readonly summary?: string }
@@ -39,6 +47,7 @@ export interface ConversationThreadView {
   readonly status: string;
   readonly turns: readonly ConversationTurnView[];
   readonly outline: readonly TurnOutlineEntry[];
+  readonly paging: ConversationPagingState;
 }
 
 export type ThreadDetails = ConversationThreadView;
@@ -81,6 +90,7 @@ export interface DesktopApi {
   readonly reconnect: () => Promise<ConnectionStateSnapshot>;
   readonly listThreads: () => Promise<ThreadListItem[]>;
   readonly readThread: (threadId: string) => Promise<ThreadDetails>;
+  readonly loadMoreTurns: (threadId: string) => Promise<ThreadDetails>;
   readonly searchTurns: (threadId: string, query: string) => Promise<SearchResult[]>;
   readonly startTurn: (threadId: string, text: string) => Promise<StartTurnResult>;
   readonly onConversationUpdate: (listener: (update: ConversationUpdate) => void) => () => void;

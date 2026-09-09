@@ -15,7 +15,12 @@ export function applyConversationUpdate(thread: ConversationThreadView, update: 
   const turns = [...thread.turns];
   if (turnIndex < 0) turns.push(nextTurn);
   else turns[turnIndex] = nextTurn;
-  return { ...thread, turns, outline: buildTurnOutline(turns) };
+  return {
+    ...thread,
+    turns,
+    outline: buildTurnOutline(turns),
+    paging: { ...thread.paging, orderedTurnIds: turns.map((item) => item.id) },
+  };
 }
 
 function updateTurn(turn: ConversationTurnView, update: ConversationUpdate): ConversationTurnView {

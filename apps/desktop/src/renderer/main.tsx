@@ -4,6 +4,7 @@ import "./styles.css";
 import type { AppInfo, ConnectionStateSnapshot, ConversationItemView, ConversationThreadView, ConversationUpdate, SearchResult, ThreadListItem } from "../shared/api";
 import { applyConversationUpdate, conversationUpdateKey } from "./conversation-state";
 import { chooseActiveTurnId } from "./scroll-state";
+import { preserveScrollTop } from "./scroll-preservation";
 import { moveSearchSelection, searchNavigationTarget } from "./search-navigation";
 
 type LoadState = "idle" | "loading" | "ready" | "empty" | "error";
@@ -48,10 +49,7 @@ function SearchPanel({ query, results, selectedIndex, error, onQueryChange, onKe
   );
 }
 
-function Conversation({ thread, activeTurnId, searchQuery, searchResults, selectedSearchIndex, searchError, onSearchQueryChange, onSearchKeyDown, onSearchNavigate, onNavigate, setOutlineButton }: { thread: ConversationThreadView; activeTurnId: string | undefined; searchQuery: string; searchResults: readonly SearchResult[]; selectedSearchIndex: number; searchError: string | undefined; onSearchQueryChange: (query: string) => void; onSearchKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void; onSearchNavigate: (turnId: string) => void; onNavigate: (turnId: string) => void; setOutlineButton: (turnId: string, element: HTMLButtonElement | null) => void }): React.JSX.Element {
-  if (thread.turns.length === 0) {
-    return <div className="conversation-empty"><p className="empty-kicker">Conversation</p><h2>No readable turns</h2><p>This thread has no conversation content available.</p></div>;
-  }
+function Conversation({ thread, activeTurnId, searchQuery, searchResults, selectedSearchIndex, searchError, loadingMore, loadMoreError, onLoadMore, onSearchQueryChange, onSearchKeyDown, onSearchNavigate, onNavigate, setOutlineButton }: { thread: ConversationThreadView; activeTurnId: string | undefined; searchQuery: string; searchResults: readonly SearchResult[]; selectedSearchIndex: number; searchError: string | undefined; loadingMore: boolean; loadMoreError: string | undefined; onLoadMore: () => void; onSearchQueryChange: (query: string) => void; onSearchKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void; onSearchNavigate: (turnId: string) => void; onNavigate: (turnId: string) => void; setOutlineButton: (turnId: string, element: HTMLButtonElement | null) => void }): React.JSX.Element {
   return (
     <div className="conversation-layout">
       <nav className="outline-panel" aria-label="Turn outline">
@@ -69,6 +67,11 @@ function Conversation({ thread, activeTurnId, searchQuery, searchResults, select
       </nav>
       <div className="conversation" aria-label="Conversation">
         <div className="conversation-heading"><div><p className="empty-kicker">Conversation</p><h2>{thread.title}</h2></div><span className="thread-status">{thread.status}</span></div>
+        <div className="pagination-controls">
+          {thread.paging.hasMore ? <button type="button" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? "Loading earlier turns…" : "Load earlier turns"}</button> : <span className="panel-note">No more loaded turns.</span>}
+          {loadMoreError === undefined ? null : <p className="error-summary">{loadMoreError}</p>}
+        </div>
+        {thread.turns.length === 0 ? <div className="conversation-empty"><p className="empty-kicker">Conversation</p><h2>No readable turns</h2><p>This thread has no conversation content available.</p></div> : null}
         {thread.turns.map((turn) => (
           <article className="turn-card" data-turn-id={turn.id} key={turn.id}>
             <header className="turn-heading">
@@ -94,6 +97,8 @@ function App(): React.JSX.Element {
   const [selectedThread, setSelectedThread] = useState<ConversationThreadView | undefined>();
   const [selectedThreadState, setSelectedThreadState] = useState<LoadState>("idle");
   const [selectedThreadError, setSelectedThreadError] = useState<string | undefined>();
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState<string | undefined>();
   const [activeTurnId, setActiveTurnId] = useState<string | undefined>();
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -159,6 +164,8 @@ function App(): React.JSX.Element {
       setSelectedSearchIndex(-1);
       setSearchError(undefined);
       setRunningTurnId(undefined);
+      setLoadingMore(false);
+      setLoadMoreError(undefined);
       return;
     }
     let active = true;
@@ -170,6 +177,8 @@ function App(): React.JSX.Element {
     navigationTarget.current = undefined;
     setActiveTurnId(undefined);
     setRunningTurnId(undefined);
+    setLoadingMore(false);
+    setLoadMoreError(undefined);
     setSelectedThreadState("loading");
     setSelectedThreadError(undefined);
     void window.threadPath.readThread(selectedThreadId).then((thread) => {
@@ -300,6 +309,26 @@ function App(): React.JSX.Element {
     }
   };
 
+  const handleLoadMore = async (): Promise<void> => {
+    if (selectedThreadId === undefined || loadingMore || selectedThread?.paging.hasMore !== true) return;
+    const beforeTop = window.scrollY;
+    const beforeHeight = document.documentElement.scrollHeight;
+    setLoadingMore(true);
+    setLoadMoreError(undefined);
+    try {
+      const nextThread = await window.threadPath.loadMoreTurns(selectedThreadId);
+      setSelectedThread((current) => current?.id === nextThread.id ? nextThread : current);
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+        const afterHeight = document.documentElement.scrollHeight;
+        window.scrollTo({ top: preserveScrollTop(beforeTop, beforeHeight, afterHeight), behavior: "auto" });
+      }));
+    } catch (error: unknown) {
+      setLoadMoreError(errorMessage(error));
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
   const handleNavigate = useCallback((turnId: string): void => {
     if (!scrollToTurn(turnId)) return;
     navigationTarget.current = turnId;
@@ -353,8 +382,7 @@ function App(): React.JSX.Element {
           {selectedThreadState === "idle" ? <div className="details-empty"><p className="empty-kicker">Conversation</p><h2>Select a thread</h2><p>Choose a thread to read its linear conversation.</p></div> : null}
           {selectedThreadState === "loading" ? <p className="panel-note">Loading conversation…</p> : null}
           {selectedThreadState === "error" ? <p className="error-summary">{selectedThreadError}</p> : null}
-          {selectedThreadState === "empty" && selectedThread !== undefined ? <Conversation thread={selectedThread} activeTurnId={activeTurnId} searchQuery={searchQuery} searchResults={searchResults} selectedSearchIndex={selectedSearchIndex} searchError={searchError} onSearchQueryChange={setSearchQuery} onSearchKeyDown={handleSearchKeyDown} onSearchNavigate={handleNavigate} onNavigate={handleNavigate} setOutlineButton={setOutlineButton} /> : null}
-          {selectedThreadState === "ready" && selectedThread !== undefined ? <Conversation thread={selectedThread} activeTurnId={activeTurnId} searchQuery={searchQuery} searchResults={searchResults} selectedSearchIndex={selectedSearchIndex} searchError={searchError} onSearchQueryChange={setSearchQuery} onSearchKeyDown={handleSearchKeyDown} onSearchNavigate={handleNavigate} onNavigate={handleNavigate} setOutlineButton={setOutlineButton} /> : null}
+          {(selectedThreadState === "empty" || selectedThreadState === "ready") && selectedThread !== undefined ? <Conversation thread={selectedThread} activeTurnId={activeTurnId} searchQuery={searchQuery} searchResults={searchResults} selectedSearchIndex={selectedSearchIndex} searchError={searchError} loadingMore={loadingMore} loadMoreError={loadMoreError} onLoadMore={() => void handleLoadMore()} onSearchQueryChange={setSearchQuery} onSearchKeyDown={handleSearchKeyDown} onSearchNavigate={handleNavigate} onNavigate={handleNavigate} setOutlineButton={setOutlineButton} /> : null}
           {selectedThread !== undefined && selectedThreadState !== "loading" && selectedThreadState !== "error" ? (
             <form className="turn-composer" onSubmit={(event) => { event.preventDefault(); void handleStartTurn(); }}>
               <label htmlFor="turn-input">Send a message</label>

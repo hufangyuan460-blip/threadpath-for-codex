@@ -25,6 +25,7 @@ async function main(): Promise<void> {
   const client: ConversationClient = {
     listThreads: async () => [],
     readThread: async () => fixtureThread,
+    listTurns: async () => ({ turns: fixtureThread.turns ?? [] }),
     startTurn: async () => ({ id: "turn-live" }),
     onNotification: (listener) => { notificationListener = listener; return () => { notificationListener = undefined; }; },
   };
@@ -57,7 +58,7 @@ async function main(): Promise<void> {
     { kind: "text", id: "item-user-2", role: "user", text: "What did you find?" },
     { kind: "text", id: "item-assistant-2", role: "assistant", text: "The project contains a protocol package." },
   ]);
-  assert.deepEqual(toConversationThreadView({ id: "empty", turns: [] }), { id: "empty", title: "Untitled thread", status: "unknown", turns: [], outline: [] });
+  assert.deepEqual(toConversationThreadView({ id: "empty", turns: [] }), { id: "empty", title: "Untitled thread", status: "unknown", turns: [], outline: [], paging: { orderedTurnIds: [], hasMore: false, isLoadingMore: false } });
 
   await assert.rejects(service.readThread(" invalid-id"), (error: unknown) => error instanceof Error && error.name === "ConfigurationError");
   const updates: string[] = [];

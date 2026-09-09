@@ -28,7 +28,7 @@ async function verifyHappyPath(hasExistingThread: boolean, expectedOutcome: "com
       const threadId = threads[0]?.id;
       assert.equal(threadId, "existing-thread");
       await client.readThread(threadId);
-      await client.listTurns(threadId, 10);
+      await client.listTurns(threadId, { limit: 10 });
     }
     const startedThread = await client.startThread({ cwd, ephemeral: true });
     assert.equal(startedThread.id, "new-thread");

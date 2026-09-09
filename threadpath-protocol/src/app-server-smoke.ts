@@ -36,8 +36,8 @@ async function main(): Promise<void> {
     } else {
       const thread = await client.readThread(existingThreadId);
       log("thread/read OK", { threadId: thread.id, hasTurns: thread.turns !== undefined });
-      const turns = await client.listTurns(existingThreadId, 10);
-      log("thread/turns/list OK", { count: turns.length });
+      const turns = await client.listTurns(existingThreadId, { limit: 10 });
+      log("thread/turns/list OK", { count: turns.turns.length, hasMore: turns.nextCursor !== undefined });
     }
 
     const thread = await client.startThread({ cwd, ephemeral: true, approvalPolicy: "never", sandbox: "read-only" });

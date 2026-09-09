@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { errorFromServer, getThread, getThreads, getTurns, isJsonObject, parseInitializeResult, terminalTurnEvent, type JsonObject } from "./protocol.ts";
+import { errorFromServer, getThread, getThreads, getTurnPage, isJsonObject, parseInitializeResult, readString, terminalTurnEvent, type JsonObject } from "./protocol.ts";
 
 const fixtureDirectory = fileURLToPath(new URL("../fixtures/", import.meta.url));
 
@@ -57,7 +57,13 @@ async function main(): Promise<void> {
   assert.equal(getThread(asObject(threadRead[1]).result)?.turns?.[0]?.id, "turn-1");
   const turnsList = await readJsonLines("turns-list.jsonl");
   assert.equal(turnsList.length, 2);
-  assert.deepEqual(getTurns(asObject(turnsList[1]).result), [{ id: "turn-1", status: "completed" }]);
+  assert.deepEqual(getTurnPage(asObject(turnsList[1]).result), { turns: [{ id: "turn-1", status: "completed" }] });
+  const pagedTurns = await readJsonLines("turns-list-pages.jsonl");
+  const firstPage = getTurnPage(asObject(pagedTurns[1]).result);
+  assert.equal(firstPage.turns.length, 2);
+  assert.equal(firstPage.nextCursor, "cursor-older");
+  const secondRequestParams = asObject(pagedTurns[2]).params;
+  assert.equal(isJsonObject(secondRequestParams) ? readString(secondRequestParams, "cursor") : undefined, "cursor-older");
 
   for (const [name, method] of [["thread-start.jsonl", "thread/start"], ["turn-start.jsonl", "turn/start"]] as const) {
     const messages = await readJsonLines(name);

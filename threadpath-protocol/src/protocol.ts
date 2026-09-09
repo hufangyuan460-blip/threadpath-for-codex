@@ -72,6 +72,14 @@ export class NetworkTimeoutError extends AppServerError {
 export interface ThreadSummary { id: string; title?: string; status?: string; turnCount?: number; createdAt?: string; }
 export interface Thread extends ThreadSummary { turns?: Turn[]; }
 export interface Turn { id: string; status?: string; createdAt?: string; items?: TurnItem[]; }
+export interface TurnPage {
+  turns: Turn[];
+  nextCursor?: string;
+}
+export interface TurnListOptions {
+  limit?: number;
+  cursor?: string;
+}
 export interface TurnItem { id?: string; type?: string; role?: string; text?: string; content?: JsonValue; name?: string; status?: string; summary?: string; command?: string; aggregatedOutput?: string; }
 export interface TurnEvent { method: string; params: JsonObject; }
 export interface TerminalTurnEvent extends TurnEvent {
@@ -183,11 +191,14 @@ export function getThread(value: JsonValue): Thread | undefined {
 function parseTurn(value: JsonObject): Turn | undefined {
   const id = readString(value, "id");
   if (id === undefined) return undefined;
+  const status = readString(value, "status");
+  const createdAt = readString(value, "createdAt") ?? readString(value, "timestamp");
+  const items = Array.isArray(value.items) ? value.items.flatMap((item) => isJsonObject(item) ? [parseTurnItem(item)] : []) : undefined;
   return {
     id,
-    status: readString(value, "status"),
-    createdAt: readString(value, "createdAt") ?? readString(value, "timestamp"),
-    items: Array.isArray(value.items) ? value.items.flatMap((item) => isJsonObject(item) ? [parseTurnItem(item)] : []) : undefined,
+    ...(status === undefined ? {} : { status }),
+    ...(createdAt === undefined ? {} : { createdAt }),
+    ...(items === undefined ? {} : { items }),
   };
 }
 
@@ -216,12 +227,14 @@ function parseTurnItem(value: JsonObject): TurnItem {
 }
 
 export function getTurns(value: JsonValue): Turn[] {
-  if (!isJsonObject(value) || !Array.isArray(value.data)) return [];
-  return value.data.flatMap((item) => {
-    if (!isJsonObject(item)) return [];
-    const id = readString(item, "id");
-    return id === undefined ? [] : [{ id, status: readString(item, "status") }];
-  });
+  return getTurnPage(value).turns;
+}
+
+export function getTurnPage(value: JsonValue): TurnPage {
+  if (!isJsonObject(value) || !Array.isArray(value.data)) return { turns: [] };
+  const nextCursor = readString(value, "nextCursor") ?? readString(value, "next_cursor") ?? readString(value, "cursor");
+  const turns = value.data.flatMap((item) => isJsonObject(item) ? [parseTurn(item)].filter((turn): turn is Turn => turn !== undefined) : []);
+  return { turns, ...(nextCursor === undefined ? {} : { nextCursor }) };
 }
 
 export function getThreadId(value: JsonValue): string | undefined {
