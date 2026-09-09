@@ -58,6 +58,8 @@ npm run typecheck
 npm test
 ```
 
+GitHub Actions 使用 Windows、固定的 Node.js/pnpm 版本和 `pnpm install --frozen-lockfile`，只运行 fake app-server fixture 的 typecheck、test 和 build，并上传日志与构建产物。`npm run smoke` 或对应的真实协议冒烟测试仍需在本地运行，因为它依赖 Codex 登录状态和上游网络，不属于 CI 门禁。
+
 默认测试工作目录是当前项目目录 `D:\threadPath`。如需测试其他项目：
 
 ```powershell
@@ -106,7 +108,7 @@ npm run smoke
 
 ThreadPath for Codex is an independent desktop client project designed to make Codex CLI conversations easier to browse, search, and navigate. It also lays the foundation for future thread forking, tree views, DAG visualization, and branch comparison.
 
-The project has completed `v0.0.1` protocol validation, the `M0` desktop shell, `M1-A` lifecycle integration, `M1-B` thread loading, `M2-A` read-only linear conversation rendering, `M2-B` minimal turn sending and streaming updates, `M3-A` turn outline navigation, and `M3-B` scroll-linked active-turn highlighting, and now has `M3-C` loaded-turn search. The Electron main process owns the app-server and conversation service; cross-thread and unloaded-page search, pagination, and virtualization are not included.
+The project has completed `v0.0.1` protocol validation, the `M0` desktop shell, `M1-A` lifecycle integration, `M1-B` thread loading, `M2-A` read-only linear conversation rendering, `M2-B` minimal turn sending and streaming updates, `M3-A` turn outline navigation, `M3-B` scroll-linked active-turn highlighting, `M3-C` loaded-turn search, `M4-A` paginated turn loading, and `M4-B` conversation virtualization. The Electron main process owns the app-server and conversation service; cross-thread and unloaded-page search, Tree View, and DAG are not included.
 
 ### Current capabilities
 
@@ -127,7 +129,10 @@ The project has completed `v0.0.1` protocol validation, the `M0` desktop shell, 
 - Generates a safe turn outline from typed conversation data and supports keyboard/click navigation to stable anchors;
 - Computes the active turn from scroll position, highlights its outline entry, and keeps programmatic navigation synchronized;
 - Searches the current loaded thread with debounced, case-insensitive substring matching and stable result navigation;
+- Loads earlier turns with cursor pagination and stable-ID merging, and virtualizes the conversation list with `react-virtuoso`;
 - Builds protocol knowledge for the future Electron desktop client.
+
+GitHub Actions runs the same authentication- and network-independent fixture typecheck, test, and build on Windows after a frozen pnpm install. The real `smoke` command remains a local check because it requires Codex authentication and upstream network access.
 
 ### Quick start
 

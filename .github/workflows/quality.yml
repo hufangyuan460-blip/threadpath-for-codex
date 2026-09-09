@@ -1,0 +1,66 @@
+name: Quality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        shell: pwsh
+        run: pnpm.cmd install --frozen-lockfile
+
+      - name: Typecheck
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+          $output = & pnpm.cmd typecheck 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | Tee-Object artifacts/typecheck.log
+          if ($exitCode -ne 0) { exit $exitCode }
+
+      - name: Test fixtures
+        shell: pwsh
+        run: |
+          $output = & pnpm.cmd test 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | Tee-Object artifacts/test.log
+          if ($exitCode -ne 0) { exit $exitCode }
+
+      - name: Build desktop app
+        shell: pwsh
+        run: |
+          $output = & pnpm.cmd build 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | Tee-Object artifacts/build.log
+          if ($exitCode -ne 0) { exit $exitCode }
+
+      - name: Upload test results and build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-results
+          path: |
+            artifacts/**
+            apps/desktop/out/**
+          if-no-files-found: ignore

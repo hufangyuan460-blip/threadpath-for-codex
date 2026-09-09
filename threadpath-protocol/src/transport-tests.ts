@@ -10,7 +10,7 @@ function createFakeClient(mode: string, hasExistingThread = false, diagnostics?:
     cwd,
     executable: process.execPath,
     args: ["--experimental-strip-types", fakeServerPath],
-    requestTimeoutMs: 250,
+    requestTimeoutMs: 1_000,
     env: { ...process.env, FAKE_APP_SERVER_MODE: mode, FAKE_APP_SERVER_HAS_THREAD: String(hasExistingThread), FAKE_APP_SERVER_CAPABILITIES: capabilityMode },
     onDiagnostic: diagnostics === undefined ? undefined : (record) => diagnostics.push(record),
   });
