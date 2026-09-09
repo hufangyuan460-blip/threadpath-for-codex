@@ -1,4 +1,5 @@
 import type { ConversationItemView, ConversationThreadView, ConversationTurnView, ConversationUpdate } from "../shared/api.ts";
+import { buildTurnOutline } from "../shared/outline.ts";
 
 export function conversationUpdateKey(update: ConversationUpdate): string {
   return JSON.stringify(update);
@@ -14,7 +15,7 @@ export function applyConversationUpdate(thread: ConversationThreadView, update: 
   const turns = [...thread.turns];
   if (turnIndex < 0) turns.push(nextTurn);
   else turns[turnIndex] = nextTurn;
-  return { ...thread, turns };
+  return { ...thread, turns, outline: buildTurnOutline(turns) };
 }
 
 function updateTurn(turn: ConversationTurnView, update: ConversationUpdate): ConversationTurnView {

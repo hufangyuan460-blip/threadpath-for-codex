@@ -38,9 +38,17 @@ export interface ConversationThreadView {
   readonly title: string;
   readonly status: string;
   readonly turns: readonly ConversationTurnView[];
+  readonly outline: readonly TurnOutlineEntry[];
 }
 
 export type ThreadDetails = ConversationThreadView;
+
+export interface TurnOutlineEntry {
+  readonly turnId: string;
+  readonly index: number;
+  readonly label: string;
+  readonly status: string;
+}
 
 export type ConversationUpdate =
   | { readonly type: "turn/started"; readonly threadId: string; readonly turnId: string }

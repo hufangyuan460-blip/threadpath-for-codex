@@ -25,22 +25,41 @@ function ConversationItem({ item }: { item: ConversationItemView }): React.JSX.E
   return <div className={`conversation-item text-item role-${item.role}`}><span className="item-label">{item.role}</span><p>{item.text}</p></div>;
 }
 
-function Conversation({ thread }: { thread: ConversationThreadView }): React.JSX.Element {
+function scrollToTurn(turnId: string): void {
+  const target = [...document.querySelectorAll<HTMLElement>("[data-turn-id]")].find((element) => element.dataset.turnId === turnId);
+  target?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function Conversation({ thread, onNavigate }: { thread: ConversationThreadView; onNavigate: (turnId: string) => void }): React.JSX.Element {
   if (thread.turns.length === 0) {
     return <div className="conversation-empty"><p className="empty-kicker">Conversation</p><h2>No readable turns</h2><p>This thread has no conversation content available.</p></div>;
   }
   return (
-    <div className="conversation" aria-label="Conversation">
-      <div className="conversation-heading"><div><p className="empty-kicker">Conversation</p><h2>{thread.title}</h2></div><span className="thread-status">{thread.status}</span></div>
-      {thread.turns.map((turn) => (
-        <article className="turn-card" data-turn-id={turn.id} key={turn.id}>
-          <header className="turn-heading">
-            <div><span className="turn-index">Turn {turn.index}</span><span className="turn-status">{turn.status}</span></div>
-            {turn.createdAt === undefined ? null : <time dateTime={turn.createdAt}>{turn.createdAt}</time>}
-          </header>
-          {turn.items.length === 0 ? <p className="partial-note">No readable items were provided for this turn.</p> : <div className="turn-items">{turn.items.map((item) => <ConversationItem item={item} key={item.id} />)}</div>}
-        </article>
-      ))}
+    <div className="conversation-layout">
+      <nav className="outline-panel" aria-label="Turn outline">
+        <div className="outline-heading"><p className="empty-kicker">Outline</p><span>{thread.outline.length} turns</span></div>
+        <ol className="outline-list">
+          {thread.outline.map((entry) => (
+            <li key={entry.turnId}>
+              <button type="button" className="outline-entry" onClick={() => onNavigate(entry.turnId)} aria-label={`Go to turn ${entry.index}: ${entry.label}`}>
+                <span className="outline-index">{entry.index}</span><span className="outline-copy"><strong>{entry.label}</strong><small>{entry.status}</small></span>
+              </button>
+            </li>
+          ))}
+        </ol>
+      </nav>
+      <div className="conversation" aria-label="Conversation">
+        <div className="conversation-heading"><div><p className="empty-kicker">Conversation</p><h2>{thread.title}</h2></div><span className="thread-status">{thread.status}</span></div>
+        {thread.turns.map((turn) => (
+          <article className="turn-card" data-turn-id={turn.id} key={turn.id}>
+            <header className="turn-heading">
+              <div><span className="turn-index">Turn {turn.index}</span><span className="turn-status">{turn.status}</span></div>
+              {turn.createdAt === undefined ? null : <time dateTime={turn.createdAt}>{turn.createdAt}</time>}
+            </header>
+            {turn.items.length === 0 ? <p className="partial-note">No readable items were provided for this turn.</p> : <div className="turn-items">{turn.items.map((item) => <ConversationItem item={item} key={item.id} />)}</div>}
+          </article>
+        ))}
+      </div>
     </div>
   );
 }
@@ -185,8 +204,8 @@ function App(): React.JSX.Element {
           {selectedThreadState === "idle" ? <div className="details-empty"><p className="empty-kicker">Conversation</p><h2>Select a thread</h2><p>Choose a thread to read its linear conversation.</p></div> : null}
           {selectedThreadState === "loading" ? <p className="panel-note">Loading conversation…</p> : null}
           {selectedThreadState === "error" ? <p className="error-summary">{selectedThreadError}</p> : null}
-          {selectedThreadState === "empty" && selectedThread !== undefined ? <Conversation thread={selectedThread} /> : null}
-          {selectedThreadState === "ready" && selectedThread !== undefined ? <Conversation thread={selectedThread} /> : null}
+          {selectedThreadState === "empty" && selectedThread !== undefined ? <Conversation thread={selectedThread} onNavigate={scrollToTurn} /> : null}
+          {selectedThreadState === "ready" && selectedThread !== undefined ? <Conversation thread={selectedThread} onNavigate={scrollToTurn} /> : null}
           {selectedThread !== undefined && selectedThreadState !== "loading" && selectedThreadState !== "error" ? (
             <form className="turn-composer" onSubmit={(event) => { event.preventDefault(); void handleStartTurn(); }}>
               <label htmlFor="turn-input">Send a message</label>

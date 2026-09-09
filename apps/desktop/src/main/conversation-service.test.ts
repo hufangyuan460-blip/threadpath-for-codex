@@ -48,11 +48,15 @@ async function main(): Promise<void> {
       { kind: "text", id: "turn-1:item-6", role: "assistant", text: "(No text provided)" },
     ],
   });
+  assert.deepEqual(view.outline, [
+    { turnId: "turn-1", index: 1, label: "Please inspect this project.", status: "completed" },
+    { turnId: "turn-2", index: 2, label: "What did you find?", status: "active" },
+  ]);
   assert.deepEqual(view.turns[1]?.items, [
     { kind: "text", id: "item-user-2", role: "user", text: "What did you find?" },
     { kind: "text", id: "item-assistant-2", role: "assistant", text: "The project contains a protocol package." },
   ]);
-  assert.deepEqual(toConversationThreadView({ id: "empty", turns: [] }), { id: "empty", title: "Untitled thread", status: "unknown", turns: [] });
+  assert.deepEqual(toConversationThreadView({ id: "empty", turns: [] }), { id: "empty", title: "Untitled thread", status: "unknown", turns: [], outline: [] });
 
   await assert.rejects(service.readThread(" invalid-id"), (error: unknown) => error instanceof Error && error.name === "ConfigurationError");
   const updates: string[] = [];

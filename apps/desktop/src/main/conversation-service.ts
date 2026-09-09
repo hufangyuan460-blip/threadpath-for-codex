@@ -1,6 +1,7 @@
 import { ConfigurationError, ProtocolError, type JsonObject, type JsonValue, type Thread, type Turn, type TurnInput, type TurnItem, isJsonObject, readString } from "../../../../threadpath-protocol/src/protocol.ts";
 import type { ConversationItemView, ConversationThreadView, ConversationTurnView, ConversationUpdate, StartTurnResult } from "../shared/api";
 import { type ThreadClient, type ThreadClientProvider, validateThreadId } from "./thread-service.ts";
+import { buildTurnOutline } from "../shared/outline.ts";
 
 const MAX_DISPLAY_SUMMARY_LENGTH = 500;
 
@@ -80,11 +81,13 @@ export class ConversationService {
 }
 
 export function toConversationThreadView(thread: Thread): ConversationThreadView {
+  const turns = (thread.turns ?? []).map((turn, index) => toConversationTurnView(turn, index));
   return {
     id: thread.id,
     title: thread.title?.trim() || "Untitled thread",
     status: thread.status?.trim() || "unknown",
-    turns: (thread.turns ?? []).map((turn, index) => toConversationTurnView(turn, index)),
+    turns,
+    outline: buildTurnOutline(turns),
   };
 }
 
