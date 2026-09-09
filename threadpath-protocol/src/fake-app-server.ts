@@ -21,6 +21,10 @@ lines.on("line", (line: string) => {
   }
   const id = typeof message.id === "number" ? message.id : undefined;
   if (id === undefined) return;
+  if (mode === "server-error") {
+    send({ jsonrpc: "2.0", id, error: { code: "server_failure", message: `Fake server rejected ${message.method}` } });
+    return;
+  }
   switch (message.method) {
     case "initialize": send({ jsonrpc: "2.0", id, result: { serverInfo: { name: "fake-app-server" } } }); break;
     case "thread/list": send({ jsonrpc: "2.0", id, result: { data: hasExistingThread ? [{ id: "existing-thread", title: "Existing" }] : [] } }); break;
@@ -29,6 +33,7 @@ lines.on("line", (line: string) => {
     case "thread/start": send({ jsonrpc: "2.0", id, result: { thread: { id: "new-thread" } } }); break;
     case "turn/start":
       send({ jsonrpc: "2.0", id, result: { turn: { id: "turn-1" } } });
+      if (mode === "timeout") break;
       setTimeout(() => {
         const params: JsonObject = { turn: { id: "turn-1" } };
         if (mode === "failed") params.error = { code: "network_timeout", message: "Responses connection timed out" };

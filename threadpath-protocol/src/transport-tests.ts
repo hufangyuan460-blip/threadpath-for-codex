@@ -57,6 +57,34 @@ async function verifyServerError(): Promise<void> {
     });
   });
 }
+async function verifyHighLevelErrors(): Promise<void> {
+  const checks: Array<(client: AppServerClient) => Promise<unknown>> = [
+    (client) => client.initialize(),
+    (client) => client.listThreads(),
+    (client) => client.readThread("existing-thread"),
+    (client) => client.listTurns("existing-thread"),
+    (client) => client.startThread({ cwd, ephemeral: true }),
+    (client) => client.startTurn("existing-thread", []),
+  ];
+  for (const check of checks) {
+    const client = createFakeClient("server-error");
+    try {
+      await assert.rejects(check(client), (error: unknown) => {
+        assert.ok(error instanceof AppServerError);
+        assert.equal(error.category, "server");
+        return true;
+      });
+    } finally {
+      await client.close();
+    }
+  }
+
+  await withClient("timeout", false, async (client) => {
+    const thread = await client.startThread({ cwd, ephemeral: true });
+    const turn = await client.startTurn(thread.id, []);
+    await assert.rejects(client.waitForTurnTerminal(turn.id, 25), TimeoutError);
+  });
+}
 async function verifyDiagnostics(): Promise<void> {
   const diagnostics: DiagnosticRecord[] = [];
   const client = createFakeClient("completed", false, diagnostics);
@@ -91,6 +119,7 @@ async function main(): Promise<void> {
   await verifyUnsupportedServerRequest("server-request-string");
   await verifyTimeout();
   await verifyServerError();
+  await verifyHighLevelErrors();
   await verifyDiagnostics();
   await verifyEarlyExit();
   await verifyNonJsonOutput();
