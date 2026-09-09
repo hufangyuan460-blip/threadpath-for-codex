@@ -71,7 +71,8 @@ export class NetworkTimeoutError extends AppServerError {
 
 export interface ThreadSummary { id: string; title?: string; status?: string; turnCount?: number; createdAt?: string; }
 export interface Thread extends ThreadSummary { turns?: Turn[]; }
-export interface Turn { id: string; status?: string; }
+export interface Turn { id: string; status?: string; createdAt?: string; items?: TurnItem[]; }
+export interface TurnItem { id?: string; type?: string; role?: string; text?: string; content?: JsonValue; name?: string; status?: string; summary?: string; command?: string; aggregatedOutput?: string; }
 export interface TurnEvent { method: string; params: JsonObject; }
 export interface TerminalTurnEvent extends TurnEvent {
   turnId: string;
@@ -175,13 +176,42 @@ export function getThread(value: JsonValue): Thread | undefined {
     status: readString(source, "status"),
     ...(turnCount === undefined ? {} : { turnCount }),
     ...(createdAt === undefined ? {} : { createdAt }),
-    turns: Array.isArray(source.turns)
-      ? source.turns.flatMap((item) => {
-          if (!isJsonObject(item)) return [];
-          const turnId = readString(item, "id");
-          return turnId === undefined ? [] : [{ id: turnId, status: readString(item, "status") }];
-        })
-      : undefined,
+    turns: Array.isArray(source.turns) ? source.turns.flatMap((item) => isJsonObject(item) ? [parseTurn(item)] : []).filter((turn): turn is Turn => turn !== undefined) : undefined,
+  };
+}
+
+function parseTurn(value: JsonObject): Turn | undefined {
+  const id = readString(value, "id");
+  if (id === undefined) return undefined;
+  return {
+    id,
+    status: readString(value, "status"),
+    createdAt: readString(value, "createdAt") ?? readString(value, "timestamp"),
+    items: Array.isArray(value.items) ? value.items.flatMap((item) => isJsonObject(item) ? [parseTurnItem(item)] : []) : undefined,
+  };
+}
+
+function parseTurnItem(value: JsonObject): TurnItem {
+  const id = readString(value, "id");
+  const type = readString(value, "type");
+  const role = readString(value, "role");
+  const text = readString(value, "text");
+  const name = readString(value, "name");
+  const status = readString(value, "status");
+  const summary = readString(value, "summary");
+  const command = readString(value, "command");
+  const aggregatedOutput = readString(value, "aggregatedOutput");
+  return {
+    ...(id === undefined ? {} : { id }),
+    ...(type === undefined ? {} : { type }),
+    ...(role === undefined ? {} : { role }),
+    ...(text === undefined ? {} : { text }),
+    ...(value.content === undefined ? {} : { content: value.content }),
+    ...(name === undefined ? {} : { name }),
+    ...(status === undefined ? {} : { status }),
+    ...(summary === undefined ? {} : { summary }),
+    ...(command === undefined ? {} : { command }),
+    ...(aggregatedOutput === undefined ? {} : { aggregatedOutput }),
   };
 }
 

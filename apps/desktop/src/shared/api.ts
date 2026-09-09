@@ -20,7 +20,27 @@ export interface ThreadListItem {
   readonly createdAt?: string;
 }
 
-export type ThreadDetails = ThreadListItem;
+export interface ConversationTurnView {
+  readonly id: string;
+  readonly index: number;
+  readonly status: string;
+  readonly createdAt?: string;
+  readonly items: readonly ConversationItemView[];
+}
+
+export type ConversationItemView =
+  | { readonly kind: "text"; readonly id: string; readonly role: "user" | "assistant" | "system"; readonly text: string }
+  | { readonly kind: "tool"; readonly id: string; readonly name: string; readonly status: "running" | "completed" | "failed" | "unknown"; readonly summary?: string }
+  | { readonly kind: "status"; readonly id: string; readonly text: string };
+
+export interface ConversationThreadView {
+  readonly id: string;
+  readonly title: string;
+  readonly status: string;
+  readonly turns: readonly ConversationTurnView[];
+}
+
+export type ThreadDetails = ConversationThreadView;
 
 export interface DesktopApi {
   readonly getAppInfo: () => Promise<AppInfo>;

@@ -6,7 +6,7 @@
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
-    "test": "node --experimental-strip-types src/main/thread-service.test.ts",
+    "test": "node --experimental-strip-types src/main/thread-service.test.ts && node --experimental-strip-types src/main/conversation-service.test.ts",
     "typecheck": "tsc --noEmit",
     "build": "electron-vite build"
   },

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CodexProcessManager, type ConnectionStateSnapshot as ManagerConnectionState } from "./codex-process-manager";
 import { ThreadService } from "./thread-service";
+import { ConversationService } from "./conversation-service";
 import type { AppInfo, ConnectionStateSnapshot } from "../shared/api";
 import { ProcessError } from "../../../../threadpath-protocol/src/protocol.ts";
 
@@ -14,6 +15,7 @@ const processManager = new CodexProcessManager({
   onStateChange: ({ state }) => console.log(`[desktop] connection state: ${state}`),
 });
 const threadService = new ThreadService(processManager);
+const conversationService = new ConversationService(processManager);
 
 function publicConnectionState(snapshot: ManagerConnectionState): ConnectionStateSnapshot {
   return {
@@ -32,7 +34,7 @@ function registerApi(): void {
   ipcMain.handle("app:disconnect", async (): Promise<ConnectionStateSnapshot> => publicConnectionState(await processManager.disconnect()));
   ipcMain.handle("app:reconnect", async (): Promise<ConnectionStateSnapshot> => publicConnectionState(await processManager.reconnect()));
   ipcMain.handle("threads:list", async () => withReadyConnection(() => threadService.listThreads()));
-  ipcMain.handle("threads:read", async (_event, threadId: unknown) => withReadyConnection(() => threadService.readThread(threadId)));
+  ipcMain.handle("threads:read", async (_event, threadId: unknown) => withReadyConnection(() => conversationService.readThread(threadId)));
 }
 
 async function withReadyConnection<T>(action: () => Promise<T>): Promise<T> {

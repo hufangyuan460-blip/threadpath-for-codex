@@ -32,7 +32,7 @@ export class ThreadService {
   }
 
   async readThread(threadId: unknown): Promise<ThreadViewModel> {
-    const validThreadId = this.validateThreadId(threadId);
+    const validThreadId = validateThreadId(threadId);
     const thread = await this.clientProvider.getReadyClient().readThread(validThreadId);
     return this.toViewModel(thread);
   }
@@ -49,10 +49,11 @@ export class ThreadService {
     };
   }
 
-  private validateThreadId(threadId: unknown): string {
-    if (typeof threadId !== "string" || threadId.length === 0 || threadId !== threadId.trim() || threadId.length > 256 || /[\u0000-\u001f\u007f]/.test(threadId)) {
-      throw new ConfigurationError("threadId must be a trimmed non-empty identifier of at most 256 characters");
-    }
-    return threadId;
+}
+
+export function validateThreadId(threadId: unknown): string {
+  if (typeof threadId !== "string" || threadId.length === 0 || threadId !== threadId.trim() || threadId.length > 256 || /[\u0000-\u001f\u007f]/.test(threadId)) {
+    throw new ConfigurationError("threadId must be a trimmed non-empty identifier of at most 256 characters");
   }
+  return threadId;
 }
