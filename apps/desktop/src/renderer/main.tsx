@@ -1,9 +1,10 @@
 import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
-import type { AppInfo, ConnectionStateSnapshot, ConversationItemView, ConversationThreadView, ConversationUpdate, ThreadListItem } from "../shared/api";
+import type { AppInfo, ConnectionStateSnapshot, ConversationItemView, ConversationThreadView, ConversationUpdate, SearchResult, ThreadListItem } from "../shared/api";
 import { applyConversationUpdate, conversationUpdateKey } from "./conversation-state";
 import { chooseActiveTurnId } from "./scroll-state";
+import { moveSearchSelection, searchNavigationTarget } from "./search-navigation";
 
 type LoadState = "idle" | "loading" | "ready" | "empty" | "error";
 
@@ -34,13 +35,27 @@ function scrollToTurn(turnId: string): boolean {
   return true;
 }
 
-function Conversation({ thread, activeTurnId, onNavigate, setOutlineButton }: { thread: ConversationThreadView; activeTurnId: string | undefined; onNavigate: (turnId: string) => void; setOutlineButton: (turnId: string, element: HTMLButtonElement | null) => void }): React.JSX.Element {
+function SearchPanel({ query, results, selectedIndex, error, onQueryChange, onKeyDown, onNavigate }: { query: string; results: readonly SearchResult[]; selectedIndex: number; error: string | undefined; onQueryChange: (query: string) => void; onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void; onNavigate: (turnId: string) => void }): React.JSX.Element {
+  return (
+    <section className="search-panel" aria-label="Search loaded turns">
+      <label htmlFor="turn-search">Search loaded turns</label>
+      <input id="turn-search" type="search" value={query} onChange={(event) => onQueryChange(event.target.value)} onKeyDown={onKeyDown} placeholder="Search this thread…" />
+      <p className="search-note">Only loaded turns are searched.</p>
+      {error === undefined && query.trim() !== "" ? <p className="search-count">{results.length} match{results.length === 1 ? "" : "es"}</p> : null}
+      {error === undefined ? null : <p className="error-summary">{error}</p>}
+      {results.length === 0 ? null : <ol className="search-results">{results.map((result, index) => <li key={result.turnId}><button type="button" className={`search-result${index === selectedIndex ? " selected" : ""}`} onClick={() => onNavigate(result.turnId)}><strong>{result.label}</strong><small>{result.matchKind} · {result.snippet}</small></button></li>)}</ol>}
+    </section>
+  );
+}
+
+function Conversation({ thread, activeTurnId, searchQuery, searchResults, selectedSearchIndex, searchError, onSearchQueryChange, onSearchKeyDown, onSearchNavigate, onNavigate, setOutlineButton }: { thread: ConversationThreadView; activeTurnId: string | undefined; searchQuery: string; searchResults: readonly SearchResult[]; selectedSearchIndex: number; searchError: string | undefined; onSearchQueryChange: (query: string) => void; onSearchKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void; onSearchNavigate: (turnId: string) => void; onNavigate: (turnId: string) => void; setOutlineButton: (turnId: string, element: HTMLButtonElement | null) => void }): React.JSX.Element {
   if (thread.turns.length === 0) {
     return <div className="conversation-empty"><p className="empty-kicker">Conversation</p><h2>No readable turns</h2><p>This thread has no conversation content available.</p></div>;
   }
   return (
     <div className="conversation-layout">
       <nav className="outline-panel" aria-label="Turn outline">
+        <SearchPanel query={searchQuery} results={searchResults} selectedIndex={selectedSearchIndex} error={searchError} onQueryChange={onSearchQueryChange} onKeyDown={onSearchKeyDown} onNavigate={onSearchNavigate} />
         <div className="outline-heading"><p className="empty-kicker">Outline</p><span>{thread.outline.length} turns</span></div>
         <ol className="outline-list">
           {thread.outline.map((entry) => (
@@ -80,6 +95,10 @@ function App(): React.JSX.Element {
   const [selectedThreadState, setSelectedThreadState] = useState<LoadState>("idle");
   const [selectedThreadError, setSelectedThreadError] = useState<string | undefined>();
   const [activeTurnId, setActiveTurnId] = useState<string | undefined>();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [selectedSearchIndex, setSelectedSearchIndex] = useState(-1);
+  const [searchError, setSearchError] = useState<string | undefined>();
   const [inputText, setInputText] = useState("");
   const [startingTurn, setStartingTurn] = useState(false);
   const [runningTurnId, setRunningTurnId] = useState<string | undefined>();
@@ -135,11 +154,19 @@ function App(): React.JSX.Element {
       setSelectedThreadState("idle");
       navigationTarget.current = undefined;
       setActiveTurnId(undefined);
+      setSearchQuery("");
+      setSearchResults([]);
+      setSelectedSearchIndex(-1);
+      setSearchError(undefined);
       setRunningTurnId(undefined);
       return;
     }
     let active = true;
     seenUpdateKeys.current.clear();
+    setSearchQuery("");
+    setSearchResults([]);
+    setSelectedSearchIndex(-1);
+    setSearchError(undefined);
     navigationTarget.current = undefined;
     setActiveTurnId(undefined);
     setRunningTurnId(undefined);
@@ -156,6 +183,30 @@ function App(): React.JSX.Element {
     });
     return () => { active = false; };
   }, [selectedThreadId]);
+
+  useEffect(() => {
+    if (selectedThreadId === undefined || searchQuery.trim() === "") {
+      setSearchResults([]);
+      setSelectedSearchIndex(-1);
+      setSearchError(undefined);
+      return;
+    }
+    let active = true;
+    setSearchError(undefined);
+    const timer = window.setTimeout(() => {
+      void window.threadPath.searchTurns(selectedThreadId, searchQuery).then((results) => {
+        if (!active) return;
+        setSearchResults(results);
+        setSelectedSearchIndex(results.length === 0 ? -1 : 0);
+      }).catch((error: unknown) => {
+        if (!active) return;
+        setSearchResults([]);
+        setSelectedSearchIndex(-1);
+        setSearchError(errorMessage(error));
+      });
+    }, 200);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [selectedThreadId, searchQuery, selectedThread]);
 
   useEffect(() => {
     if (selectedThread === undefined) {
@@ -255,6 +306,22 @@ function App(): React.JSX.Element {
     setActiveTurnId(turnId);
   }, []);
 
+  const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>): void => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setSelectedSearchIndex((current) => moveSearchSelection(current, searchResults.length, "next"));
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setSelectedSearchIndex((current) => moveSearchSelection(current, searchResults.length, "previous"));
+    } else if (event.key === "Enter") {
+      const turnId = searchNavigationTarget(searchResults, selectedSearchIndex);
+      if (turnId !== undefined) {
+        event.preventDefault();
+        handleNavigate(turnId);
+      }
+    }
+  };
+
   const setOutlineButton = useCallback((turnId: string, element: HTMLButtonElement | null): void => {
     if (element === null) outlineButtons.current.delete(turnId);
     else outlineButtons.current.set(turnId, element);
@@ -286,8 +353,8 @@ function App(): React.JSX.Element {
           {selectedThreadState === "idle" ? <div className="details-empty"><p className="empty-kicker">Conversation</p><h2>Select a thread</h2><p>Choose a thread to read its linear conversation.</p></div> : null}
           {selectedThreadState === "loading" ? <p className="panel-note">Loading conversation…</p> : null}
           {selectedThreadState === "error" ? <p className="error-summary">{selectedThreadError}</p> : null}
-          {selectedThreadState === "empty" && selectedThread !== undefined ? <Conversation thread={selectedThread} activeTurnId={activeTurnId} onNavigate={handleNavigate} setOutlineButton={setOutlineButton} /> : null}
-          {selectedThreadState === "ready" && selectedThread !== undefined ? <Conversation thread={selectedThread} activeTurnId={activeTurnId} onNavigate={handleNavigate} setOutlineButton={setOutlineButton} /> : null}
+          {selectedThreadState === "empty" && selectedThread !== undefined ? <Conversation thread={selectedThread} activeTurnId={activeTurnId} searchQuery={searchQuery} searchResults={searchResults} selectedSearchIndex={selectedSearchIndex} searchError={searchError} onSearchQueryChange={setSearchQuery} onSearchKeyDown={handleSearchKeyDown} onSearchNavigate={handleNavigate} onNavigate={handleNavigate} setOutlineButton={setOutlineButton} /> : null}
+          {selectedThreadState === "ready" && selectedThread !== undefined ? <Conversation thread={selectedThread} activeTurnId={activeTurnId} searchQuery={searchQuery} searchResults={searchResults} selectedSearchIndex={selectedSearchIndex} searchError={searchError} onSearchQueryChange={setSearchQuery} onSearchKeyDown={handleSearchKeyDown} onSearchNavigate={handleNavigate} onNavigate={handleNavigate} setOutlineButton={setOutlineButton} /> : null}
           {selectedThread !== undefined && selectedThreadState !== "loading" && selectedThreadState !== "error" ? (
             <form className="turn-composer" onSubmit={(event) => { event.preventDefault(); void handleStartTurn(); }}>
               <label htmlFor="turn-input">Send a message</label>

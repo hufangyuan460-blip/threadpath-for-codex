@@ -52,6 +52,7 @@ async function main(): Promise<void> {
     { turnId: "turn-1", index: 1, label: "Please inspect this project.", status: "completed" },
     { turnId: "turn-2", index: 2, label: "What did you find?", status: "active" },
   ]);
+  assert.equal((await service.searchTurns("thread-conversation", "contains"))[0]?.turnId, "turn-2");
   assert.deepEqual(view.turns[1]?.items, [
     { kind: "text", id: "item-user-2", role: "user", text: "What did you find?" },
     { kind: "text", id: "item-assistant-2", role: "assistant", text: "The project contains a protocol package." },

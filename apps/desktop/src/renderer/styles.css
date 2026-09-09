@@ -24,11 +24,24 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.02em; }
 .details-panel { padding: 48px; }
 .conversation-layout { display: grid; grid-template-columns: 190px minmax(0, 820px); align-items: start; gap: 24px; }
 .outline-panel { position: sticky; top: 24px; max-height: calc(100vh - 210px); overflow: auto; padding: 14px 0; }
+.search-panel { margin-bottom: 24px; padding-bottom: 18px; border-bottom: 1px solid #293342; }
+.search-panel label { display: block; margin-bottom: 8px; color: #b9c7d9; font-size: 12px; font-weight: 700; }
+.search-panel input { width: 100%; padding: 9px 10px; border: 1px solid #3a485c; border-radius: 8px; color: #e8edf5; background: #101620; font: inherit; font-size: 12px; }
+.search-panel input:focus { outline: 2px solid #6082af; outline-offset: 1px; }
+.search-note, .search-count { margin: 7px 0 0; color: #718095; font-size: 11px; line-height: 1.4; }
+.search-count { color: #9fb9df; }
+.search-results { display: grid; gap: 5px; max-height: 240px; margin: 10px 0 0; padding: 0; overflow: auto; list-style: none; }
+.search-result { display: grid; gap: 5px; width: 100%; padding: 8px; border: 1px solid transparent; border-radius: 7px; color: #dce5f2; background: transparent; text-align: left; }
+.search-result:hover, .search-result.selected { border-color: #3d5370; background: #202b3a; }
+.search-result strong, .search-result small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-result strong { color: #dfe9f6; font-size: 11px; }
+.search-result small { color: #8290a1; font-size: 10px; }
 .outline-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 12px; color: #718095; font-size: 12px; }
 .outline-heading .empty-kicker { margin-bottom: 0; }
 .outline-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .outline-entry { display: grid; grid-template-columns: 26px 1fr; gap: 9px; width: 100%; padding: 9px; border: 1px solid transparent; color: #cbd7e6; background: transparent; text-align: left; }
 .outline-entry:hover, .outline-entry:focus-visible { border-color: #3d5370; background: #202b3a; }
+.outline-entry.active { border-color: #6082af; background: #263b56; box-shadow: inset 3px 0 #8bb2e5; }
 .outline-index { display: grid; width: 24px; height: 24px; place-items: center; border-radius: 7px; color: #9fb9df; background: #263b56; font-size: 12px; font-weight: 800; }
 .outline-copy { display: grid; min-width: 0; gap: 4px; }
 .outline-copy strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }

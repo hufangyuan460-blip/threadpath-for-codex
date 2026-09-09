@@ -50,6 +50,17 @@ export interface TurnOutlineEntry {
   readonly status: string;
 }
 
+export type SearchMatchKind = "title" | "user" | "assistant" | "status";
+
+export interface SearchResult {
+  readonly turnId: string;
+  readonly index: number;
+  readonly label: string;
+  readonly snippet: string;
+  readonly matchKind: SearchMatchKind;
+  readonly score: number;
+}
+
 export type ConversationUpdate =
   | { readonly type: "turn/started"; readonly threadId: string; readonly turnId: string }
   | { readonly type: "item/started"; readonly threadId: string; readonly turnId: string; readonly itemId: string; readonly itemType?: string; readonly itemName?: string }
@@ -70,6 +81,7 @@ export interface DesktopApi {
   readonly reconnect: () => Promise<ConnectionStateSnapshot>;
   readonly listThreads: () => Promise<ThreadListItem[]>;
   readonly readThread: (threadId: string) => Promise<ThreadDetails>;
+  readonly searchTurns: (threadId: string, query: string) => Promise<SearchResult[]>;
   readonly startTurn: (threadId: string, text: string) => Promise<StartTurnResult>;
   readonly onConversationUpdate: (listener: (update: ConversationUpdate) => void) => () => void;
 }

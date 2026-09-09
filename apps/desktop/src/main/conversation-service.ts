@@ -1,7 +1,9 @@
 import { ConfigurationError, ProtocolError, type JsonObject, type JsonValue, type Thread, type Turn, type TurnInput, type TurnItem, isJsonObject, readString } from "../../../../threadpath-protocol/src/protocol.ts";
-import type { ConversationItemView, ConversationThreadView, ConversationTurnView, ConversationUpdate, StartTurnResult } from "../shared/api";
+import type { ConversationItemView, ConversationThreadView, ConversationTurnView, ConversationUpdate, SearchResult, StartTurnResult } from "../shared/api";
 import { type ThreadClient, type ThreadClientProvider, validateThreadId } from "./thread-service.ts";
 import { buildTurnOutline } from "../shared/outline.ts";
+import { applyConversationUpdate } from "../shared/conversation-state.ts";
+import { searchLoadedTurns } from "./search-service.ts";
 
 const MAX_DISPLAY_SUMMARY_LENGTH = 500;
 
@@ -21,6 +23,7 @@ export class ConversationService {
   private readonly updateListeners = new Set<ConversationUpdateListener>();
   private boundClient: ConversationClient | undefined;
   private unsubscribeNotifications: (() => void) | undefined;
+  private readonly loadedThreads = new Map<string, ConversationThreadView>();
   private activeTurn: { threadId: string; turnId: string } | undefined;
   private startingTurn = false;
 
@@ -32,7 +35,16 @@ export class ConversationService {
     const validThreadId = validateThreadId(threadId);
     const client = this.clientProvider.getReadyClient();
     this.bindNotifications(client);
-    return toConversationThreadView(await client.readThread(validThreadId));
+    const view = toConversationThreadView(await client.readThread(validThreadId));
+    this.loadedThreads.set(validThreadId, view);
+    return view;
+  }
+
+  async searchTurns(threadId: unknown, query: unknown): Promise<SearchResult[]> {
+    const validThreadId = validateThreadId(threadId);
+    if (typeof query !== "string") throw new ConfigurationError("search query must be plain text");
+    const thread = this.loadedThreads.get(validThreadId);
+    return thread === undefined ? [] : searchLoadedTurns(thread, query);
   }
 
   async startTurn(threadId: unknown, text: unknown): Promise<StartTurnResult> {
@@ -63,6 +75,7 @@ export class ConversationService {
     this.unsubscribeNotifications = undefined;
     this.boundClient = undefined;
     this.activeTurn = undefined;
+    this.loadedThreads.clear();
   }
 
   private bindNotifications(client: ConversationClient): void {
@@ -75,6 +88,8 @@ export class ConversationService {
       if (update.type === "turn/completed" || update.type === "turn/failed" || update.type === "turn/interrupted") {
         if (this.activeTurn?.threadId === update.threadId && this.activeTurn.turnId === update.turnId) this.activeTurn = undefined;
       }
+      const loadedThread = this.loadedThreads.get(update.threadId);
+      if (loadedThread !== undefined) this.loadedThreads.set(update.threadId, applyConversationUpdate(loadedThread, update));
       for (const listener of this.updateListeners) listener(update);
     });
   }

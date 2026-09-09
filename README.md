@@ -10,7 +10,7 @@
 
 ThreadPath for Codex 是一个独立的桌面客户端项目，目标是让 Codex CLI 对话更容易浏览、搜索和导航，并为未来的线程 Fork、树视图、DAG 可视化与分支比较提供基础。
 
-项目已完成 `v0.0.1` 协议验证、`M0` 桌面应用外壳、`M1-A` 生命周期接入、`M1-B` 线程列表读取、`M2-A` 只读线性对话渲染、`M2-B` 最小回合发送与流式更新和 `M3-A` 回合大纲跳转，当前完成 `M3-B` 滚动联动与当前回合高亮。协议代码集中在 `threadpath-protocol/`，Electron 主进程管理 app-server 和会话应用服务；当前不提供搜索、取消回合、工具审批或 Markdown。
+项目已完成 `v0.0.1` 协议验证、`M0` 桌面应用外壳、`M1-A` 生命周期接入、`M1-B` 线程列表读取、`M2-A` 只读线性对话渲染、`M2-B` 最小回合发送与流式更新、`M3-A` 回合大纲跳转和 `M3-B` 滚动联动高亮，当前完成 `M3-C` 已加载回合搜索。协议代码集中在 `threadpath-protocol/`，Electron 主进程管理 app-server 和会话应用服务；当前不提供跨线程、未加载页面、分页或虚拟化搜索。
 
 ### 当前能力
 
@@ -30,6 +30,7 @@ ThreadPath for Codex 是一个独立的桌面客户端项目，目标是让 Code
 - 通过 preload 暴露可取消的受限会话更新订阅，并对重复事件和旧线程事件做去重/过滤；
 - 从类型化会话模型生成安全回合大纲，支持键盘聚焦、Enter 激活和稳定锚点跳转；
 - 根据滚动位置确定当前回合，高亮大纲项目，并在程序化跳转后保持状态同步；
+- 在当前已加载线程中提供中英文不区分大小写的回合搜索、防抖输入和结果跳转；
 - 为未来的 Electron 桌面客户端积累协议事实。
 
 ### 快速开始
@@ -85,6 +86,7 @@ npm run smoke
 - `M2-B`：支持发送单个纯文本回合和白名单流式更新；暂不支持取消、工具审批、Markdown、搜索和大纲；
 - `M3-A`：支持回合大纲和点击/键盘跳转；暂不支持滚动联动高亮、搜索、分页和虚拟化；
 - `M3-B`：支持滚动联动高亮、程序化跳转和大纲自动跟随；暂不支持搜索、分页和虚拟化；
+- `M3-C`：支持当前已加载回合搜索和结果跳转；不搜索跨线程或未加载页面；
 - `v0.0.1`：Codex app-server 协议验证、JSONL/JSON-RPC 传输与可重复故障测试；
 - `v0.0.2`：可复用的类型化协议客户端、版本化 fixture 和脱敏诊断事件日志；
 - `v0.1.0`：线性对话基础、线程/回合加载、导航和搜索；
@@ -102,7 +104,7 @@ npm run smoke
 
 ThreadPath for Codex is an independent desktop client project designed to make Codex CLI conversations easier to browse, search, and navigate. It also lays the foundation for future thread forking, tree views, DAG visualization, and branch comparison.
 
-The project has completed `v0.0.1` protocol validation, the `M0` desktop shell, `M1-A` lifecycle integration, `M1-B` thread loading, `M2-A` read-only linear conversation rendering, `M2-B` minimal turn sending and streaming updates, and `M3-A` turn outline navigation, and now has `M3-B` scroll-linked active-turn highlighting. The Electron main process owns the app-server and conversation service; search, cancellation, tool approval, and Markdown are not included.
+The project has completed `v0.0.1` protocol validation, the `M0` desktop shell, `M1-A` lifecycle integration, `M1-B` thread loading, `M2-A` read-only linear conversation rendering, `M2-B` minimal turn sending and streaming updates, `M3-A` turn outline navigation, and `M3-B` scroll-linked active-turn highlighting, and now has `M3-C` loaded-turn search. The Electron main process owns the app-server and conversation service; cross-thread and unloaded-page search, pagination, and virtualization are not included.
 
 ### Current capabilities
 
@@ -122,6 +124,7 @@ The project has completed `v0.0.1` protocol validation, the `M0` desktop shell, 
 - Exposes a removable, restricted conversation-update subscription through preload with duplicate and stale-thread filtering;
 - Generates a safe turn outline from typed conversation data and supports keyboard/click navigation to stable anchors;
 - Computes the active turn from scroll position, highlights its outline entry, and keeps programmatic navigation synchronized;
+- Searches the current loaded thread with debounced, case-insensitive substring matching and stable result navigation;
 - Builds protocol knowledge for the future Electron desktop client.
 
 ### Quick start
@@ -177,6 +180,7 @@ npm run smoke
 - `M2-B`: one plain-text turn at a time with allowlisted streaming updates; no cancellation, tool approval, Markdown, search, or outline;
 - `M3-A`: turn outline with click/keyboard navigation; no scroll-linked highlighting, search, pagination, or virtualization;
 - `M3-B`: scroll-linked active-turn highlighting, programmatic navigation, and outline auto-follow; no search, pagination, or virtualization;
+- `M3-C`: loaded-turn search with stable result navigation; no cross-thread or unloaded-page search, pagination, or virtualization;
 - `v0.0.1`: Codex app-server protocol validation, JSONL/JSON-RPC transport, and repeatable failure tests;
 - `v0.0.2`: reusable typed protocol client APIs, versioned fixtures, and redacted diagnostic event logging;
 - `v0.1.0`: linear conversation foundation, thread/turn loading, navigation, and search;
