@@ -30,6 +30,7 @@ export interface ConversationTurnView {
 
 export interface ConversationPagingState {
   readonly orderedTurnIds: readonly string[];
+  readonly firstItemIndex: number;
   readonly nextCursor?: string;
   readonly hasMore: boolean;
   readonly isLoadingMore: boolean;

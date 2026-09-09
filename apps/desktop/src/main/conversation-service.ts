@@ -6,6 +6,7 @@ import { applyConversationUpdate } from "../shared/conversation-state.ts";
 import { searchLoadedTurns } from "./search-service.ts";
 
 const MAX_DISPLAY_SUMMARY_LENGTH = 500;
+const INITIAL_FIRST_ITEM_INDEX = 1_000_000;
 type ToolStatus = Extract<ConversationItemView, { kind: "tool" }>["status"];
 
 export interface ConversationClient extends ThreadClient {
@@ -64,12 +65,14 @@ export class ConversationService {
     try {
       const page = await client.listTurns(validThreadId, { limit: 20, cursor: current.paging.nextCursor });
       const turns = mergeConversationTurns(current.turns, page.turns.map((turn, index) => toConversationTurnView(turn, index)));
+      const addedTurnCount = Math.max(0, turns.length - current.turns.length);
       const repeatedCursor = page.nextCursor !== undefined && page.nextCursor === current.paging.nextCursor;
       const next = withPaging({ ...current, turns, outline: buildTurnOutline(turns) }, {
         nextCursor: page.nextCursor,
         hasMore: page.nextCursor !== undefined && !repeatedCursor,
         isLoadingMore: false,
         loadMoreError: undefined,
+        firstItemIndex: Math.max(1, current.paging.firstItemIndex - addedTurnCount),
       });
       this.loadedThreads.set(validThreadId, next);
       return next;
@@ -143,7 +146,7 @@ export function toConversationThreadView(thread: Thread): ConversationThreadView
     status: thread.status?.trim() || "unknown",
     turns,
     outline: buildTurnOutline(turns),
-    paging: { orderedTurnIds: turns.map((turn) => turn.id), hasMore: false, isLoadingMore: false },
+    paging: { orderedTurnIds: turns.map((turn) => turn.id), firstItemIndex: INITIAL_FIRST_ITEM_INDEX, hasMore: false, isLoadingMore: false },
   };
 }
 

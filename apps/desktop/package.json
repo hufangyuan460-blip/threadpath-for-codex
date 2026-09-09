@@ -6,13 +6,14 @@
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
-    "test": "node --experimental-strip-types src/main/thread-service.test.ts && node --experimental-strip-types src/main/conversation-service.test.ts && node --experimental-strip-types src/main/search-service.test.ts && node --experimental-strip-types src/main/pagination.test.ts && node --experimental-strip-types src/renderer/conversation-state.test.ts && node --experimental-strip-types src/renderer/scroll-state.test.ts && node --experimental-strip-types src/renderer/scroll-preservation.test.ts && node --experimental-strip-types src/renderer/search-navigation.test.ts && node --experimental-strip-types src/shared/outline.test.ts",
+    "test": "node --experimental-strip-types src/main/thread-service.test.ts && node --experimental-strip-types src/main/conversation-service.test.ts && node --experimental-strip-types src/main/search-service.test.ts && node --experimental-strip-types src/main/pagination.test.ts && node --experimental-strip-types src/renderer/conversation-state.test.ts && node --experimental-strip-types src/renderer/scroll-state.test.ts && node --experimental-strip-types src/renderer/scroll-preservation.test.ts && node --experimental-strip-types src/renderer/virtualization-state.test.ts && node --experimental-strip-types src/renderer/search-navigation.test.ts && node --experimental-strip-types src/shared/outline.test.ts",
     "typecheck": "tsc --noEmit",
     "build": "electron-vite build"
   },
   "dependencies": {
     "react": "^19.1.1",
-    "react-dom": "^19.1.1"
+    "react-dom": "^19.1.1",
+    "react-virtuoso": "^4.18.13"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

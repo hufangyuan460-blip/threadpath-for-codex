@@ -5,7 +5,7 @@ import { buildTurnOutline } from "../shared/outline.ts";
 import { searchLoadedTurns } from "./search-service.ts";
 
 function makeThread(id: string, turns: ConversationTurnView[]): ConversationThreadView {
-  return { id, title: "Search fixture", status: "active", turns, outline: buildTurnOutline(turns), paging: { orderedTurnIds: turns.map((turn) => turn.id), hasMore: false, isLoadingMore: false } };
+  return { id, title: "Search fixture", status: "active", turns, outline: buildTurnOutline(turns), paging: { orderedTurnIds: turns.map((turn) => turn.id), firstItemIndex: 1000000, hasMore: false, isLoadingMore: false } };
 }
 
 function main(): void {

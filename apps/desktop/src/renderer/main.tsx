@@ -1,10 +1,11 @@
 import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { Virtuoso, type VirtuosoHandle, type ListRange } from "react-virtuoso";
 import "./styles.css";
 import type { AppInfo, ConnectionStateSnapshot, ConversationItemView, ConversationThreadView, ConversationUpdate, SearchResult, ThreadListItem } from "../shared/api";
 import { applyConversationUpdate, conversationUpdateKey } from "./conversation-state";
-import { chooseActiveTurnId } from "./scroll-state";
-import { preserveScrollTop } from "./scroll-preservation";
+import { buildTurnOutline } from "../shared/outline";
+import { chooseActiveTurnIdFromRange } from "./scroll-state";
 import { moveSearchSelection, searchNavigationTarget } from "./search-navigation";
 
 type LoadState = "idle" | "loading" | "ready" | "empty" | "error";
@@ -28,14 +29,6 @@ function ConversationItem({ item }: { item: ConversationItemView }): React.JSX.E
   return <div className={`conversation-item text-item role-${item.role}`}><span className="item-label">{item.role}</span><p>{item.text}</p></div>;
 }
 
-function scrollToTurn(turnId: string): boolean {
-  const target = [...document.querySelectorAll<HTMLElement>("[data-turn-id]")].find((element) => element.dataset.turnId === turnId);
-  if (target === undefined) return false;
-  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-  target.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "start" });
-  return true;
-}
-
 function SearchPanel({ query, results, selectedIndex, error, onQueryChange, onKeyDown, onNavigate }: { query: string; results: readonly SearchResult[]; selectedIndex: number; error: string | undefined; onQueryChange: (query: string) => void; onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void; onNavigate: (turnId: string) => void }): React.JSX.Element {
   return (
     <section className="search-panel" aria-label="Search loaded turns">
@@ -49,16 +42,38 @@ function SearchPanel({ query, results, selectedIndex, error, onQueryChange, onKe
   );
 }
 
-function Conversation({ thread, activeTurnId, searchQuery, searchResults, selectedSearchIndex, searchError, loadingMore, loadMoreError, onLoadMore, onSearchQueryChange, onSearchKeyDown, onSearchNavigate, onNavigate, setOutlineButton }: { thread: ConversationThreadView; activeTurnId: string | undefined; searchQuery: string; searchResults: readonly SearchResult[]; selectedSearchIndex: number; searchError: string | undefined; loadingMore: boolean; loadMoreError: string | undefined; onLoadMore: () => void; onSearchQueryChange: (query: string) => void; onSearchKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void; onSearchNavigate: (turnId: string) => void; onNavigate: (turnId: string) => void; setOutlineButton: (turnId: string, element: HTMLButtonElement | null) => void }): React.JSX.Element {
+function Conversation({ thread, activeTurnId, searchQuery, searchResults, selectedSearchIndex, searchError, loadingMore, loadMoreError, onLoadMore, onSearchQueryChange, onSearchKeyDown, onNavigate, onVisibleTurn, onUserScroll, setOutlineButton }: { thread: ConversationThreadView; activeTurnId: string | undefined; searchQuery: string; searchResults: readonly SearchResult[]; selectedSearchIndex: number; searchError: string | undefined; loadingMore: boolean; loadMoreError: string | undefined; onLoadMore: () => void; onSearchQueryChange: (query: string) => void; onSearchKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void; onNavigate: (turnId: string) => void; onVisibleTurn: (turnId: string | undefined) => void; onUserScroll: () => void; setOutlineButton: (turnId: string, element: HTMLButtonElement | null) => void }): React.JSX.Element {
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const scroller = useRef<HTMLElement | null>(null);
+  const turnIndexById = new Map(thread.turns.map((turn, index) => [turn.id, index]));
+  const navigate = (turnId: string): void => {
+    const index = turnIndexById.get(turnId);
+    if (index === undefined) return;
+    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    virtuosoRef.current?.scrollToIndex({ index, align: "start", behavior: reducedMotion ? "auto" : "smooth" });
+    onNavigate(turnId);
+  };
+  const onRangeChanged = (range: ListRange): void => onVisibleTurn(chooseActiveTurnIdFromRange(thread.turns.map((turn) => turn.id), range));
+  const setScroller = (element: HTMLElement | Window | null): void => {
+    if (scroller.current !== null) {
+      scroller.current.removeEventListener("wheel", onUserScroll);
+      scroller.current.removeEventListener("touchstart", onUserScroll);
+    }
+    if (element instanceof HTMLElement) {
+      scroller.current = element;
+      element.addEventListener("wheel", onUserScroll, { passive: true });
+      element.addEventListener("touchstart", onUserScroll, { passive: true });
+    } else scroller.current = null;
+  };
   return (
     <div className="conversation-layout">
       <nav className="outline-panel" aria-label="Turn outline">
-        <SearchPanel query={searchQuery} results={searchResults} selectedIndex={selectedSearchIndex} error={searchError} onQueryChange={onSearchQueryChange} onKeyDown={onSearchKeyDown} onNavigate={onSearchNavigate} />
+        <SearchPanel query={searchQuery} results={searchResults} selectedIndex={selectedSearchIndex} error={searchError} onQueryChange={onSearchQueryChange} onKeyDown={onSearchKeyDown} onNavigate={navigate} />
         <div className="outline-heading"><p className="empty-kicker">Outline</p><span>{thread.outline.length} turns</span></div>
         <ol className="outline-list">
           {thread.outline.map((entry) => (
             <li key={entry.turnId}>
-              <button ref={(element) => setOutlineButton(entry.turnId, element)} type="button" className={`outline-entry${entry.turnId === activeTurnId ? " active" : ""}`} onClick={() => onNavigate(entry.turnId)} aria-current={entry.turnId === activeTurnId ? "true" : undefined} aria-label={`Go to turn ${entry.index}: ${entry.label}`}>
+              <button ref={(element) => setOutlineButton(entry.turnId, element)} type="button" className={`outline-entry${entry.turnId === activeTurnId ? " active" : ""}`} onClick={() => navigate(entry.turnId)} aria-current={entry.turnId === activeTurnId ? "true" : undefined} aria-label={`Go to turn ${entry.index}: ${entry.label}`}>
                 <span className="outline-index">{entry.index}</span><span className="outline-copy"><strong>{entry.label}</strong><small>{entry.status}</small></span>
               </button>
             </li>
@@ -72,15 +87,25 @@ function Conversation({ thread, activeTurnId, searchQuery, searchResults, select
           {loadMoreError === undefined ? null : <p className="error-summary">{loadMoreError}</p>}
         </div>
         {thread.turns.length === 0 ? <div className="conversation-empty"><p className="empty-kicker">Conversation</p><h2>No readable turns</h2><p>This thread has no conversation content available.</p></div> : null}
-        {thread.turns.map((turn) => (
-          <article className="turn-card" data-turn-id={turn.id} key={turn.id}>
-            <header className="turn-heading">
-              <div><span className="turn-index">Turn {turn.index}</span><span className="turn-status">{turn.status}</span></div>
-              {turn.createdAt === undefined ? null : <time dateTime={turn.createdAt}>{turn.createdAt}</time>}
-            </header>
-            {turn.items.length === 0 ? <p className="partial-note">No readable items were provided for this turn.</p> : <div className="turn-items">{turn.items.map((item) => <ConversationItem item={item} key={item.id} />)}</div>}
-          </article>
-        ))}
+        {thread.turns.length === 0 ? <div className="conversation-empty"><p className="empty-kicker">Conversation</p><h2>No readable turns</h2><p>This thread has no conversation content available.</p></div> : <Virtuoso<ConversationThreadView["turns"][number]>
+          ref={virtuosoRef}
+          data={thread.turns}
+          computeItemKey={(_, turn) => turn.id}
+          firstItemIndex={thread.paging.firstItemIndex}
+          increaseViewportBy={{ top: 600, bottom: 600 }}
+          rangeChanged={onRangeChanged}
+          scrollerRef={setScroller}
+          className="turn-virtual-list"
+          itemContent={(_, turn) => (
+            <article className="turn-card" data-turn-id={turn.id} key={turn.id}>
+              <header className="turn-heading">
+                <div><span className="turn-index">Turn {turn.index}</span><span className="turn-status">{turn.status}</span></div>
+                {turn.createdAt === undefined ? null : <time dateTime={turn.createdAt}>{turn.createdAt}</time>}
+              </header>
+              {turn.items.length === 0 ? <p className="partial-note">No readable items were provided for this turn.</p> : <div className="turn-items">{turn.items.map((item) => <ConversationItem item={item} key={item.id} />)}</div>}
+            </article>
+          )}
+        />}
       </div>
     </div>
   );
@@ -218,52 +243,6 @@ function App(): React.JSX.Element {
   }, [selectedThreadId, searchQuery, selectedThread]);
 
   useEffect(() => {
-    if (selectedThread === undefined) {
-      setActiveTurnId(undefined);
-      return;
-    }
-    let frame = 0;
-    const updateActiveTurn = (): void => {
-      frame = 0;
-      const cards = [...document.querySelectorAll<HTMLElement>("[data-turn-id]")];
-      const snapshots = cards.map((card) => {
-        const rect = card.getBoundingClientRect();
-        return { turnId: card.dataset.turnId ?? "", top: rect.top, bottom: rect.bottom };
-      }).filter((item) => item.turnId !== "");
-      const target = navigationTarget.current;
-      if (target !== undefined && snapshots.some((item) => item.turnId === target)) {
-        setActiveTurnId(target);
-        return;
-      }
-      setActiveTurnId(chooseActiveTurnId(snapshots, 0, window.innerHeight));
-    };
-    const scheduleUpdate = (): void => {
-      if (frame === 0) frame = window.requestAnimationFrame(updateActiveTurn);
-    };
-    const clearProgrammaticTarget = (): void => {
-      navigationTarget.current = undefined;
-      scheduleUpdate();
-    };
-    window.addEventListener("scroll", scheduleUpdate, { passive: true });
-    window.addEventListener("resize", scheduleUpdate);
-    window.addEventListener("wheel", clearProgrammaticTarget, { passive: true });
-    window.addEventListener("touchstart", clearProgrammaticTarget, { passive: true });
-    window.addEventListener("scrollend", scheduleUpdate);
-    const resizeObserver = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(scheduleUpdate);
-    for (const card of document.querySelectorAll<HTMLElement>("[data-turn-id]")) resizeObserver?.observe(card);
-    scheduleUpdate();
-    return () => {
-      if (frame !== 0) window.cancelAnimationFrame(frame);
-      window.removeEventListener("scroll", scheduleUpdate);
-      window.removeEventListener("resize", scheduleUpdate);
-      window.removeEventListener("wheel", clearProgrammaticTarget);
-      window.removeEventListener("touchstart", clearProgrammaticTarget);
-      window.removeEventListener("scrollend", scheduleUpdate);
-      resizeObserver?.disconnect();
-    };
-  }, [selectedThread]);
-
-  useEffect(() => {
     if (activeTurnId === undefined) return;
     const button = outlineButtons.current.get(activeTurnId);
     if (button === undefined) return;
@@ -298,7 +277,9 @@ function App(): React.JSX.Element {
         if (current === undefined || current.id !== result.threadId) return current;
         const turnId = result.turnId;
         if (current.turns.some((turn) => turn.id === turnId)) return current;
-        return { ...current, turns: [...current.turns, { id: turnId, index: current.turns.length + 1, status: "running", createdAt: new Date().toISOString(), items: [{ kind: "text", id: `${turnId}:user`, role: "user", text }] }] };
+        const newTurn: ConversationThreadView["turns"][number] = { id: turnId, index: current.turns.length + 1, status: "running", createdAt: new Date().toISOString(), items: [{ kind: "text", id: `${turnId}:user`, role: "user", text }] };
+        const turns = [...current.turns, newTurn];
+        return { ...current, turns, outline: buildTurnOutline(turns), paging: { ...current.paging, orderedTurnIds: turns.map((item) => item.id) } };
       });
       setRunningTurnId(result.turnId);
       setInputText("");
@@ -311,17 +292,11 @@ function App(): React.JSX.Element {
 
   const handleLoadMore = async (): Promise<void> => {
     if (selectedThreadId === undefined || loadingMore || selectedThread?.paging.hasMore !== true) return;
-    const beforeTop = window.scrollY;
-    const beforeHeight = document.documentElement.scrollHeight;
     setLoadingMore(true);
     setLoadMoreError(undefined);
     try {
       const nextThread = await window.threadPath.loadMoreTurns(selectedThreadId);
       setSelectedThread((current) => current?.id === nextThread.id ? nextThread : current);
-      window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
-        const afterHeight = document.documentElement.scrollHeight;
-        window.scrollTo({ top: preserveScrollTop(beforeTop, beforeHeight, afterHeight), behavior: "auto" });
-      }));
     } catch (error: unknown) {
       setLoadMoreError(errorMessage(error));
     } finally {
@@ -329,11 +304,23 @@ function App(): React.JSX.Element {
     }
   };
 
-  const handleNavigate = useCallback((turnId: string): void => {
-    if (!scrollToTurn(turnId)) return;
-    navigationTarget.current = turnId;
+  const handleVisibleTurn = useCallback((turnId: string | undefined): void => {
+    if (turnId === undefined) return;
+    const target = navigationTarget.current;
+    if (target !== undefined && target !== turnId) return;
+    navigationTarget.current = undefined;
     setActiveTurnId(turnId);
   }, []);
+
+  const handleUserScroll = useCallback((): void => {
+    navigationTarget.current = undefined;
+  }, []);
+
+  const handleNavigate = useCallback((turnId: string): void => {
+    if (selectedThread?.turns.some((turn) => turn.id === turnId) !== true) return;
+    navigationTarget.current = turnId;
+    setActiveTurnId(turnId);
+  }, [selectedThread]);
 
   const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>): void => {
     if (event.key === "ArrowDown") {
@@ -382,7 +369,7 @@ function App(): React.JSX.Element {
           {selectedThreadState === "idle" ? <div className="details-empty"><p className="empty-kicker">Conversation</p><h2>Select a thread</h2><p>Choose a thread to read its linear conversation.</p></div> : null}
           {selectedThreadState === "loading" ? <p className="panel-note">Loading conversation…</p> : null}
           {selectedThreadState === "error" ? <p className="error-summary">{selectedThreadError}</p> : null}
-          {(selectedThreadState === "empty" || selectedThreadState === "ready") && selectedThread !== undefined ? <Conversation thread={selectedThread} activeTurnId={activeTurnId} searchQuery={searchQuery} searchResults={searchResults} selectedSearchIndex={selectedSearchIndex} searchError={searchError} loadingMore={loadingMore} loadMoreError={loadMoreError} onLoadMore={() => void handleLoadMore()} onSearchQueryChange={setSearchQuery} onSearchKeyDown={handleSearchKeyDown} onSearchNavigate={handleNavigate} onNavigate={handleNavigate} setOutlineButton={setOutlineButton} /> : null}
+          {(selectedThreadState === "empty" || selectedThreadState === "ready") && selectedThread !== undefined ? <Conversation thread={selectedThread} activeTurnId={activeTurnId} searchQuery={searchQuery} searchResults={searchResults} selectedSearchIndex={selectedSearchIndex} searchError={searchError} loadingMore={loadingMore} loadMoreError={loadMoreError} onLoadMore={() => void handleLoadMore()} onSearchQueryChange={setSearchQuery} onSearchKeyDown={handleSearchKeyDown} onNavigate={handleNavigate} onVisibleTurn={handleVisibleTurn} onUserScroll={handleUserScroll} setOutlineButton={setOutlineButton} /> : null}
           {selectedThread !== undefined && selectedThreadState !== "loading" && selectedThreadState !== "error" ? (
             <form className="turn-composer" onSubmit={(event) => { event.preventDefault(); void handleStartTurn(); }}>
               <label htmlFor="turn-input">Send a message</label>

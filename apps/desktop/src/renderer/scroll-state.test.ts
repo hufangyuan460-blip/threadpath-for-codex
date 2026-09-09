@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chooseActiveTurnId, type TurnRectSnapshot } from "./scroll-state.ts";
+import { chooseActiveTurnId, chooseActiveTurnIdFromRange, type TurnRectSnapshot } from "./scroll-state.ts";
 
 function main(): void {
   const turns: TurnRectSnapshot[] = [
@@ -14,6 +14,9 @@ function main(): void {
   assert.equal(chooseActiveTurnId(turns, 0, 0), undefined);
   assert.equal(chooseActiveTurnId([], 0, 600), undefined);
   assert.equal(chooseActiveTurnId([{ turnId: "upper", top: -500, bottom: -10 }, { turnId: "lower", top: 700, bottom: 900 }], 0, 600), "upper");
+  assert.equal(chooseActiveTurnIdFromRange(["turn-1", "turn-2", "turn-3"], { startIndex: 1, endIndex: 2 }), "turn-2");
+  assert.equal(chooseActiveTurnIdFromRange(["turn-1"], { startIndex: 9, endIndex: 9 }), "turn-1");
+  assert.equal(chooseActiveTurnIdFromRange([], { startIndex: 0, endIndex: 0 }), undefined);
   console.log("[desktop-test] scroll state checks passed");
 }
 

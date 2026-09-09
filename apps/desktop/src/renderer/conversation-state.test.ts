@@ -17,7 +17,7 @@ async function main(): Promise<void> {
   const messages = (await readFile(fixturePath, "utf8")).split(/\r?\n/).filter((line) => line.trim() !== "").map((line) => asObject(JSON.parse(line) as unknown));
   const updates = messages.map((message) => toConversationUpdate(String(message.method), asObject(message.params))).filter((update) => update !== undefined);
   assert.equal(updates.length, messages.length);
-  let thread: ConversationThreadView = { id: "thread-1", title: "Live thread", status: "active", turns: [], outline: [], paging: { orderedTurnIds: [], hasMore: false, isLoadingMore: false } };
+  let thread: ConversationThreadView = { id: "thread-1", title: "Live thread", status: "active", turns: [], outline: [], paging: { orderedTurnIds: [], firstItemIndex: 1000000, hasMore: false, isLoadingMore: false } };
   const seen = new Set<string>();
   for (const update of updates) {
     const key = conversationUpdateKey(update);

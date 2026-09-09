@@ -46,7 +46,8 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.02em; }
 .outline-copy { display: grid; min-width: 0; gap: 4px; }
 .outline-copy strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .outline-copy small { overflow: hidden; color: #718095; text-overflow: ellipsis; white-space: nowrap; }
-  .conversation { min-width: 0; }
+.conversation { min-width: 0; }
+.turn-virtual-list { height: calc(100vh - 330px); min-height: 300px; }
   .pagination-controls { display: grid; justify-items: start; gap: 8px; margin-bottom: 18px; }
   .pagination-controls button { padding: 9px 12px; border: 1px solid #3a485c; border-radius: 8px; color: #dce7f5; background: #202a38; font: inherit; cursor: pointer; }
   .pagination-controls button:disabled { cursor: wait; opacity: .65; }
