@@ -61,12 +61,15 @@ export interface TerminalTurnEvent extends TurnEvent {
   error?: AppServerError;
 }
 
-export type DiagnosticEvent = "request.completed" | "request.failed" | "turn.terminal";
+export type DiagnosticEvent = "request.completed" | "request.failed" | "notification" | "turn.terminal" | "client.failed";
+export type DiagnosticStatus = "completed" | "failed" | "received" | "terminal";
 export interface DiagnosticRecord {
   event: DiagnosticEvent;
   method: string;
+  status: DiagnosticStatus;
   requestId?: number;
   turnId?: string;
+  startedAt?: string;
   durationMs?: number;
   outcome?: TerminalTurnEvent["outcome"];
   errorCategory?: ErrorCategory;

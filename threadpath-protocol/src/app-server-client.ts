@@ -34,12 +34,20 @@ export class AppServerClient {
   private fatalError: Error | undefined;
 
   constructor(options: AppServerClientOptions) {
-    if (options.cwd.trim() === "") throw new ConfigurationError("app-server working directory must not be empty");
+    this.onDiagnostic = options.onDiagnostic ?? (() => undefined);
+    if (options.cwd.trim() === "") {
+      const error = new ConfigurationError("app-server working directory must not be empty");
+      this.onDiagnostic({ event: "client.failed", method: "client", status: "failed", errorCategory: error.category });
+      throw error;
+    }
     this.requestTimeoutMs = options.requestTimeoutMs ?? 120_000;
-    if (!Number.isFinite(this.requestTimeoutMs) || this.requestTimeoutMs <= 0) throw new ConfigurationError("request timeout must be a positive number");
+    if (!Number.isFinite(this.requestTimeoutMs) || this.requestTimeoutMs <= 0) {
+      const error = new ConfigurationError("request timeout must be a positive number");
+      this.onDiagnostic({ event: "client.failed", method: "client", status: "failed", errorCategory: error.category });
+      throw error;
+    }
     this.onProtocolWarning = options.onProtocolWarning ?? (() => undefined);
     this.clientInfo = { name: options.clientInfo?.name ?? "threadpath-protocol", title: options.clientInfo?.title ?? "ThreadPath protocol client", version: options.clientInfo?.version ?? "0.0.2" };
-    this.onDiagnostic = options.onDiagnostic ?? (() => undefined);
     const spawnOptions: SpawnOptionsWithoutStdio = { cwd: options.cwd, env: options.env, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] };
     this.child = spawn(options.executable ?? "codex", options.args ?? ["app-server", "--stdio"], spawnOptions);
     const lines = createInterface({ input: this.child.stdout });
@@ -196,11 +204,12 @@ export class AppServerClient {
       pending.reject(error);
       return;
     }
-    this.onDiagnostic({ event: "request.completed", method: pending.method, requestId: id, durationMs: Date.now() - pending.startedAt });
+    this.onDiagnostic({ event: "request.completed", method: pending.method, status: "completed", requestId: id, startedAt: new Date(pending.startedAt).toISOString(), durationMs: Date.now() - pending.startedAt });
     pending.resolve(message.result);
   }
 
   private publishNotification(method: string, params: JsonObject): void {
+    this.onDiagnostic({ event: "notification", method, status: "received" });
     const event = terminalTurnEvent(method, params);
     if (event !== undefined) {
       const pending = this.pendingTurns.get(event.turnId);
@@ -208,7 +217,7 @@ export class AppServerClient {
       else {
         this.pendingTurns.delete(event.turnId);
         clearTimeout(pending.timeout);
-        this.emitTurnDiagnostic(event, Date.now() - pending.startedAt);
+        this.emitTurnDiagnostic(event, Date.now() - pending.startedAt, pending.startedAt);
         pending.resolve(event);
       }
     }
@@ -224,10 +233,10 @@ export class AppServerClient {
     return value;
   }
   private emitRequestFailure(requestId: number, method: string, startedAt: number, error: Error): void {
-    this.onDiagnostic({ event: "request.failed", method, requestId, durationMs: Date.now() - startedAt, errorCategory: error instanceof AppServerError ? error.category : "process" });
+    this.onDiagnostic({ event: "request.failed", method, status: "failed", requestId, startedAt: new Date(startedAt).toISOString(), durationMs: Date.now() - startedAt, errorCategory: error instanceof AppServerError ? error.category : "process" });
   }
-  private emitTurnDiagnostic(event: TerminalTurnEvent, durationMs: number): void {
-    this.onDiagnostic({ event: "turn.terminal", method: event.method, turnId: event.turnId, durationMs, outcome: event.outcome, errorCategory: event.error?.category });
+  private emitTurnDiagnostic(event: TerminalTurnEvent, durationMs: number, startedAt?: number): void {
+    this.onDiagnostic({ event: "turn.terminal", method: event.method, status: "terminal", turnId: event.turnId, ...(startedAt === undefined ? {} : { startedAt: new Date(startedAt).toISOString() }), durationMs, outcome: event.outcome, errorCategory: event.error?.category });
   }
   private write(message: JsonObject): void {
     if (this.fatalError !== undefined) throw this.fatalError;

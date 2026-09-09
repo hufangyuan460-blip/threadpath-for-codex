@@ -61,6 +61,17 @@ close()
 
 Callers can subscribe to notifications with `onNotification`. Optional `onDiagnostic` records request IDs, methods, durations, terminal outcomes, and error categories without recording complete payloads or conversation text.
 
+Diagnostics are disabled by default. Enable them explicitly with a callback when structured records are needed:
+
+```ts
+const client = new AppServerClient({
+  cwd: projectDirectory,
+  onDiagnostic: (record) => console.error(JSON.stringify(record)),
+});
+```
+
+Diagnostic records contain only protocol method or notification names, request/turn IDs, an ISO start time when applicable, duration, status, outcome, and error category. Configuration validation failures use a `client.failed` record. They never include request parameters, response bodies, authentication data, tokens, or conversation text. Applications should apply their own retention and access controls to emitted logs.
+
 Run the live protocol smoke test separately:
 
 ```powershell
