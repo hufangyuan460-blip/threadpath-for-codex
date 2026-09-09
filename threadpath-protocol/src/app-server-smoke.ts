@@ -1,5 +1,5 @@
 import { AppServerClient } from "./app-server-client.ts";
-import { AppServerError, getThreadId, getThreads, getTurnId, type JsonObject } from "./protocol.ts";
+import { AppServerError, type DiagnosticRecord } from "./protocol.ts";
 
 const cwd = process.env.CODEX_SMOKE_CWD ?? "D:\\threadPath";
 const timeoutMs = Number(process.env.CODEX_SMOKE_TIMEOUT_MS ?? 300_000);
@@ -10,9 +10,8 @@ function log(message: string, value?: unknown): void {
   else console.log(`[smoke] ${message}`, JSON.stringify(value));
 }
 
-function asObject(value: unknown, description: string): JsonObject {
-  if (typeof value === "object" && value !== null && !Array.isArray(value)) return value as JsonObject;
-  throw new Error(`${description} returned a non-object response`);
+function logDiagnostic(record: DiagnosticRecord): void {
+  log("diagnostic", record);
 }
 
 async function main(): Promise<void> {
@@ -21,51 +20,34 @@ async function main(): Promise<void> {
     executable,
     requestTimeoutMs: timeoutMs,
     onStderr: (text) => process.stderr.write(`[app-server] ${text}`),
+    onDiagnostic: logDiagnostic,
     onProtocolWarning: (error) => log(`protocol warning: ${error.message}`),
   });
   client.onNotification(({ method }) => log(`notification: ${method}`));
   try {
-    await client.request("initialize", {
-      clientInfo: { name: "threadpath-protocol-smoke", title: "ThreadPath protocol smoke", version: "0.0.1" },
-      capabilities: null,
-    });
-    client.notify("initialized");
-    log("initialize OK");
+    const initialized = await client.initialize();
+    log("initialize OK", { platform: initialized.platformOs });
 
-    const listed = await client.request("thread/list", { archived: false, limit: 10 });
-    const threads = getThreads(listed);
+    const threads = await client.listThreads({ archived: false, limit: 10 });
     log("thread/list OK", { count: threads.length });
     const existingThreadId = threads[0]?.id;
     if (existingThreadId === undefined) {
       log("no existing thread available; thread/read and thread/turns/list are skipped");
     } else {
-      const read = asObject(await client.request("thread/read", { threadId: existingThreadId, includeTurns: true }), "thread/read");
-      const thread = asObject(read.thread, "thread/read thread");
-      log("thread/read OK", { threadId: existingThreadId, hasTurns: Array.isArray(thread.turns) });
-      const turns = await client.request("thread/turns/list", { threadId: existingThreadId, limit: 10 });
-      const turnList = asObject(turns, "thread/turns/list");
-      log("thread/turns/list OK", { count: Array.isArray(turnList.data) ? turnList.data.length : undefined });
+      const thread = await client.readThread(existingThreadId);
+      log("thread/read OK", { threadId: thread.id, hasTurns: thread.turns !== undefined });
+      const turns = await client.listTurns(existingThreadId, 10);
+      log("thread/turns/list OK", { count: turns.length });
     }
 
-    const threadId = getThreadId(await client.request("thread/start", {
-      cwd,
-      ephemeral: true,
-      approvalPolicy: "never",
-      sandbox: "read-only",
-    }));
-    if (threadId === undefined) throw new Error("thread/start returned no thread id");
-    log("thread/start OK", { threadId });
+    const thread = await client.startThread({ cwd, ephemeral: true, approvalPolicy: "never", sandbox: "read-only" });
+    log("thread/start OK", { threadId: thread.id });
+    const turn = await client.startTurn(thread.id, [{ type: "text", text: "Reply with exactly: app-server stream OK" }]);
+    log("turn/start accepted", { turnId: turn.id });
 
-    const turnId = getTurnId(await client.request("turn/start", {
-      threadId,
-      input: [{ type: "text", text: "Reply with exactly: app-server stream OK" }],
-    }));
-    if (turnId === undefined) throw new Error("turn/start returned no turn id");
-    log("turn/start accepted", { turnId });
-
-    const terminal = await client.waitForTurnTerminal(turnId);
+    const terminal = await client.waitForTurnTerminal(turn.id);
     if (terminal.outcome === "completed") {
-      log("turn completed OK", { turnId });
+      log("turn completed OK", { turnId: turn.id });
       return;
     }
     const detail = terminal.error instanceof AppServerError

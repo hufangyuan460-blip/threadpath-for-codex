@@ -1,12 +1,12 @@
 import { spawn, type ChildProcessWithoutNullStreams, type SpawnOptionsWithoutStdio } from "node:child_process";
 import { createInterface } from "node:readline";
-import { type JsonObject, type JsonValue, type TerminalTurnEvent, ConfigurationError, ProcessError, ProtocolError, TimeoutError, errorFromServer, isJsonObject, terminalTurnEvent } from "./protocol.ts";
+import { type JsonObject, type JsonValue, type DiagnosticRecord, type InitializeResult, type StartThreadOptions, type TerminalTurnEvent, type Thread, type ThreadSummary, type Turn, type TurnInput, AppServerError, ConfigurationError, ProcessError, ProtocolError, TimeoutError, errorFromServer, getThread, getThreads, getTurnId, getTurns, isJsonObject, terminalTurnEvent } from "./protocol.ts";
 
 type RequestId = number;
 type JsonRpcId = number | string;
 type NotificationListener = (event: { method: string; params: JsonObject }) => void;
-interface PendingRequest { method: string; resolve: (value: JsonValue) => void; reject: (error: Error) => void; timeout: NodeJS.Timeout; }
-interface PendingTurn { resolve: (event: TerminalTurnEvent) => void; reject: (error: Error) => void; timeout: NodeJS.Timeout; }
+interface PendingRequest { method: string; resolve: (value: JsonValue) => void; reject: (error: Error) => void; timeout: NodeJS.Timeout; startedAt: number; }
+interface PendingTurn { resolve: (event: TerminalTurnEvent) => void; reject: (error: Error) => void; timeout: NodeJS.Timeout; startedAt: number; }
 export interface AppServerClientOptions {
   readonly cwd: string;
   readonly executable?: string;
@@ -15,6 +15,8 @@ export interface AppServerClientOptions {
   readonly env?: NodeJS.ProcessEnv;
   readonly onStderr?: (text: string) => void;
   readonly onProtocolWarning?: (error: ProtocolError) => void;
+  readonly clientInfo?: { name: string; title?: string; version?: string };
+  readonly onDiagnostic?: (record: DiagnosticRecord) => void;
 }
 
 export class AppServerClient {
@@ -25,6 +27,8 @@ export class AppServerClient {
   private readonly terminalTurns = new Map<string, TerminalTurnEvent>();
   private readonly notificationListeners = new Set<NotificationListener>();
   private readonly onProtocolWarning: (error: ProtocolError) => void;
+  private readonly clientInfo: { name: string; title: string; version: string };
+  private readonly onDiagnostic: (record: DiagnosticRecord) => void;
   private nextRequestId = 1;
   private closing = false;
   private fatalError: Error | undefined;
@@ -34,6 +38,8 @@ export class AppServerClient {
     this.requestTimeoutMs = options.requestTimeoutMs ?? 120_000;
     if (!Number.isFinite(this.requestTimeoutMs) || this.requestTimeoutMs <= 0) throw new ConfigurationError("request timeout must be a positive number");
     this.onProtocolWarning = options.onProtocolWarning ?? (() => undefined);
+    this.clientInfo = { name: options.clientInfo?.name ?? "threadpath-protocol", title: options.clientInfo?.title ?? "ThreadPath protocol client", version: options.clientInfo?.version ?? "0.0.2" };
+    this.onDiagnostic = options.onDiagnostic ?? (() => undefined);
     const spawnOptions: SpawnOptionsWithoutStdio = { cwd: options.cwd, env: options.env, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] };
     this.child = spawn(options.executable ?? "codex", options.args ?? ["app-server", "--stdio"], spawnOptions);
     const lines = createInterface({ input: this.child.stdout });
@@ -55,24 +61,94 @@ export class AppServerClient {
         const pending = this.pendingRequests.get(id);
         if (pending === undefined) return;
         this.pendingRequests.delete(id);
-        reject(new TimeoutError(`timed out waiting for ${method}`));
+        const error = new TimeoutError(`timed out waiting for ${method}`);
+        this.emitRequestFailure(id, method, startedAt, error);
+        reject(error);
       }, this.requestTimeoutMs);
-      this.pendingRequests.set(id, { method, resolve, reject, timeout });
+      const startedAt = Date.now();
+      this.pendingRequests.set(id, { method, resolve, reject, timeout, startedAt });
       try { this.write({ jsonrpc: "2.0", id, method, params }); }
-      catch (error) { clearTimeout(timeout); this.pendingRequests.delete(id); reject(error instanceof Error ? error : new ProcessError(String(error))); }
+      catch (error) {
+        clearTimeout(timeout);
+        this.pendingRequests.delete(id);
+        const processError = error instanceof Error ? error : new ProcessError(String(error));
+        this.emitRequestFailure(id, method, startedAt, processError);
+        reject(processError);
+      }
     });
+  }
+
+  async initialize(): Promise<InitializeResult> {
+    const response = await this.request("initialize", { clientInfo: this.clientInfo, capabilities: null });
+    this.notify("initialized");
+    const object = this.requireObject(response, "initialize");
+    return {
+      userAgent: typeof object.userAgent === "string" ? object.userAgent : undefined,
+      codexHome: typeof object.codexHome === "string" ? object.codexHome : undefined,
+      platformFamily: typeof object.platformFamily === "string" ? object.platformFamily : undefined,
+      platformOs: typeof object.platformOs === "string" ? object.platformOs : undefined,
+    };
+  }
+
+  async listThreads(options: { archived?: boolean; limit?: number } = {}): Promise<ThreadSummary[]> {
+    const response = await this.request("thread/list", {
+      archived: options.archived ?? false,
+      limit: options.limit ?? 10,
+    });
+    const object = this.requireObject(response, "thread/list");
+    if (!Array.isArray(object.data) && !Array.isArray(object.threads)) throw new ProtocolError("thread/list response is missing a thread list");
+    return getThreads(object);
+  }
+
+  async readThread(threadId: string): Promise<Thread> {
+    const response = await this.request("thread/read", { threadId, includeTurns: true });
+    const thread = getThread(this.requireObject(response, "thread/read"));
+    if (thread === undefined) throw new ProtocolError("thread/read response did not contain a thread id");
+    return thread;
+  }
+
+  async listTurns(threadId: string, limit = 10): Promise<Turn[]> {
+    const response = await this.request("thread/turns/list", { threadId, limit });
+    const object = this.requireObject(response, "thread/turns/list");
+    if (!Array.isArray(object.data)) throw new ProtocolError("thread/turns/list response is missing a turn list");
+    return getTurns(object);
+  }
+
+  async startThread(options: StartThreadOptions): Promise<Thread> {
+    const params: JsonObject = { cwd: options.cwd };
+    if (options.ephemeral !== undefined) params.ephemeral = options.ephemeral;
+    if (options.approvalPolicy !== undefined) params.approvalPolicy = options.approvalPolicy;
+    if (options.sandbox !== undefined) params.sandbox = options.sandbox;
+    const response = await this.request("thread/start", params);
+    const thread = getThread(this.requireObject(response, "thread/start"));
+    if (thread === undefined) throw new ProtocolError("thread/start response did not contain a thread id");
+    return thread;
+  }
+
+  async startTurn(threadId: string, input: readonly TurnInput[]): Promise<Turn> {
+    const response = await this.request("turn/start", {
+      threadId,
+      input: input.map((item) => ({ type: item.type, text: item.text })),
+    });
+    const turnId = getTurnId(this.requireObject(response, "turn/start"));
+    if (turnId === undefined) throw new ProtocolError("turn/start response did not contain a turn id");
+    return { id: turnId };
   }
 
   notify(method: string, params: JsonObject = {}): void { this.write({ jsonrpc: "2.0", method, params }); }
 
   waitForTurnTerminal(turnId: string, timeoutMs = this.requestTimeoutMs): Promise<TerminalTurnEvent> {
     const completed = this.terminalTurns.get(turnId);
-    if (completed !== undefined) { this.terminalTurns.delete(turnId); return Promise.resolve(completed); }
+    if (completed !== undefined) {
+      this.terminalTurns.delete(turnId);
+      this.emitTurnDiagnostic(completed, 0);
+      return Promise.resolve(completed);
+    }
     if (this.fatalError !== undefined) return Promise.reject(this.fatalError);
     if (this.pendingTurns.has(turnId)) return Promise.reject(new ProtocolError(`already waiting for terminal event for turn ${turnId}`));
     return new Promise<TerminalTurnEvent>((resolve, reject) => {
       const timeout = setTimeout(() => { if (this.pendingTurns.delete(turnId)) reject(new TimeoutError(`timed out waiting for terminal event for turn ${turnId}`)); }, timeoutMs);
-      this.pendingTurns.set(turnId, { resolve, reject, timeout });
+      this.pendingTurns.set(turnId, { resolve, reject, timeout, startedAt: Date.now() });
     });
   }
 
@@ -108,8 +184,19 @@ export class AppServerClient {
     if (pending === undefined) { this.warn(new ProtocolError(`received a response for unknown request id ${id}`)); return; }
     this.pendingRequests.delete(id);
     clearTimeout(pending.timeout);
-    if (message.error !== undefined) { pending.reject(errorFromServer(message.error)); return; }
-    if (message.result === undefined) { pending.reject(new ProtocolError(`response for ${pending.method} is missing both result and error`)); return; }
+    if (message.error !== undefined) {
+      const error = errorFromServer(message.error);
+      this.emitRequestFailure(id, pending.method, pending.startedAt, error);
+      pending.reject(error);
+      return;
+    }
+    if (message.result === undefined) {
+      const error = new ProtocolError(`response for ${pending.method} is missing both result and error`);
+      this.emitRequestFailure(id, pending.method, pending.startedAt, error);
+      pending.reject(error);
+      return;
+    }
+    this.onDiagnostic({ event: "request.completed", method: pending.method, requestId: id, durationMs: Date.now() - pending.startedAt });
     pending.resolve(message.result);
   }
 
@@ -118,7 +205,12 @@ export class AppServerClient {
     if (event !== undefined) {
       const pending = this.pendingTurns.get(event.turnId);
       if (pending === undefined) this.terminalTurns.set(event.turnId, event);
-      else { this.pendingTurns.delete(event.turnId); clearTimeout(pending.timeout); pending.resolve(event); }
+      else {
+        this.pendingTurns.delete(event.turnId);
+        clearTimeout(pending.timeout);
+        this.emitTurnDiagnostic(event, Date.now() - pending.startedAt);
+        pending.resolve(event);
+      }
     }
     for (const listener of this.notificationListeners) listener({ method, params });
   }
@@ -126,6 +218,16 @@ export class AppServerClient {
   private replyUnsupportedServerRequest(id: JsonRpcId, method: string): void {
     try { this.write({ jsonrpc: "2.0", id, error: { code: -32601, message: `Client does not implement server request ${method}` } }); }
     catch (error) { this.failAll(error instanceof Error ? error : new ProcessError(String(error))); }
+  }
+  private requireObject(value: JsonValue, method: string): JsonObject {
+    if (!isJsonObject(value)) throw new ProtocolError(`${method} response must be a JSON object`);
+    return value;
+  }
+  private emitRequestFailure(requestId: number, method: string, startedAt: number, error: Error): void {
+    this.onDiagnostic({ event: "request.failed", method, requestId, durationMs: Date.now() - startedAt, errorCategory: error instanceof AppServerError ? error.category : "process" });
+  }
+  private emitTurnDiagnostic(event: TerminalTurnEvent, durationMs: number): void {
+    this.onDiagnostic({ event: "turn.terminal", method: event.method, turnId: event.turnId, durationMs, outcome: event.outcome, errorCategory: event.error?.category });
   }
   private write(message: JsonObject): void {
     if (this.fatalError !== undefined) throw this.fatalError;
@@ -135,7 +237,11 @@ export class AppServerClient {
   private warn(error: ProtocolError): void { this.onProtocolWarning(error); }
   private failAll(error: Error): void { if (this.fatalError === undefined) this.fatalError = error; this.rejectAll(error); }
   private rejectAll(error: Error): void {
-    for (const pending of this.pendingRequests.values()) { clearTimeout(pending.timeout); pending.reject(error); }
+    for (const [requestId, pending] of this.pendingRequests) {
+      clearTimeout(pending.timeout);
+      this.emitRequestFailure(requestId, pending.method, pending.startedAt, error);
+      pending.reject(error);
+    }
     this.pendingRequests.clear();
     for (const pending of this.pendingTurns.values()) { clearTimeout(pending.timeout); pending.reject(error); }
     this.pendingTurns.clear();

@@ -4,6 +4,25 @@ export type JsonObject = { [key: string]: JsonValue };
 
 export type ErrorCategory = "configuration" | "process" | "protocol" | "timeout" | "network-timeout" | "server";
 
+export interface InitializeResult {
+  userAgent?: string;
+  codexHome?: string;
+  platformFamily?: string;
+  platformOs?: string;
+}
+
+export interface StartThreadOptions {
+  cwd: string;
+  ephemeral?: boolean;
+  approvalPolicy?: string;
+  sandbox?: string;
+}
+
+export interface TurnInput {
+  type: "text";
+  text: string;
+}
+
 export class AppServerError extends Error {
   readonly category: ErrorCategory;
   readonly code: JsonValue | undefined;
@@ -42,6 +61,17 @@ export interface TerminalTurnEvent extends TurnEvent {
   error?: AppServerError;
 }
 
+export type DiagnosticEvent = "request.completed" | "request.failed" | "turn.terminal";
+export interface DiagnosticRecord {
+  event: DiagnosticEvent;
+  method: string;
+  requestId?: number;
+  turnId?: string;
+  durationMs?: number;
+  outcome?: TerminalTurnEvent["outcome"];
+  errorCategory?: ErrorCategory;
+}
+
 export function isJsonObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -58,6 +88,34 @@ export function getThreads(value: JsonValue): ThreadSummary[] {
     if (!isJsonObject(item)) return [];
     const id = readString(item, "id");
     return id === undefined ? [] : [{ id, title: readString(item, "title"), status: readString(item, "status") }];
+  });
+}
+
+export function getThread(value: JsonValue): Thread | undefined {
+  if (!isJsonObject(value)) return undefined;
+  const source = isJsonObject(value.thread) ? value.thread : value;
+  const id = readString(source, "id");
+  if (id === undefined) return undefined;
+  return {
+    id,
+    title: readString(source, "title"),
+    status: readString(source, "status"),
+    turns: Array.isArray(source.turns)
+      ? source.turns.flatMap((item) => {
+          if (!isJsonObject(item)) return [];
+          const turnId = readString(item, "id");
+          return turnId === undefined ? [] : [{ id: turnId, status: readString(item, "status") }];
+        })
+      : undefined,
+  };
+}
+
+export function getTurns(value: JsonValue): Turn[] {
+  if (!isJsonObject(value) || !Array.isArray(value.data)) return [];
+  return value.data.flatMap((item) => {
+    if (!isJsonObject(item)) return [];
+    const id = readString(item, "id");
+    return id === undefined ? [] : [{ id, status: readString(item, "status") }];
   });
 }
 

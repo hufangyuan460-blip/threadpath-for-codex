@@ -1,17 +1,18 @@
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { AppServerClient } from "./app-server-client.ts";
-import { AppServerError, NetworkTimeoutError, ProcessError, ProtocolError, TimeoutError, getThreadId, getThreads, getTurnId, isJsonObject } from "./protocol.ts";
+import { type DiagnosticRecord, AppServerError, NetworkTimeoutError, ProcessError, ProtocolError, TimeoutError, isJsonObject } from "./protocol.ts";
 
 const cwd = process.cwd();
 const fakeServerPath = fileURLToPath(new URL("./fake-app-server.ts", import.meta.url));
-function createFakeClient(mode: string, hasExistingThread = false): AppServerClient {
+function createFakeClient(mode: string, hasExistingThread = false, diagnostics?: DiagnosticRecord[]): AppServerClient {
   return new AppServerClient({
     cwd,
     executable: process.execPath,
     args: ["--experimental-strip-types", fakeServerPath],
     requestTimeoutMs: 250,
     env: { ...process.env, FAKE_APP_SERVER_MODE: mode, FAKE_APP_SERVER_HAS_THREAD: String(hasExistingThread) },
+    onDiagnostic: diagnostics === undefined ? undefined : (record) => diagnostics.push(record),
   });
 }
 async function withClient<T>(mode: string, hasExistingThread: boolean, run: (client: AppServerClient) => Promise<T>): Promise<T> {
@@ -20,21 +21,20 @@ async function withClient<T>(mode: string, hasExistingThread: boolean, run: (cli
 }
 async function verifyHappyPath(hasExistingThread: boolean, expectedOutcome: "completed" | "failed" | "interrupted"): Promise<void> {
   await withClient(expectedOutcome, hasExistingThread, async (client) => {
-    await client.request("initialize", { clientInfo: { name: "protocol-test" }, capabilities: null });
-    client.notify("initialized");
-    const threads = getThreads(await client.request("thread/list", { archived: false, limit: 10 }));
+    await client.initialize();
+    const threads = await client.listThreads({ archived: false, limit: 10 });
     assert.equal(threads.length, hasExistingThread ? 1 : 0);
     if (hasExistingThread) {
       const threadId = threads[0]?.id;
       assert.equal(threadId, "existing-thread");
-      await client.request("thread/read", { threadId });
-      await client.request("thread/turns/list", { threadId, limit: 10 });
+      await client.readThread(threadId);
+      await client.listTurns(threadId, 10);
     }
-    const startedThread = getThreadId(await client.request("thread/start", { cwd, ephemeral: true }));
-    assert.equal(startedThread, "new-thread");
-    const turnId = getTurnId(await client.request("turn/start", { threadId: startedThread, input: [] }));
-    assert.equal(turnId, "turn-1");
-    const terminal = await client.waitForTurnTerminal(turnId);
+    const startedThread = await client.startThread({ cwd, ephemeral: true });
+    assert.equal(startedThread.id, "new-thread");
+    const turn = await client.startTurn(startedThread.id, []);
+    assert.equal(turn.id, "turn-1");
+    const terminal = await client.waitForTurnTerminal(turn.id);
     assert.equal(terminal.outcome, expectedOutcome);
     if (expectedOutcome === "failed") assert.ok(terminal.error instanceof NetworkTimeoutError);
   });
@@ -57,6 +57,20 @@ async function verifyServerError(): Promise<void> {
     });
   });
 }
+async function verifyDiagnostics(): Promise<void> {
+  const diagnostics: DiagnosticRecord[] = [];
+  const client = createFakeClient("completed", false, diagnostics);
+  try {
+    await client.initialize();
+    const thread = await client.startThread({ cwd, ephemeral: true });
+    const turn = await client.startTurn(thread.id, []);
+    await client.waitForTurnTerminal(turn.id);
+    assert.ok(diagnostics.some((record) => record.event === "request.completed" && record.method === "initialize" && record.requestId === 1));
+    assert.ok(diagnostics.some((record) => record.event === "turn.terminal" && record.method === "turn/completed" && record.outcome === "completed"));
+  } finally {
+    await client.close();
+  }
+}
 async function verifyEarlyExit(): Promise<void> { await withClient("completed", false, async (client) => { await assert.rejects(client.request("test/exit"), ProcessError); }); }
 async function verifyNonJsonOutput(): Promise<void> {
   await withClient("non-json", false, async (client) => {
@@ -77,6 +91,7 @@ async function main(): Promise<void> {
   await verifyUnsupportedServerRequest("server-request-string");
   await verifyTimeout();
   await verifyServerError();
+  await verifyDiagnostics();
   await verifyEarlyExit();
   await verifyNonJsonOutput();
   await verifyLaunchFailure();
