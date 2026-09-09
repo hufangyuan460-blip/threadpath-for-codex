@@ -10,7 +10,7 @@
 
 ThreadPath for Codex 是一个独立的桌面客户端项目，目标是让 Codex CLI 对话更容易浏览、搜索和导航，并为未来的线程 Fork、树视图、DAG 可视化与分支比较提供基础。
 
-项目已完成 `v0.0.1` 协议验证和 `M0` 桌面应用外壳。协议代码集中在 `threadpath-protocol/`，用于验证本地 Codex `app-server` 的通信协议和流式事件行为；`apps/desktop/` 当前只提供安全的 Electron + React 空壳，不连接 app-server。
+项目已完成 `v0.0.1` 协议验证和 `M0` 桌面应用外壳，当前进入 `M1-A` 生命周期接入。协议代码集中在 `threadpath-protocol/`，Electron 主进程现在负责 app-server 的连接生命周期；线程读取和对话 UI 仍未接入。
 
 ### 当前能力
 
@@ -22,6 +22,7 @@ ThreadPath for Codex 是一个独立的桌面客户端项目，目标是让 Code
 - 处理请求超时、进程退出、格式错误输出、服务端错误和协议错误；
 - 以 fake app-server 覆盖已有/空线程、三种回合终态和关键故障路径；
 - 提供 `apps/desktop/` M0 安全桌面外壳，启用 context isolation 并禁用 renderer Node 集成；
+- 由 Electron 主进程管理 app-server 连接状态、初始化、关闭和重连；
 - 为未来的 Electron 桌面客户端积累协议事实。
 
 ### 快速开始
@@ -71,6 +72,7 @@ npm run smoke
 ### 路线图
 
 - `M0`：安全 Electron 桌面应用外壳，暂不连接 app-server；
+- `M1-A`：主进程接入 app-server 生命周期，renderer 仅显示连接状态，不读取线程；
 - `v0.0.1`：Codex app-server 协议验证、JSONL/JSON-RPC 传输与可重复故障测试；
 - `v0.0.2`：可复用的类型化协议客户端、版本化 fixture 和脱敏诊断事件日志；
 - `v0.1.0`：线性对话基础、线程/回合加载、导航和搜索；
@@ -88,7 +90,7 @@ npm run smoke
 
 ThreadPath for Codex is an independent desktop client project designed to make Codex CLI conversations easier to browse, search, and navigate. It also lays the foundation for future thread forking, tree views, DAG visualization, and branch comparison.
 
-The project has completed `v0.0.1` protocol validation and `M0` desktop shell setup. The protocol implementation lives in `threadpath-protocol/`; `apps/desktop/` currently provides only a secure Electron + React shell and does not connect to `app-server`.
+The project has completed `v0.0.1` protocol validation and `M0` desktop shell setup, and is now entering `M1-A` lifecycle integration. The Electron main process manages the app-server connection lifecycle; thread loading and conversation UI are not connected yet.
 
 ### Current capabilities
 
@@ -100,6 +102,7 @@ The project has completed `v0.0.1` protocol validation and `M0` desktop shell se
 - Handles request timeouts, process exits, malformed stdout, server errors, and protocol errors;
 - Uses a fake app-server to cover existing/empty thread lists, three terminal turn outcomes, and key failure paths;
 - Provides an `apps/desktop/` M0 secure desktop shell with context isolation and renderer Node integration disabled;
+- Lets the Electron main process own app-server connection, initialization, shutdown, and reconnection;
 - Builds protocol knowledge for the future Electron desktop client.
 
 ### Quick start
@@ -149,6 +152,7 @@ npm run smoke
 ### Roadmap
 
 - `M0`: secure Electron desktop application shell without app-server integration;
+- `M1-A`: main-process app-server lifecycle integration with renderer connection status only;
 - `v0.0.1`: Codex app-server protocol validation, JSONL/JSON-RPC transport, and repeatable failure tests;
 - `v0.0.2`: reusable typed protocol client APIs, versioned fixtures, and redacted diagnostic event logging;
 - `v0.1.0`: linear conversation foundation, thread/turn loading, navigation, and search;

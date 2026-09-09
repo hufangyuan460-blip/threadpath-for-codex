@@ -1,18 +1,37 @@
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
-import type { AppInfo, ConnectionInfo } from "../shared/api";
+import type { AppInfo, ConnectionStateSnapshot } from "../shared/api";
 
 function App(): React.JSX.Element {
   const [appInfo, setAppInfo] = useState<AppInfo | undefined>();
-  const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | undefined>();
+  const [connectionState, setConnectionState] = useState<ConnectionStateSnapshot>({ state: "idle" });
+  const [reconnecting, setReconnecting] = useState(false);
 
   useEffect(() => {
-    void Promise.all([window.threadPath.getAppInfo(), window.threadPath.getConnectionInfo()]).then(([info, connection]) => {
+    let active = true;
+    const refresh = async (): Promise<void> => {
+      const [info, state] = await Promise.all([window.threadPath.getAppInfo(), window.threadPath.getConnectionState()]);
+      if (!active) return;
       setAppInfo(info);
-      setConnectionInfo(connection);
-    });
+      setConnectionState(state);
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 500);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
   }, []);
+
+  const handleReconnect = async (): Promise<void> => {
+    setReconnecting(true);
+    try {
+      setConnectionState(await window.threadPath.reconnect());
+    } finally {
+      setReconnecting(false);
+    }
+  };
 
   return (
     <main className="shell">
@@ -22,15 +41,22 @@ function App(): React.JSX.Element {
           <h1>ThreadPath for Codex</h1>
         </div>
         <div className="status" aria-label="Connection status">
-          <span className="status-dot" />
-          {connectionInfo?.status ?? "checking"}
+          <span className={`status-dot status-${connectionState.state}`} />
+          {connectionState.state}
         </div>
       </header>
       <section className="empty-state" aria-label="Empty content area">
         <div className="empty-card">
           <p className="empty-kicker">Desktop shell</p>
-          <h2>Ready for the protocol layer</h2>
-          <p>The application shell is running. Codex connection features will be added in a later milestone.</p>
+          <h2>Codex connection {connectionState.state}</h2>
+          <p>The application shell manages the local app-server lifecycle. Thread data and conversation views will be added in a later milestone.</p>
+          {connectionState.error === undefined ? null : <p className="error-summary">{connectionState.error}</p>}
+          {connectionState.serverVersion === undefined ? null : <small>Server {connectionState.serverVersion}</small>}
+          {connectionState.state === "error" || connectionState.state === "stopped" ? (
+            <button type="button" onClick={() => void handleReconnect()} disabled={reconnecting}>
+              {reconnecting ? "Reconnecting…" : "Reconnect"}
+            </button>
+          ) : null}
           {appInfo === undefined ? null : <small>Version {appInfo.version}</small>}
         </div>
       </section>

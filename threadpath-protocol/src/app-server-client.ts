@@ -19,6 +19,7 @@ export interface AppServerClientOptions {
   readonly onProtocolWarning?: (error: ProtocolError) => void;
   readonly clientInfo?: { name: string; title?: string; version?: string };
   readonly onDiagnostic?: (record: DiagnosticRecord) => void;
+  readonly onFatalError?: (error: AppServerError) => void;
 }
 
 export class AppServerClient {
@@ -31,6 +32,7 @@ export class AppServerClient {
   private readonly onProtocolWarning: (error: ProtocolError) => void;
   private readonly clientInfo: { name: string; title: string; version: string };
   private readonly onDiagnostic: (record: DiagnosticRecord) => void;
+  private readonly onFatalError: (error: AppServerError) => void;
   private capabilitiesState: AppServerCapabilities = { known: false, methods: [], events: [] };
   private nextRequestId = 1;
   private closing = false;
@@ -50,6 +52,7 @@ export class AppServerClient {
       throw error;
     }
     this.onProtocolWarning = options.onProtocolWarning ?? (() => undefined);
+    this.onFatalError = options.onFatalError ?? (() => undefined);
     this.clientInfo = { name: options.clientInfo?.name ?? "threadpath-protocol", title: options.clientInfo?.title ?? "ThreadPath protocol client", version: options.clientInfo?.version ?? "0.0.2" };
     const spawnOptions: SpawnOptionsWithoutStdio = { cwd: options.cwd, env: options.env, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] };
     this.child = spawn(options.executable ?? "codex", options.args ?? ["app-server", "--stdio"], spawnOptions);
@@ -270,7 +273,12 @@ export class AppServerClient {
     this.child.stdin.write(`${JSON.stringify(message)}\n`);
   }
   private warn(error: ProtocolError): void { this.onProtocolWarning(error); }
-  private failAll(error: Error): void { if (this.fatalError === undefined) this.fatalError = error; this.rejectAll(error); }
+  private failAll(error: Error): void {
+    if (this.fatalError !== undefined) return;
+    this.fatalError = error;
+    this.onFatalError(error instanceof AppServerError ? error : new ProcessError(error.message));
+    this.rejectAll(error);
+  }
   private rejectAll(error: Error): void {
     for (const [requestId, pending] of this.pendingRequests) {
       clearTimeout(pending.timeout);

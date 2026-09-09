@@ -5,6 +5,7 @@ ThreadPath for Codex 是一个面向 Codex CLI/app-server 的独立 Electron 桌
 ## 路线图
 
 - [x] **M0 — 桌面应用外壳：** 建立 pnpm workspace、Electron/Vite/React/TypeScript 三层结构，启用 context isolation 和禁用 renderer Node 集成；不连接 app-server。
+- [ ] **M1-A — app-server 生命周期接入：** 由 Electron 主进程管理连接、初始化、关闭和重连，preload 仅暴露连接状态和受限操作；暂不读取线程。
 - [x] **v0.0.1 — 协议验证：** 启动与关闭 app-server、JSONL/JSON-RPC 请求关联、流式通知、服务端请求错误回复、错误分类，以及可重复的 fake-server 验证。
 - [ ] **v0.0.2 — 协议客户端稳定化：** 提炼可复用的类型化客户端 API、版本化协议 fixture、脱敏诊断事件日志，并通过真实回合验收。
 - [ ] **v0.1.0 — 线性基础：** app-server 连接、线程/回合加载、流式对话视图、回合大纲、点击跳转、滚动联动高亮、搜索、分页和虚拟化。
