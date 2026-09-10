@@ -4,6 +4,18 @@ export interface AppInfo {
   readonly version: string;
 }
 
+export type OnboardingState = "detecting" | "found" | "connecting" | "ready" | "error";
+export type CodexDiscoverySource = "environment" | "saved" | "path" | "known-install" | "manual";
+
+export interface OnboardingSnapshot {
+  readonly state: OnboardingState;
+  readonly executablePath?: string;
+  readonly version?: string;
+  readonly source?: CodexDiscoverySource;
+  readonly cwd?: string;
+  readonly error?: string;
+}
+
 export interface ConnectionStateSnapshot {
   readonly state: ConnectionState;
   readonly error?: string;
@@ -85,6 +97,10 @@ export interface StartTurnResult {
 
 export interface DesktopApi {
   readonly getAppInfo: () => Promise<AppInfo>;
+  readonly getOnboardingState: () => Promise<OnboardingSnapshot>;
+  readonly rediscoverCodex: () => Promise<OnboardingSnapshot>;
+  readonly chooseCodexExecutable: () => Promise<OnboardingSnapshot>;
+  readonly chooseWorkingDirectory: () => Promise<OnboardingSnapshot>;
   readonly getConnectionState: () => Promise<ConnectionStateSnapshot>;
   readonly connect: () => Promise<ConnectionStateSnapshot>;
   readonly disconnect: () => Promise<ConnectionStateSnapshot>;

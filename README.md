@@ -77,6 +77,8 @@ pnpm package:win
 
 安装程序输出为 `release/ThreadPath for Codex Setup 0.1.0.exe`。安装包只包含 ThreadPath 桌面应用，不包含 Codex CLI；应用启动后仍会查找 PATH 中的 `codex`，或使用 `CODEX_EXECUTABLE` 指定的本地可执行文件。当前安装包未启用自动更新和代码签名。
 
+首次启动时，应用会按以下顺序发现 Codex CLI：`CODEX_EXECUTABLE`、已保存的用户选择、系统 PATH 中的 `codex`、`%LOCALAPPDATA%\OpenAI\Codex\bin\*\codex.exe`，最后提供手动选择。每个候选都会通过短超时的 `codex --version` 验证。工作目录由 `CODEX_CWD`、已保存选择或首次启动引导确定；只保存可执行文件路径和工作目录，不保存认证信息或对话内容。高级用户和开发测试仍可使用 `CODEX_EXECUTABLE` 与 `CODEX_CWD` 覆盖自动发现结果。
+
 默认测试工作目录是当前项目目录 `D:\threadPath`。如需测试其他项目：
 
 ```powershell
@@ -156,6 +158,8 @@ GitHub Actions runs the same authentication- and network-independent fixture typ
 For the desktop critical-path check, run `pnpm test:e2e`. It builds the desktop app and launches it against the repository's fake app-server through `CODEX_EXECUTABLE`; it does not use Codex authentication, real desktop configuration, or network model calls. The Windows quality workflow runs the same E2E suite and uploads failure logs, screenshots, and build artifacts.
 
 To build the Windows x64 NSIS installer, run `pnpm package:win`. The installer is written to `release/ThreadPath for Codex Setup 0.1.0.exe`. It contains the ThreadPath desktop app only, not the Codex CLI; the installed app still finds `codex` on PATH or uses the executable specified by `CODEX_EXECUTABLE`. Automatic updates and code signing are not enabled yet.
+
+On first launch, the app discovers Codex CLI in this order: `CODEX_EXECUTABLE`, the saved user choice, `codex` on PATH, `%LOCALAPPDATA%\OpenAI\Codex\bin\*\codex.exe`, and finally a manual file picker. Each candidate is checked with a short-timeout `codex --version` call. The working directory comes from `CODEX_CWD`, the saved choice, or the first-launch guide. Only the executable path and working directory are stored; authentication data and conversation content are never copied into the app configuration. Advanced users and development tests can override discovery with `CODEX_EXECUTABLE` and `CODEX_CWD`.
 
 ### Quick start
 

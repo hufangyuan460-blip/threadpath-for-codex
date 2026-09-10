@@ -1,23 +1,22 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CodexProcessManager, type ConnectionStateSnapshot as ManagerConnectionState } from "./codex-process-manager";
+import { CodexDiscoveryService, selectedDialogPath, type CodexDiscoveryResult } from "./codex-discovery";
 import { ThreadService } from "./thread-service";
 import { ConversationService } from "./conversation-service";
-import type { AppInfo, ConnectionStateSnapshot } from "../shared/api";
+import type { AppInfo, ConnectionStateSnapshot, OnboardingSnapshot } from "../shared/api";
 import { ProcessError } from "../../../../threadpath-protocol/src/protocol.ts";
 
 if (process.env.THREADPATH_E2E === "1") app.disableHardwareAcceleration();
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 let isQuitting = false;
-const processManager = new CodexProcessManager({
-  cwd: process.env.CODEX_CWD ?? process.cwd(),
-  executable: process.env.CODEX_EXECUTABLE?.trim() || undefined,
-  onStateChange: ({ state }) => console.log(`[desktop] connection state: ${state}`),
-});
-const threadService = new ThreadService(processManager);
-const conversationService = new ConversationService(processManager);
+let processManager: CodexProcessManager;
+let discoveryService: CodexDiscoveryService;
+let threadService: ThreadService;
+let conversationService: ConversationService;
+let onboardingSnapshot: OnboardingSnapshot = { state: "detecting" };
 
 function publicConnectionState(snapshot: ManagerConnectionState): ConnectionStateSnapshot {
   return {
@@ -29,12 +28,105 @@ function publicConnectionState(snapshot: ManagerConnectionState): ConnectionStat
   };
 }
 
+function setOnboardingSnapshot(snapshot: OnboardingSnapshot): void {
+  onboardingSnapshot = snapshot;
+}
+
+function publicDiscoveryResult(result: CodexDiscoveryResult, state: OnboardingSnapshot["state"]): OnboardingSnapshot {
+  return {
+    state,
+    executablePath: result.executablePath,
+    version: result.version,
+    source: result.source,
+    ...(result.cwd === undefined ? {} : { cwd: result.cwd }),
+  };
+}
+
+async function applyDiscoveryResult(result: CodexDiscoveryResult): Promise<OnboardingSnapshot> {
+  processManager.configure({ cwd: result.cwd ?? "", executable: result.executablePath });
+  const found = publicDiscoveryResult(result, result.cwd === undefined ? "found" : "connecting");
+  setOnboardingSnapshot(found);
+  if (result.cwd === undefined) return found;
+  const connection = await processManager.connect();
+  if (connection.state === "ready") {
+    const ready = publicDiscoveryResult(result, "ready");
+    setOnboardingSnapshot(ready);
+    return ready;
+  }
+  const error = connection.error ?? "Codex app-server could not be started";
+  const failed: OnboardingSnapshot = { ...publicDiscoveryResult(result, "error"), error };
+  setOnboardingSnapshot(failed);
+  return failed;
+}
+
+async function discoverCodex(): Promise<OnboardingSnapshot> {
+  setOnboardingSnapshot({ state: "detecting" });
+  try {
+    if (processManager.getConnectionState().state === "ready") await processManager.disconnect();
+    return await applyDiscoveryResult(await discoveryService.discover());
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    const failed: OnboardingSnapshot = { state: "error", error: message };
+    setOnboardingSnapshot(failed);
+    return failed;
+  }
+}
+
+async function chooseCodexExecutable(): Promise<OnboardingSnapshot> {
+  const selection = await dialog.showOpenDialog({
+    title: "Choose Codex CLI",
+    properties: ["openFile"],
+    filters: [{ name: "Codex CLI", extensions: ["exe", "cmd", "bat"] }],
+  });
+  const selectedPath = selectedDialogPath(selection.canceled, selection.filePaths);
+  if (selectedPath === undefined) return onboardingSnapshot;
+  try {
+    return await applyDiscoveryResult(await discoveryService.selectExecutable(selectedPath));
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    const failed: OnboardingSnapshot = { ...onboardingSnapshot, state: "error", error: message };
+    setOnboardingSnapshot(failed);
+    return failed;
+  }
+}
+
+async function chooseWorkingDirectory(): Promise<OnboardingSnapshot> {
+  const selection = await dialog.showOpenDialog({ title: "Choose working directory", properties: ["openDirectory", "createDirectory"] });
+  const selectedPath = selectedDialogPath(selection.canceled, selection.filePaths);
+  if (selectedPath === undefined) return onboardingSnapshot;
+  try {
+    const cwd = await discoveryService.selectWorkingDirectory(selectedPath);
+    const executablePath = onboardingSnapshot.executablePath;
+    if (executablePath === undefined) throw new ProcessError("Choose a Codex CLI before selecting a working directory");
+    return await applyDiscoveryResult({ executablePath, version: onboardingSnapshot.version ?? "unknown", source: onboardingSnapshot.source ?? "manual", cwd });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    const failed: OnboardingSnapshot = { ...onboardingSnapshot, state: "error", error: message };
+    setOnboardingSnapshot(failed);
+    return failed;
+  }
+}
+
 function registerApi(): void {
   ipcMain.handle("app:get-info", (): AppInfo => ({ version: app.getVersion() }));
+  ipcMain.handle("onboarding:get-state", (): OnboardingSnapshot => onboardingSnapshot);
+  ipcMain.handle("onboarding:rediscover", async (): Promise<OnboardingSnapshot> => discoverCodex());
+  ipcMain.handle("onboarding:choose-executable", async (): Promise<OnboardingSnapshot> => chooseCodexExecutable());
+  ipcMain.handle("onboarding:choose-directory", async (): Promise<OnboardingSnapshot> => chooseWorkingDirectory());
   ipcMain.handle("app:get-connection-state", (): ConnectionStateSnapshot => publicConnectionState(processManager.getConnectionState()));
-  ipcMain.handle("app:connect", async (): Promise<ConnectionStateSnapshot> => publicConnectionState(await processManager.connect()));
+  ipcMain.handle("app:connect", async (): Promise<ConnectionStateSnapshot> => {
+    const state = await processManager.connect();
+    if (state.state === "ready" && onboardingSnapshot.executablePath !== undefined && onboardingSnapshot.cwd !== undefined) setOnboardingSnapshot({ ...onboardingSnapshot, state: "ready", error: undefined });
+    else if (state.state !== "ready") setOnboardingSnapshot({ ...onboardingSnapshot, state: "error", error: state.error ?? "Codex app-server could not be started" });
+    return publicConnectionState(state);
+  });
   ipcMain.handle("app:disconnect", async (): Promise<ConnectionStateSnapshot> => publicConnectionState(await processManager.disconnect()));
-  ipcMain.handle("app:reconnect", async (): Promise<ConnectionStateSnapshot> => publicConnectionState(await processManager.reconnect()));
+  ipcMain.handle("app:reconnect", async (): Promise<ConnectionStateSnapshot> => {
+    const state = await processManager.reconnect();
+    if (state.state === "ready" && onboardingSnapshot.executablePath !== undefined && onboardingSnapshot.cwd !== undefined) setOnboardingSnapshot({ ...onboardingSnapshot, state: "ready", error: undefined });
+    else if (state.state !== "ready") setOnboardingSnapshot({ ...onboardingSnapshot, state: "error", error: state.error ?? "Codex app-server could not be started" });
+    return publicConnectionState(state);
+  });
   ipcMain.handle("threads:list", async () => withReadyConnection(() => threadService.listThreads()));
   ipcMain.handle("threads:read", async (_event, threadId: unknown) => withReadyConnection(() => conversationService.readThread(threadId)));
   ipcMain.handle("conversation:load-more", async (_event, threadId: unknown) => withReadyConnection(() => conversationService.loadMoreTurns(threadId)));
@@ -73,9 +165,21 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  discoveryService = new CodexDiscoveryService({
+    configPath: join(app.getPath("userData"), "threadpath-config.json"),
+    env: process.env,
+    platform: process.platform,
+  });
+  processManager = new CodexProcessManager({
+    cwd: "",
+    executable: undefined,
+    onStateChange: ({ state }) => console.log(`[desktop] connection state: ${state}`),
+  });
+  threadService = new ThreadService(processManager);
+  conversationService = new ConversationService(processManager);
   registerApi();
   createWindow();
-  void processManager.connect();
+  void discoverCodex();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

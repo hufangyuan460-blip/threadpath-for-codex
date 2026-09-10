@@ -3,6 +3,10 @@ import type { DesktopApi } from "../shared/api";
 
 const desktopApi: DesktopApi = {
   getAppInfo: () => ipcRenderer.invoke("app:get-info"),
+  getOnboardingState: () => ipcRenderer.invoke("onboarding:get-state"),
+  rediscoverCodex: () => ipcRenderer.invoke("onboarding:rediscover"),
+  chooseCodexExecutable: () => ipcRenderer.invoke("onboarding:choose-executable"),
+  chooseWorkingDirectory: () => ipcRenderer.invoke("onboarding:choose-directory"),
   getConnectionState: () => ipcRenderer.invoke("app:get-connection-state"),
   connect: () => ipcRenderer.invoke("app:connect"),
   disconnect: () => ipcRenderer.invoke("app:disconnect"),

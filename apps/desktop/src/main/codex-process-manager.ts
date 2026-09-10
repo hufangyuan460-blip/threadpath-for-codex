@@ -20,13 +20,18 @@ export interface CodexProcessManagerOptions {
 }
 
 export class CodexProcessManager {
-  private readonly options: CodexProcessManagerOptions;
+  private options: CodexProcessManagerOptions;
   private client: AppServerClient | undefined;
   private connectionAttempt: Promise<ConnectionStateSnapshot> | undefined;
   private snapshot: ConnectionStateSnapshot = { state: "idle" };
 
   constructor(options: CodexProcessManagerOptions) {
     this.options = options;
+  }
+
+  configure(configuration: Pick<CodexProcessManagerOptions, "cwd" | "executable">): void {
+    if (this.snapshot.state === "connecting" || this.snapshot.state === "ready") throw new ProcessError("Cannot change Codex configuration while connected");
+    this.options = { ...this.options, ...configuration };
   }
 
   getConnectionState(): ConnectionStateSnapshot {

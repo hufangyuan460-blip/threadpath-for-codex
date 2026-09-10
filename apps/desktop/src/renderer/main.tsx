@@ -2,7 +2,7 @@ import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Virtuoso, type VirtuosoHandle, type ListRange } from "react-virtuoso";
 import "./styles.css";
-import type { AppInfo, ConnectionStateSnapshot, ConversationItemView, ConversationThreadView, ConversationUpdate, SearchResult, ThreadListItem } from "../shared/api";
+import type { AppInfo, ConnectionStateSnapshot, ConversationItemView, ConversationThreadView, ConversationUpdate, OnboardingSnapshot, SearchResult, ThreadListItem } from "../shared/api";
 import { applyConversationUpdate, conversationUpdateKey } from "./conversation-state";
 import { buildTurnOutline } from "../shared/outline";
 import { chooseActiveTurnIdFromRange } from "./scroll-state";
@@ -13,6 +13,21 @@ type NavigateTurn = (turnId: string) => void;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function Onboarding({ snapshot, onRediscover, onChooseExecutable, onChooseDirectory, onConnect }: { snapshot: OnboardingSnapshot; onRediscover: () => void; onChooseExecutable: () => void; onChooseDirectory: () => void; onConnect: () => void }): React.JSX.Element | null {
+  if (snapshot.state === "ready") return null;
+  const hasExecutable = snapshot.executablePath !== undefined;
+  return (
+    <section className="onboarding-card" aria-label="Codex setup">
+      <p className="empty-kicker">First launch setup</p>
+      {snapshot.state === "detecting" ? <><h2>Detecting Codex CLI…</h2><p>Checking the configured executable, saved choice, PATH, and known Windows install locations.</p></> : null}
+      {snapshot.state === "found" ? <><h2>Codex CLI found</h2><p>Version: <strong>{snapshot.version ?? "unknown"}</strong></p><p className="mono">{snapshot.executablePath}</p>{snapshot.cwd === undefined ? <><p>Choose a project directory before connecting.</p><button type="button" onClick={onChooseDirectory}>Choose working directory</button></> : <><p className="mono">Working directory: {snapshot.cwd}</p><button type="button" onClick={onConnect}>Connect and verify</button></>}</> : null}
+      {snapshot.state === "connecting" ? <><h2>Connecting to Codex…</h2><p>Starting the local app-server and validating the protocol.</p></> : null}
+      {snapshot.state === "error" ? <><h2>Codex setup needs attention</h2><p className="error-summary">{snapshot.error ?? "Codex CLI could not be configured."}</p><div className="onboarding-actions"><button type="button" onClick={onRediscover}>Retry detection</button><button type="button" onClick={onChooseExecutable}>Choose Codex CLI</button>{hasExecutable ? <button type="button" onClick={onChooseDirectory}>Choose working directory</button> : null}</div></> : null}
+      {snapshot.state === "found" && hasExecutable ? <div className="onboarding-actions"><button type="button" onClick={onChooseExecutable}>Choose another CLI</button><button type="button" onClick={onRediscover}>Detect again</button></div> : null}
+    </section>
+  );
 }
 
 function ConversationItem({ item }: { item: ConversationItemView }): React.JSX.Element {
@@ -115,6 +130,7 @@ function Conversation({ thread, activeTurnId, searchQuery, searchResults, select
 
 function App(): React.JSX.Element {
   const [appInfo, setAppInfo] = useState<AppInfo | undefined>();
+  const [onboardingState, setOnboardingState] = useState<OnboardingSnapshot>({ state: "detecting" });
   const [connectionState, setConnectionState] = useState<ConnectionStateSnapshot>({ state: "idle" });
   const [reconnecting, setReconnecting] = useState(false);
   const [threads, setThreads] = useState<ThreadListItem[]>([]);
@@ -157,9 +173,10 @@ function App(): React.JSX.Element {
     let active = true;
     const refresh = async (): Promise<void> => {
       try {
-        const [info, state] = await Promise.all([window.threadPath.getAppInfo(), window.threadPath.getConnectionState()]);
+        const [info, onboarding, state] = await Promise.all([window.threadPath.getAppInfo(), window.threadPath.getOnboardingState(), window.threadPath.getConnectionState()]);
         if (!active) return;
         setAppInfo(info);
+        setOnboardingState(onboarding);
         setConnectionState(state);
       } catch (error: unknown) {
         if (active) setConnectionState({ state: "error", error: errorMessage(error) });
@@ -169,6 +186,27 @@ function App(): React.JSX.Element {
     const timer = window.setInterval(() => void refresh(), 500);
     return () => { active = false; window.clearInterval(timer); };
   }, []);
+
+  const handleRediscover = async (): Promise<void> => {
+    setOnboardingState({ state: "detecting" });
+    try { setOnboardingState(await window.threadPath.rediscoverCodex()); }
+    catch (error: unknown) { setOnboardingState({ state: "error", error: errorMessage(error) }); }
+  };
+
+  const handleChooseExecutable = async (): Promise<void> => {
+    try { setOnboardingState(await window.threadPath.chooseCodexExecutable()); }
+    catch (error: unknown) { setOnboardingState({ state: "error", error: errorMessage(error) }); }
+  };
+
+  const handleChooseDirectory = async (): Promise<void> => {
+    try { setOnboardingState(await window.threadPath.chooseWorkingDirectory()); }
+    catch (error: unknown) { setOnboardingState({ state: "error", error: errorMessage(error) }); }
+  };
+
+  const handleOnboardingConnect = async (): Promise<void> => {
+    try { setConnectionState(await window.threadPath.connect()); }
+    catch (error: unknown) { setOnboardingState((current) => ({ ...current, state: "error", error: errorMessage(error) })); }
+  };
 
   useEffect(() => {
     if (connectionState.state === "ready") void loadThreads();
@@ -358,6 +396,7 @@ function App(): React.JSX.Element {
         <div><p className="eyebrow">ThreadPath</p><h1>ThreadPath for Codex</h1></div>
         <div className="status" aria-label="Connection status"><span className={`status-dot status-${connectionState.state}`} />{connectionState.state}{connectionState.serverVersion === undefined ? null : <span className="status-meta">server {connectionState.serverVersion}</span>}</div>
       </header>
+      <Onboarding snapshot={onboardingState} onRediscover={() => void handleRediscover()} onChooseExecutable={() => void handleChooseExecutable()} onChooseDirectory={() => void handleChooseDirectory()} onConnect={() => void handleOnboardingConnect()} />
       <section className="workspace" aria-label="Thread workspace">
         <aside className="thread-panel">
           <div className="panel-heading"><div><p className="eyebrow">Workspace</p><h2>Threads</h2></div><button type="button" onClick={() => void loadThreads()} disabled={connectionState.state !== "ready" || threadLoadState === "loading"}>{threadLoadState === "loading" ? "Loading…" : "Refresh"}</button></div>

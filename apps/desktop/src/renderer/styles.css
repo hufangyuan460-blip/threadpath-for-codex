@@ -20,6 +20,10 @@ h1 { margin-bottom: 0; font-size: 24px; letter-spacing: -.02em; }
 .status-error { background: #de6d72; box-shadow: 0 0 0 4px #de6d7222; }
 .status-meta { color: #728196; font-size: 12px; }
 .workspace { display: grid; grid-template-columns: minmax(280px, 34%) 1fr; min-height: calc(100vh - 157px); }
+.onboarding-card { width: min(760px, calc(100% - 72px)); margin: 32px auto 0; padding: 28px 32px; border: 1px solid #3d5370; border-radius: 16px; background: #171e28ee; box-shadow: 0 18px 60px #00000033; }
+.onboarding-card h2 { margin-bottom: 12px; font-size: 24px; }
+.onboarding-card p:not(.empty-kicker):not(.error-summary) { color: #aebbd0; line-height: 1.6; }
+.onboarding-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
 .thread-panel { padding: 26px 22px; border-right: 1px solid #293342; background: #121923aa; }
 .details-panel { padding: 48px; }
 .conversation-layout { display: grid; grid-template-columns: 190px minmax(0, 820px); align-items: start; gap: 24px; }

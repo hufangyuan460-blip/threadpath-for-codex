@@ -10,7 +10,7 @@ const fakeExecutable = join(desktopDirectory, "tests", "e2e", "fake-app-server.c
 const electronExecutable = join(desktopDirectory, "node_modules", "electron", "dist", "electron.exe");
 const artifactDirectory = join(repositoryDirectory, "artifacts", "e2e");
 
-async function launch(mode: string, executable = fakeExecutable): Promise<{ application: ElectronApplication; page: Page; output: string[] }> {
+async function launch(mode: string, executable = fakeExecutable, cwd: string | null = repositoryDirectory): Promise<{ application: ElectronApplication; page: Page; output: string[] }> {
   const userDataDirectory = join(artifactDirectory, "user-data", `${mode}-${process.pid}-${Date.now()}`);
   await mkdir(userDataDirectory, { recursive: true });
   const application = await electron.launch({
@@ -18,8 +18,8 @@ async function launch(mode: string, executable = fakeExecutable): Promise<{ appl
     args: ["--no-sandbox", "--disable-gpu", `--user-data-dir=${userDataDirectory}`, join(desktopDirectory, "out", "main", "index.js")],
     env: {
       ...process.env,
-      CODEX_CWD: repositoryDirectory,
       CODEX_EXECUTABLE: executable,
+      ...(cwd === null ? {} : { CODEX_CWD: cwd }),
       FAKE_APP_SERVER_MODE: mode,
       FAKE_APP_SERVER_HAS_THREAD: "true",
       ELECTRON_DISABLE_GPU: "1",
@@ -57,9 +57,9 @@ async function scrollListToBottom(page: Page): Promise<void> {
 
 type ScenarioAction = (page: Page) => Promise<void>;
 
-async function runScenario(name: string, mode: string, action: ScenarioAction, executable = fakeExecutable): Promise<void> {
+async function runScenario(name: string, mode: string, action: ScenarioAction, executable = fakeExecutable, cwd: string | null = repositoryDirectory): Promise<void> {
   console.log(`[e2e] starting ${name}`);
-  const { application, page, output } = await launch(mode, executable);
+  const { application, page, output } = await launch(mode, executable, cwd);
   try {
     await action(page);
     console.log(`[e2e] passed ${name}`);
@@ -103,6 +103,14 @@ async function runCompletedPath(): Promise<void> {
   });
 }
 
+async function runFirstLaunchDiscoveryPath(): Promise<void> {
+  await runScenario("first-launch", "e2e-completed", async (page) => {
+    await page.getByRole("heading", { name: "Codex CLI found" }).waitFor({ state: "visible" });
+    await page.getByText("Choose a project directory before connecting.").waitFor({ state: "visible" });
+    await page.getByRole("button", { name: "Choose working directory" }).waitFor({ state: "visible" });
+  }, fakeExecutable, null);
+}
+
 async function runTerminalPath(mode: "e2e-failed" | "e2e-interrupted", expected: "failed" | "interrupted"): Promise<void> {
   await runScenario(expected, mode, async (page) => {
     await openThread(page);
@@ -126,6 +134,7 @@ async function runStartupFailurePath(): Promise<void> {
 
 async function main(): Promise<void> {
   await mkdir(artifactDirectory, { recursive: true });
+  await runFirstLaunchDiscoveryPath();
   await runCompletedPath();
   await runTerminalPath("e2e-failed", "failed");
   await runTerminalPath("e2e-interrupted", "interrupted");
