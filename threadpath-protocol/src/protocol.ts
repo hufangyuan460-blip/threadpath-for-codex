@@ -65,6 +65,9 @@ export class CompatibilityError extends AppServerError {
 export class ThreadUnavailableError extends AppServerError {
   constructor(message = "This thread is no longer available. Refresh the thread list and try again.", code?: JsonValue) { super(message, "server", code); this.name = "ThreadUnavailableError"; }
 }
+export class ActiveTurnError extends AppServerError {
+  constructor(message = "This conversation is already responding. Refresh its status before sending another message.") { super(message, "server", "active_writer"); this.name = "ActiveTurnError"; }
+}
 export class TimeoutError extends AppServerError {
   constructor(message: string) { super(message, "timeout"); this.name = "TimeoutError"; }
 }

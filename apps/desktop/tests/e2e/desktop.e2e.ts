@@ -77,7 +77,14 @@ async function runScenario(name: string, mode: string, action: ScenarioAction, e
 
 async function runCompletedPath(): Promise<void> {
   await runScenario("completed", "e2e-completed", async (page) => {
+    await waitForText(page, '[aria-label="Connection status"]', "ready");
+    const historyList = page.locator(".thread-list");
+    await historyList.waitFor({ state: "visible" });
+    await historyList.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+    const historyScrollTop = await historyList.evaluate((element) => element.scrollTop);
+    assert.ok(historyScrollTop > 0, "history list did not scroll independently");
     await openThread(page);
+    await page.locator("[data-turn-id]").first().waitFor({ state: "visible" });
     const renderedCount = await page.locator("[data-turn-id]").count();
     assert.ok(renderedCount > 0 && renderedCount < 24, `expected virtualized DOM, got ${renderedCount} turn nodes`);
 
@@ -112,9 +119,16 @@ async function runCompletedPath(): Promise<void> {
     await page.getByRole("button", { name: "Restore automatic name" }).click();
     await page.locator(".conversation-heading h2").getByText("User turn 1", { exact: true }).waitFor({ state: "visible" });
 
+    await page.getByRole("button", { name: "Back to conversation history" }).click();
+    await page.getByRole("heading", { name: "Threads" }).waitFor({ state: "visible" });
+    assert.ok(await historyList.evaluate((element) => element.scrollTop) >= historyScrollTop, "history list scroll position was not restored");
+    await page.locator(".thread-row").first().click();
+    await page.locator(".thread-directory").waitFor({ state: "visible" });
+    await page.locator("#turn-input").waitFor({ state: "visible" });
+
     await page.locator("#turn-input").fill("keep input while switching language");
     await page.getByRole("button", { name: "Switch language" }).click();
-    await page.getByText("会话", { exact: true }).waitFor({ state: "visible" });
+    await page.getByRole("button", { name: "返回会话历史" }).waitFor({ state: "visible" });
     assert.equal(await page.locator("#turn-input").inputValue(), "keep input while switching language");
   });
 }
@@ -159,6 +173,20 @@ async function runReadOnlyExistingThreadPath(): Promise<void> {
   });
 }
 
+async function runActiveWriterPath(): Promise<void> {
+  await runScenario("existing-thread-active-writer", "e2e-active-writer", async (page) => {
+    await openThread(page);
+    await page.locator("#turn-input").fill("keep active writer input");
+    await page.locator(".turn-composer button[type=submit]").click();
+    await page.locator(".composer-status").getByText("This conversation is responding.", { exact: true }).waitFor({ state: "visible" });
+    assert.equal(await page.locator("#turn-input").inputValue(), "keep active writer input");
+    assert.equal(await page.locator(".composer-send").isDisabled(), true);
+    await page.locator(".refresh-status").click();
+    await page.locator(".refresh-status").waitFor({ state: "hidden" });
+    assert.equal(await page.locator("#turn-input").inputValue(), "keep active writer input");
+  });
+}
+
 async function runStartupFailurePath(): Promise<void> {
   await runScenario("startup-failure", "e2e-completed", async (page) => {
     await waitForText(page, '[aria-label="Connection status"]', "error");
@@ -176,6 +204,7 @@ async function main(): Promise<void> {
   await runTerminalPath("e2e-interrupted", "interrupted");
   await runUnavailableExistingThreadPath();
   await runReadOnlyExistingThreadPath();
+  await runActiveWriterPath();
   await runStartupFailurePath();
   console.log("[e2e] desktop critical paths passed");
 }

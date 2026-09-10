@@ -118,6 +118,10 @@ The minimum method set for the current live flow is `thread/list`, `thread/start
 
 Older app-servers that omit capability information remain supported in compatibility mode: the client allows the protocol methods and terminal events implemented by this prototype, while `supports()` returns `false` for unknown names. Unknown fields in initialize responses are ignored, so newer servers can add metadata without breaking this client.
 
+The desktop conversation service treats explicit `running`, `in_progress`, `started`, `pending`, and `queued` turn states as busy. A plain thread status of `active` only means that the thread is available; without an explicitly active turn it does not disable input. An `already has an active writer` response is mapped to a typed busy-thread error, preserves the draft, and prevents another `turn/start` until a terminal event or a status refresh confirms that the thread is no longer active. Turn pages are oriented to chronological display order before merging: timestamp order is used only to orient a page when both boundaries are valid and distinct; otherwise the app-server's newest-first page direction is used as the stable fallback. Older pages are then inserted before existing turns by unique ID, without reordering duplicates.
+
+No verified app-server per-turn cancellation method is included in the current protocol capabilities. The desktop running-state control therefore shows a disabled pause indicator with an accessible explanation; it never kills the app-server process or calls an unverified RPC.
+
 ## Known limits
 
 - The fake server proves transport behavior, not compatibility with every Codex CLI version.

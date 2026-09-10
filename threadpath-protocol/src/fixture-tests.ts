@@ -60,6 +60,9 @@ async function main(): Promise<void> {
   assert.equal(getThread(asObject(threadResume[1]).result)?.canAcceptDirectInput, true);
   const readOnlyResume = await readJsonLines("thread-resume-read-only.jsonl");
   assert.equal(getThread(asObject(readOnlyResume[1]).result)?.canAcceptDirectInput, false);
+  const activeWriter = await readJsonLines("thread-active-writer.jsonl");
+  assert.equal(getThread(asObject(activeWriter[1]).result)?.status, "active");
+  assert.equal(errorFromServer(asObject(activeWriter[2]).error).code, "active_writer");
   const turnsList = await readJsonLines("turns-list.jsonl");
   assert.equal(turnsList.length, 2);
   assert.deepEqual(getTurnPage(asObject(turnsList[1]).result), { turns: [{ id: "turn-1", status: "completed" }] });

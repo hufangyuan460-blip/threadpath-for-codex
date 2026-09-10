@@ -1,0 +1,3 @@
+{"jsonrpc":"2.0","id":7,"method":"thread/resume","params":{"threadId":"thread-1","excludeTurns":true}}
+{"jsonrpc":"2.0","id":7,"result":{"thread":{"id":"thread-1","status":"active","canAcceptDirectInput":true}}}
+{"jsonrpc":"2.0","id":8,"error":{"code":"active_writer","message":"thread thread-1 already has an active writer"}}

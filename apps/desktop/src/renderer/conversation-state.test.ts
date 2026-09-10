@@ -35,6 +35,13 @@ async function main(): Promise<void> {
   assert.deepEqual(thread.paging.orderedTurnIds, ["turn-live"]);
   assert.equal(thread.turns.some((item) => item.id === "old-turn"), false);
 
+  const started = updates.find((update) => update.type === "turn/started");
+  assert.equal(started?.type, "turn/started");
+  const activeThread = applyConversationUpdate({ ...thread, turns: [], outline: [], paging: { ...thread.paging, orderedTurnIds: [] }, remoteActive: undefined, remoteActiveTurnId: undefined }, started!);
+  assert.equal(activeThread.remoteActive, true);
+  const completed = updates.find((update) => update.type === "turn/completed");
+  assert.equal(applyConversationUpdate(activeThread, completed!).remoteActive, undefined);
+
   const failed = updates.find((update) => update.type === "turn/failed");
   assert.equal(failed?.threadId, "thread-failed");
   const interrupted = updates.find((update) => update.type === "turn/interrupted");

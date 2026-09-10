@@ -60,6 +60,9 @@ export interface ConversationThreadView {
   readonly id: string;
   readonly title: string;
   readonly status: string;
+  readonly canAcceptDirectInput?: boolean;
+  readonly remoteActive?: boolean;
+  readonly remoteActiveTurnId?: string;
   readonly turns: readonly ConversationTurnView[];
   readonly outline: readonly TurnOutlineEntry[];
   readonly paging: ConversationPagingState;

@@ -1,4 +1,4 @@
-import { AppServerError, ConfigurationError, ProtocolError, ThreadUnavailableError, type JsonObject, type JsonValue, type Thread, type Turn, type TurnInput, type TurnItem, type TurnPage, isJsonObject, readString } from "../../../../threadpath-protocol/src/protocol.ts";
+import { ActiveTurnError, AppServerError, ConfigurationError, ProtocolError, ThreadUnavailableError, type JsonObject, type JsonValue, type Thread, type Turn, type TurnInput, type TurnItem, type TurnPage, isJsonObject, readString } from "../../../../threadpath-protocol/src/protocol.ts";
 import type { ConversationItemView, ConversationPagingState, ConversationThreadView, ConversationTurnView, ConversationUpdate, SearchResult, StartTurnResult } from "../shared/api";
 import { type ThreadClient, type ThreadClientProvider, validateThreadId } from "./thread-service.ts";
 import { buildTurnOutline } from "../shared/outline.ts";
@@ -28,6 +28,8 @@ export class ConversationService {
   private boundClient: ConversationClient | undefined;
   private unsubscribeNotifications: (() => void) | undefined;
   private readonly loadedThreads = new Map<string, ConversationThreadView>();
+  private readonly remoteActiveThreads = new Set<string>();
+  private readonly remoteActiveTurnIds = new Map<string, string>();
   private activeTurn: { threadId: string; turnId: string } | undefined;
   private startingTurn = false;
 
@@ -41,7 +43,9 @@ export class ConversationService {
     this.bindNotifications(client);
     const thread = await client.readThread(validThreadId);
     const page = await client.listTurns(validThreadId, { limit: 20 });
-    const sourceTurns = page.turns.length === 0 && (thread.turns?.length ?? 0) > 0 ? (thread.turns ?? []) : page.turns;
+    const sourceTurns = page.turns.length === 0 && (thread.turns?.length ?? 0) > 0
+      ? pageTurnsInDisplayOrder(thread.turns ?? [])
+      : pageTurnsInDisplayOrder(page.turns);
     const initialTurns = mergeConversationTurns([], sourceTurns.map((turn, index) => toConversationTurnView(turn, index)));
     const view = withPaging(toConversationThreadView({ ...thread, turns: [] }), {
       nextCursor: page.nextCursor,
@@ -49,8 +53,10 @@ export class ConversationService {
       loadMoreError: undefined,
     });
     const initialView = { ...view, turns: initialTurns, outline: buildTurnOutline(initialTurns), paging: { ...view.paging, orderedTurnIds: initialTurns.map((turn) => turn.id) } };
-    this.loadedThreads.set(validThreadId, initialView);
-    return initialView;
+    if (this.remoteActiveThreads.has(validThreadId) && !initialView.remoteActive && !page.turns.some(isActiveTurn)) this.clearRemoteActive(validThreadId);
+    const nextView = this.applyObservedActivity(validThreadId, initialView, [...(thread.turns ?? []), ...page.turns]);
+    this.loadedThreads.set(validThreadId, nextView);
+    return nextView;
   }
 
   async loadMoreTurns(threadId: unknown): Promise<ConversationThreadView> {
@@ -65,16 +71,17 @@ export class ConversationService {
     this.loadedThreads.set(validThreadId, loading);
     try {
       const page = await client.listTurns(validThreadId, { limit: 20, cursor: current.paging.nextCursor });
-      const turns = mergeConversationTurns(current.turns, page.turns.map((turn, index) => toConversationTurnView(turn, index)));
+      const incomingTurns = pageTurnsInDisplayOrder(page.turns).map((turn, index) => toConversationTurnView(turn, index));
+      const turns = mergeConversationTurns(current.turns, incomingTurns, "prepend");
       const addedTurnCount = Math.max(0, turns.length - current.turns.length);
       const repeatedCursor = page.nextCursor !== undefined && page.nextCursor === current.paging.nextCursor;
-      const next = withPaging({ ...current, turns, outline: buildTurnOutline(turns) }, {
+      const next = this.applyObservedActivity(validThreadId, withPaging({ ...current, turns, outline: buildTurnOutline(turns) }, {
         nextCursor: page.nextCursor,
         hasMore: page.nextCursor !== undefined && !repeatedCursor,
         isLoadingMore: false,
         loadMoreError: undefined,
         firstItemIndex: Math.max(1, current.paging.firstItemIndex - addedTurnCount),
-      });
+      }), page.turns);
       this.loadedThreads.set(validThreadId, next);
       return next;
     } catch (error: unknown) {
@@ -96,6 +103,7 @@ export class ConversationService {
     if (typeof text !== "string" || text.trim() === "" || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)) {
       throw new ConfigurationError("turn text must be non-empty plain text");
     }
+    if (this.remoteActiveThreads.has(validThreadId)) throw new ActiveTurnError();
     if (this.startingTurn || this.activeTurn !== undefined) throw new ProtocolError("only one turn may run at a time");
     this.startingTurn = true;
     try {
@@ -108,11 +116,30 @@ export class ConversationService {
         if (resumedThread.canAcceptDirectInput === false) {
           throw new ThreadUnavailableError("This thread cannot accept direct input. Refresh the thread list and choose another thread.");
         }
+        const activeTurn = (resumedThread.turns ?? []).find(isActiveTurn);
+        if (activeTurn !== undefined) {
+          this.markRemoteActive(validThreadId, activeTurn?.id);
+          throw new ActiveTurnError();
+        }
       } catch (error: unknown) {
+        if (error instanceof ActiveTurnError) throw error;
+        if (isActiveWriterError(error)) {
+          this.markRemoteActive(validThreadId);
+          throw new ActiveTurnError();
+        }
         if (isThreadUnavailable(error)) throw new ThreadUnavailableError(undefined, error.code);
         throw error;
       }
-      const turn = await client.startTurn(validThreadId, [{ type: "text", text: text.trim() }]);
+      let turn: Turn;
+      try {
+        turn = await client.startTurn(validThreadId, [{ type: "text", text: text.trim() }]);
+      } catch (error: unknown) {
+        if (isActiveWriterError(error)) {
+          this.markRemoteActive(validThreadId);
+          throw new ActiveTurnError();
+        }
+        throw error;
+      }
       this.activeTurn = { threadId: validThreadId, turnId: turn.id };
       return { threadId: validThreadId, turnId: turn.id };
     } finally {
@@ -134,6 +161,8 @@ export class ConversationService {
     this.unsubscribeNotifications = undefined;
     this.boundClient = undefined;
     this.activeTurn = undefined;
+    this.remoteActiveThreads.clear();
+    this.remoteActiveTurnIds.clear();
     this.loadedThreads.clear();
   }
 
@@ -144,13 +173,43 @@ export class ConversationService {
     this.unsubscribeNotifications = client.onNotification(({ method, params }) => {
       const update = toConversationUpdate(method, params);
       if (update === undefined) return;
+      if (update.type === "turn/started") this.markRemoteActive(update.threadId, update.turnId);
       if (update.type === "turn/completed" || update.type === "turn/failed" || update.type === "turn/interrupted") {
         if (this.activeTurn?.threadId === update.threadId && this.activeTurn.turnId === update.turnId) this.activeTurn = undefined;
+        this.clearRemoteActive(update.threadId, update.turnId);
       }
       const loadedThread = this.loadedThreads.get(update.threadId);
       if (loadedThread !== undefined) this.loadedThreads.set(update.threadId, applyConversationUpdate(loadedThread, update));
       for (const listener of this.updateListeners) listener(update);
     });
+  }
+
+  private applyObservedActivity(threadId: string, view: ConversationThreadView, observedTurns: readonly Turn[]): ConversationThreadView {
+    const activeTurn = observedTurns.find(isActiveTurn);
+    if (activeTurn !== undefined) this.markRemoteActive(threadId, activeTurn.id);
+    return this.withKnownActivity(threadId, view);
+  }
+
+  private withKnownActivity(threadId: string, view: ConversationThreadView): ConversationThreadView {
+    if (!this.remoteActiveThreads.has(threadId)) return withoutRemoteActivity(view);
+    const activeTurnId = this.remoteActiveTurnIds.get(threadId);
+    return { ...withoutRemoteActivity(view), remoteActive: true, ...(activeTurnId === undefined ? {} : { remoteActiveTurnId: activeTurnId }) };
+  }
+
+  private markRemoteActive(threadId: string, turnId?: string): void {
+    this.remoteActiveThreads.add(threadId);
+    if (turnId !== undefined) this.remoteActiveTurnIds.set(threadId, turnId);
+    const loaded = this.loadedThreads.get(threadId);
+    if (loaded !== undefined) this.loadedThreads.set(threadId, this.withKnownActivity(threadId, loaded));
+  }
+
+  private clearRemoteActive(threadId: string, turnId?: string): void {
+    const knownTurnId = this.remoteActiveTurnIds.get(threadId);
+    if (turnId !== undefined && knownTurnId !== undefined && turnId !== knownTurnId) return;
+    this.remoteActiveThreads.delete(threadId);
+    this.remoteActiveTurnIds.delete(threadId);
+    const loaded = this.loadedThreads.get(threadId);
+    if (loaded !== undefined) this.loadedThreads.set(threadId, withoutRemoteActivity(loaded));
   }
 }
 
@@ -158,12 +217,39 @@ function isThreadUnavailable(error: unknown): error is AppServerError {
   return error instanceof AppServerError && (/thread[\s_-]*(not[\s_-]*found|unavailable|deleted)/i.test(error.message) || (typeof error.code === "string" && /thread[\s_-]*(not[\s_-]*found|unavailable|deleted)/i.test(error.code)));
 }
 
+function isActiveWriterError(error: unknown): boolean {
+  if (!(error instanceof AppServerError)) return error instanceof Error && /already has an active writer|active writer/i.test(error.message);
+  return /already has an active writer|active writer/i.test(`${error.message} ${String(error.code)}`);
+}
+
+function isActiveStatus(status: string | undefined): boolean {
+  return status !== undefined && /^(running|in_progress|started|pending|queued)$/i.test(status.trim());
+}
+
+function isActiveTurn(turn: Turn): boolean { return isActiveStatus(turn.status); }
+
+function pageTurnsInDisplayOrder(turns: readonly Turn[]): Turn[] {
+  if (turns.length < 2) return [...turns];
+  const firstCreatedAt = turns[0]?.createdAt;
+  const lastCreatedAt = turns[turns.length - 1]?.createdAt;
+  const first = firstCreatedAt === undefined ? Number.NaN : Date.parse(firstCreatedAt);
+  const last = lastCreatedAt === undefined ? Number.NaN : Date.parse(lastCreatedAt);
+  if (Number.isFinite(first) && Number.isFinite(last) && first !== last) return first < last ? [...turns] : [...turns].reverse();
+  // Codex returns the newest turn first for an otherwise unoriented page.
+  // Keep this as a page-orientation fallback only; mergeConversationTurns
+  // never reorders already positioned turns by timestamp.
+  return [...turns].reverse();
+}
+
 export function toConversationThreadView(thread: Thread): ConversationThreadView {
   const turns = (thread.turns ?? []).map((turn, index) => toConversationTurnView(turn, index));
+  const activeTurn = turns.find((turn) => isActiveStatus(turn.status));
   return {
     id: thread.id,
     title: thread.title?.trim() || thread.name?.trim() || "Untitled thread",
     status: thread.status?.trim() || "unknown",
+    ...(thread.canAcceptDirectInput === undefined ? {} : { canAcceptDirectInput: thread.canAcceptDirectInput }),
+    ...(activeTurn === undefined ? {} : { remoteActive: true, remoteActiveTurnId: activeTurn.id }),
     turns,
     outline: buildTurnOutline(turns),
     paging: { orderedTurnIds: turns.map((turn) => turn.id), firstItemIndex: INITIAL_FIRST_ITEM_INDEX, hasMore: false, isLoadingMore: false },
@@ -174,21 +260,20 @@ function withPaging(thread: ConversationThreadView, update: Partial<Conversation
   return { ...thread, paging: { ...thread.paging, ...update, orderedTurnIds: thread.turns.map((turn) => turn.id) } };
 }
 
-export function mergeConversationTurns(existing: readonly ConversationTurnView[], incoming: readonly ConversationTurnView[]): ConversationTurnView[] {
+export function mergeConversationTurns(existing: readonly ConversationTurnView[], incoming: readonly ConversationTurnView[], placement: "append" | "prepend" = "append"): ConversationTurnView[] {
   const byId = new Map<string, ConversationTurnView>();
   const order: string[] = [];
-  for (const turn of [...existing, ...incoming]) {
+  for (const turn of placement === "prepend" ? [...incoming, ...existing] : [...existing, ...incoming]) {
     const prior = byId.get(turn.id);
     if (prior === undefined) order.push(turn.id);
     byId.set(turn.id, prior === undefined ? turn : mergeConversationTurn(prior, turn));
   }
-  const sorted = order.map((id) => byId.get(id)).filter((turn): turn is ConversationTurnView => turn !== undefined);
-  sorted.sort((left, right) => {
-    if (left.createdAt === undefined || right.createdAt === undefined) return order.indexOf(left.id) - order.indexOf(right.id);
-    const difference = Date.parse(left.createdAt) - Date.parse(right.createdAt);
-    return Number.isNaN(difference) ? order.indexOf(left.id) - order.indexOf(right.id) : difference;
-  });
-  return sorted.map((turn, index) => ({ ...turn, index: index + 1 }));
+  return order.map((id) => byId.get(id)).filter((turn): turn is ConversationTurnView => turn !== undefined).map((turn, index) => ({ ...turn, index: index + 1 }));
+}
+
+function withoutRemoteActivity(view: ConversationThreadView): ConversationThreadView {
+  const { remoteActive: _remoteActive, remoteActiveTurnId: _remoteActiveTurnId, ...inactiveView } = view;
+  return inactiveView;
 }
 
 function mergeConversationTurn(existing: ConversationTurnView, incoming: ConversationTurnView): ConversationTurnView {

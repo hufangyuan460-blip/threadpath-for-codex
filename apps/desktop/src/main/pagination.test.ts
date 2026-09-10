@@ -73,6 +73,21 @@ async function main(): Promise<void> {
   assert.equal(retryState.paging.loadMoreError, undefined);
   assert.equal(retryState.turns.length, 3);
 
+  const unorientedPages: TurnPage[] = [
+    { turns: [{ id: "turn-newest" }, { id: "turn-middle" }], nextCursor: "cursor-no-time-older" },
+    { turns: [{ id: "turn-middle" }, { id: "turn-oldest" }] },
+  ];
+  const unorientedService = new ConversationService(providerFor(unorientedPages));
+  const noTimestampInitial = await unorientedService.readThread("thread-page");
+  assert.deepEqual(noTimestampInitial.paging.orderedTurnIds, ["turn-middle", "turn-newest"]);
+  const noTimestampOlder = await unorientedService.loadMoreTurns("thread-page");
+  assert.deepEqual(noTimestampOlder.paging.orderedTurnIds, ["turn-oldest", "turn-middle", "turn-newest"]);
+  assert.equal(noTimestampOlder.paging.firstItemIndex, 999999);
+
+  const sameTimestampService = new ConversationService(providerFor([{ turns: [{ id: "turn-invalid-new", createdAt: "not-a-date" }, { id: "turn-invalid-old", createdAt: "not-a-date" }] }]));
+  const sameTimestamp = await sameTimestampService.readThread("thread-page");
+  assert.deepEqual(sameTimestamp.paging.orderedTurnIds, ["turn-invalid-old", "turn-invalid-new"]);
+
   await assert.rejects(service.loadMoreTurns(" invalid-id"), (error: unknown) => error instanceof Error && error.name === "ConfigurationError");
   console.log("[desktop-test] pagination checks passed");
 }

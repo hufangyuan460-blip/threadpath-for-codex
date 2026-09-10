@@ -37,6 +37,9 @@ function e2eTurns(): JsonObject[] {
     ],
   }));
 }
+function e2eThreadSummaries(): JsonObject[] {
+  return Array.from({ length: 24 }, (_, index) => ({ id: index === 0 ? "e2e-thread" : `e2e-history-${index + 1}`, title: index === 0 ? "E2E conversation" : `E2E history ${index + 1}` }));
+}
 if (mode === "non-json") process.stdout.write("this is not JSON\n");
 const lines = createInterface({ input: process.stdin });
 lines.on("line", (line: string) => {
@@ -58,11 +61,18 @@ lines.on("line", (line: string) => {
   }
   switch (message.method) {
     case "initialize": send({ jsonrpc: "2.0", id, result: initializeResult() }); break;
-    case "thread/list": send({ jsonrpc: "2.0", id, result: { data: e2eMode || hasExistingThread ? [{ id: e2eMode ? "e2e-thread" : "existing-thread", title: e2eMode ? "E2E conversation" : "Existing" }] : [] } }); break;
+    case "thread/list": send({ jsonrpc: "2.0", id, result: { data: e2eMode ? e2eThreadSummaries() : hasExistingThread ? [{ id: "existing-thread", title: "Existing" }] : [] } }); break;
     case "thread/read": send({ jsonrpc: "2.0", id, result: { thread: { id: e2eMode ? "e2e-thread" : "existing-thread", title: e2eMode ? "E2E conversation" : "Existing", turns: e2eMode ? e2eTurns() : [] } } }); break;
     case "thread/resume":
       if (mode === "e2e-deleted" || mode === "resume-error") send({ jsonrpc: "2.0", id, error: { code: "thread_not_found", message: "thread not found" } });
-      else send({ jsonrpc: "2.0", id, result: { thread: { id: e2eMode ? "e2e-thread" : "existing-thread", title: e2eMode ? "E2E conversation" : "Existing", canAcceptDirectInput: mode !== "e2e-readonly" } } });
+      else {
+        const resumedThread: JsonObject = { id: e2eMode ? "e2e-thread" : "existing-thread", title: e2eMode ? "E2E conversation" : "Existing", canAcceptDirectInput: mode !== "e2e-readonly" };
+        if (mode === "e2e-active-writer") {
+          resumedThread.status = "active";
+          resumedThread.turns = [{ id: "e2e-live-turn", status: "running" }];
+        }
+        send({ jsonrpc: "2.0", id, result: { thread: resumedThread } });
+      }
       break;
     case "thread/turns/list": send({ jsonrpc: "2.0", id, result: { data: e2eMode ? e2eTurns() : [] } }); break;
     case "thread/start": send({ jsonrpc: "2.0", id, result: { thread: { id: "new-thread" } } }); break;

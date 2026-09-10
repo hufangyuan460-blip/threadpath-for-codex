@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { getThread, isJsonObject, ProtocolError, type JsonObject, type Thread } from "../../../../threadpath-protocol/src/protocol.ts";
+import { ActiveTurnError, AppServerError, getThread, isJsonObject, ProtocolError, type JsonObject, type Thread } from "../../../../threadpath-protocol/src/protocol.ts";
 import { ConversationService, toConversationThreadView, type ConversationClient, type ConversationClientProvider } from "./conversation-service.ts";
 
 const fixturePath = fileURLToPath(new URL("../../../../threadpath-protocol/fixtures/conversation-thread.jsonl", import.meta.url));
@@ -25,8 +25,8 @@ async function main(): Promise<void> {
   const client: ConversationClient = {
     listThreads: async () => [],
     readThread: async () => fixtureThread,
-    listTurns: async () => ({ turns: fixtureThread.turns ?? [] }),
-    resumeThread: async () => fixtureThread,
+    listTurns: async () => ({ turns: [...(fixtureThread.turns ?? [])].reverse() }),
+    resumeThread: async () => ({ id: fixtureThread.id, title: fixtureThread.title, canAcceptDirectInput: true }),
     startTurn: async () => ({ id: "turn-live" }),
     onNotification: (listener) => { notificationListener = listener; return () => { notificationListener = undefined; }; },
   };
@@ -63,10 +63,11 @@ async function main(): Promise<void> {
 
   await assert.rejects(service.readThread(" invalid-id"), (error: unknown) => error instanceof Error && error.name === "ConfigurationError");
   const updates: string[] = [];
-  const unsubscribe = service.onConversationUpdate((update) => updates.push(update.type));
-  const started = await service.startTurn("thread-conversation", " live input ");
+  const startService = new ConversationService({ getReadyClient: () => client });
+  const unsubscribe = startService.onConversationUpdate((update) => updates.push(update.type));
+  const started = await startService.startTurn("thread-conversation", " live input ");
   assert.deepEqual(started, { threadId: "thread-conversation", turnId: "turn-live" });
-  await assert.rejects(service.startTurn("thread-conversation", "second input"), ProtocolError);
+  await assert.rejects(startService.startTurn("thread-conversation", "second input"), ProtocolError);
   assert.ok(notificationListener);
   notificationListener?.({ method: "turn/started", params: { threadId: "thread-conversation", turnId: "turn-live" } });
   notificationListener?.({ method: "turn/completed", params: { threadId: "thread-conversation", turnId: "turn-live", turn: { id: "turn-live" } } });
@@ -89,6 +90,57 @@ async function main(): Promise<void> {
   };
   await assert.rejects(new ConversationService({ getReadyClient: () => readOnlyClient }).startTurn("thread-conversation", "read-only input"), /cannot accept direct input/);
   assert.equal(readOnlyStartCalled, false);
+  let busyStartCalled = false;
+  const busyClient: ConversationClient = {
+    ...client,
+    resumeThread: async () => ({ id: fixtureThread.id, status: "active", turns: [{ id: "turn-busy", status: "running" }] }),
+    startTurn: async () => { busyStartCalled = true; return { id: "should-not-start" }; },
+  };
+  await assert.rejects(new ConversationService({ getReadyClient: () => busyClient }).startTurn("thread-conversation", "busy input"), ActiveTurnError);
+  assert.equal(busyStartCalled, false);
+  let activeOnlyStartCalled = false;
+  const activeOnlyClient: ConversationClient = {
+    ...client,
+    readThread: async () => ({ id: fixtureThread.id, title: "Active-only fixture", status: "active", turns: [] }),
+    listTurns: async () => ({ turns: [] }),
+    resumeThread: async () => ({ id: fixtureThread.id, title: "Active-only fixture", status: "active", canAcceptDirectInput: true }),
+    startTurn: async () => { activeOnlyStartCalled = true; return { id: "turn-active-only" }; },
+  };
+  const activeOnlyService = new ConversationService({ getReadyClient: () => activeOnlyClient });
+  const activeOnlyView = await activeOnlyService.readThread("thread-conversation");
+  assert.equal(activeOnlyView.remoteActive, undefined);
+  assert.deepEqual(await activeOnlyService.startTurn("thread-conversation", "available input"), { threadId: "thread-conversation", turnId: "turn-active-only" });
+  assert.equal(activeOnlyStartCalled, true);
+  const activeWriterResponseClient: ConversationClient = {
+    ...client,
+    readThread: async () => ({ id: fixtureThread.id, title: "Available fixture", status: "completed" }),
+    listTurns: async () => ({ turns: [] }),
+    resumeThread: async () => ({ id: fixtureThread.id, title: "Available fixture", canAcceptDirectInput: true }),
+    startTurn: async () => { throw new AppServerError("thread already has an active writer", "server", "active_writer"); },
+  };
+  const activeWriterResponseService = new ConversationService({ getReadyClient: () => activeWriterResponseClient });
+  await activeWriterResponseService.readThread("thread-conversation");
+  await assert.rejects(activeWriterResponseService.startTurn("thread-conversation", "preserve busy input"), ActiveTurnError);
+  assert.equal(activeWriterResponseService.getLoadedThread("thread-conversation")?.remoteActive, true);
+  const refreshStates = [
+    { id: fixtureThread.id, title: "Refresh fixture", status: "completed" },
+    { id: fixtureThread.id, title: "Refresh fixture", status: "active" },
+  ];
+  let refreshIndex = 0;
+  const refreshClient: ConversationClient = {
+    ...client,
+    readThread: async () => refreshStates[Math.min(refreshIndex++, refreshStates.length - 1)] ?? refreshStates[0]!,
+    listTurns: async () => ({ turns: [] }),
+    resumeThread: async () => ({ id: fixtureThread.id, title: "Refresh fixture", canAcceptDirectInput: true }),
+    startTurn: async () => { throw new AppServerError("thread already has an active writer", "server", "active_writer"); },
+  };
+  const refreshService = new ConversationService({ getReadyClient: () => refreshClient });
+  await refreshService.readThread("thread-conversation");
+  await assert.rejects(refreshService.startTurn("thread-conversation", "preserve through refresh"), ActiveTurnError);
+  assert.equal(refreshService.getLoadedThread("thread-conversation")?.remoteActive, true);
+  const refreshedView = await refreshService.readThread("thread-conversation");
+  assert.equal(refreshedView.status, "active");
+  assert.equal(refreshedView.remoteActive, undefined);
   const failingProvider: ConversationClientProvider = { getReadyClient: () => ({ ...client, readThread: async () => { throw new ProtocolError("fixture read failed"); } }) };
   await assert.rejects(new ConversationService(failingProvider).readThread("thread-conversation"), ProtocolError);
   console.log("[desktop-test] conversation service checks passed");

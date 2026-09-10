@@ -163,6 +163,8 @@ On first launch, the app discovers Codex CLI in this order: `CODEX_EXECUTABLE`, 
 
 The desktop app keeps ThreadPath-only preferences in its own user configuration: local thread display names and the selected UI language (`中文` / `English`). These values never call a Codex title-changing RPC and never alter conversation content. Existing threads are resumed with the verified `thread/resume` protocol operation before a new turn; if the thread disappeared, the input remains available while the app asks the user to refresh the list.
 
+When a thread is selected, the compact left sidebar switches from conversation history to that thread's question outline. The history and outline are independently scrollable; returning to history restores its previous scroll position. The conversation pane keeps its title and composer fixed while only the virtualized turn list scrolls.
+
 ### Quick start
 
 Prerequisites:
