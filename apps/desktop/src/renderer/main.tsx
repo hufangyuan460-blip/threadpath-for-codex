@@ -53,9 +53,7 @@ function ConversationItem({ item, m }: { item: ConversationItemView; m: Messages
 function SearchPanel({ query, results, selectedIndex, error, onQueryChange, onKeyDown, onNavigate, m }: { query: string; results: readonly SearchResult[]; selectedIndex: number; error: string | undefined; onQueryChange: (query: string) => void; onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void; onNavigate: (turnId: string) => void; m: Messages }): React.JSX.Element {
   return (
     <section className="search-panel" aria-label={m.searchLoadedTurns}>
-      <label htmlFor="turn-search">{m.searchLoadedTurns}</label>
       <input id="turn-search" type="search" value={query} onChange={(event) => onQueryChange(event.target.value)} onKeyDown={onKeyDown} placeholder={m.searchPlaceholder} />
-      <p className="search-note">{m.onlyLoaded}</p>
       {error === undefined && query.trim() !== "" ? <p className="search-count">{m.match(results.length)}</p> : null}
       {error === undefined ? null : <p className="error-summary">{error}</p>}
       {results.length === 0 ? null : <ol className="search-results">{results.map((result, index) => <li key={result.turnId}><button type="button" className={`search-result${index === selectedIndex ? " selected" : ""}`} onClick={() => onNavigate(result.turnId)}><strong>{result.label}</strong><small>{result.matchKind} · {result.snippet}</small></button></li>)}</ol>}
@@ -89,6 +87,7 @@ function Conversation({ thread, activeTurnId, loadingMore, loadMoreError, onLoad
     virtuosoRef.current?.scrollToIndex({ index, align: "start", behavior: reducedMotion ? "auto" : "smooth" });
     onNavigate(turnId);
   };
+  const statusLabel = thread.remoteActive ? m.remoteTurnRunning : thread.canAcceptDirectInput === false ? m.inputUnavailable : undefined;
   useEffect(() => {
     onNavigateReady(navigate);
     return () => onNavigateReady(undefined);
@@ -108,7 +107,7 @@ function Conversation({ thread, activeTurnId, loadingMore, loadMoreError, onLoad
   return (
     <div className="conversation-layout">
       <div className="conversation" aria-label={m.conversation}>
-        <div className="conversation-heading"><div><p className="empty-kicker">{m.conversation}</p><h2>{thread.title}</h2></div><div className="conversation-heading-actions">{thread.remoteActive ? <button className="refresh-status" type="button" onClick={onRefreshStatus} aria-label={m.refreshStatus} title={m.refreshStatus}>↻</button> : null}<span className="thread-status">{thread.status}</span></div></div>
+        <div className="conversation-heading"><div><h2>{thread.title}</h2></div><div className="conversation-heading-actions">{thread.remoteActive ? <button className="refresh-status" type="button" onClick={onRefreshStatus} aria-label={m.refreshStatus} title={m.refreshStatus}>↻</button> : null}{statusLabel === undefined ? null : <span className="thread-status">{statusLabel}</span>}</div></div>
         <div className="pagination-controls">
           {thread.paging.hasMore ? <button type="button" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? m.loadingEarlier : m.loadEarlier}</button> : <span className="panel-note">{m.noMore}</span>}
           {loadMoreError === undefined ? null : <p className="error-summary">{loadMoreError}</p>}
@@ -498,7 +497,7 @@ function App(): React.JSX.Element {
   return (
     <main className="shell">
       <header className="topbar">
-        <div><p className="eyebrow">ThreadPath</p><h1>ThreadPath for Codex</h1></div>
+        <div><h1>ThreadPath for Codex</h1></div>
         <div className="topbar-actions"><div className="status" aria-label={m.connectionStatus}><span className={`status-dot status-${connectionState.state}`} />{m.connectionState(connectionState.state)}{connectionState.serverVersion === undefined ? null : <span className="status-meta">{m.server} {connectionState.serverVersion}</span>}</div><button className="language-switch" type="button" onClick={() => void handleLanguageChange()} aria-label={m.language}>{language === "zh-CN" ? "EN" : "中文"}</button></div>
       </header>
       <Onboarding snapshot={onboardingState} onRediscover={() => void handleRediscover()} onChooseExecutable={() => void handleChooseExecutable()} onChooseDirectory={() => void handleChooseDirectory()} onConnect={() => void handleOnboardingConnect()} m={m} />

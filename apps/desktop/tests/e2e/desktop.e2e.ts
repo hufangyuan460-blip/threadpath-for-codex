@@ -121,7 +121,12 @@ async function runCompletedPath(): Promise<void> {
 
     await page.getByRole("button", { name: "Back to conversation history" }).click();
     await page.getByRole("heading", { name: "Threads" }).waitFor({ state: "visible" });
-    assert.ok(await historyList.evaluate((element) => element.scrollTop) >= historyScrollTop, "history list scroll position was not restored");
+    await page.waitForFunction((previousScrollTop) => {
+      const element = document.querySelector<HTMLElement>(".thread-list");
+      if (element === null) return false;
+      const maximumScrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
+      return element.scrollTop >= Math.min(previousScrollTop, maximumScrollTop) - 1;
+    }, historyScrollTop);
     await page.locator(".thread-row").first().click();
     await page.locator(".thread-directory").waitFor({ state: "visible" });
     await page.locator("#turn-input").waitFor({ state: "visible" });

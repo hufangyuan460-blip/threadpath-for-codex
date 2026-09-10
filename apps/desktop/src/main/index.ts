@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu } from "electron";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CodexProcessManager, type ConnectionStateSnapshot as ManagerConnectionState } from "./codex-process-manager";
@@ -176,6 +176,15 @@ function createWindow(): void {
     height: 720,
     minWidth: 760,
     minHeight: 480,
+    backgroundColor: "#101318",
+    titleBarStyle: "hidden",
+    ...(process.platform === "darwin" ? {} : {
+      titleBarOverlay: {
+        color: "#101318",
+        symbolColor: "#e8edf5",
+        height: 32,
+      },
+    }),
     webPreferences: {
       preload: join(currentDirectory, "../preload/index.cjs"),
       contextIsolation: true,
@@ -192,6 +201,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
+  if (process.platform !== "darwin") Menu.setApplicationMenu(null);
   discoveryService = new CodexDiscoveryService({
     configPath: join(app.getPath("userData"), "threadpath-config.json"),
     env: process.env,
