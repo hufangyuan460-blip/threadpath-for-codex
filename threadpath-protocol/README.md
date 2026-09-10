@@ -52,6 +52,7 @@ When a supported app-server message changes, update the smallest relevant fixtur
 initialize()
 listThreads(options)
 readThread(threadId)
+resumeThread(threadId) → re-activate an existing thread before a new turn
 listTurns(threadId, options?) → { turns, nextCursor? }
 startThread(options)
 startTurn(threadId, input)
@@ -93,6 +94,14 @@ $env:CODEX_SMOKE_TIMEOUT_MS = "180000"
 npm run smoke
 ```
 
+To explicitly verify continuation of a known existing thread, set both values below. This is opt-in because it appends a real turn to that thread; the smoke test first confirms the ID is still present in `thread/list`, then runs `thread/read` → `thread/resume` → `turn/start` and waits for completion. Do not use an ID you do not intend to modify.
+
+```powershell
+$env:CODEX_SMOKE_EXISTING_THREAD_ID = "your-confirmed-thread-id"
+$env:CODEX_SMOKE_EXISTING_MESSAGE = "A short test message"
+npm run smoke
+```
+
 The smoke output deliberately logs IDs, counts, method names, and error categories rather than full thread or turn content.
 
 ## Error categories
@@ -105,7 +114,7 @@ An empty `thread/list` is valid. In that case the live smoke test skips the read
 
 `initialize()` also returns and stores the server version, protocol version, compatibility information, and a typed capability set. Callers can inspect `client.capabilities` and use `client.supports("thread/turns/list")` before selecting a protocol path. `listTurns(threadId, { limit, cursor })` returns a typed page with `turns` and an optional `nextCursor`; callers should pass that cursor to load older pages.
 
-The minimum method set for the current live flow is `thread/list`, `thread/start`, and `turn/start`. `thread/read` and `thread/turns/list` are optional because an empty thread list is valid. The terminal events `turn/completed`, `turn/failed`, and `turn/interrupted` are checked when received. If the server explicitly reports a missing capability, the client raises a `CompatibilityError` before making that method call (or while waiting for an unsupported terminal event).
+The minimum method set for the current live flow is `thread/list`, `thread/start`, and `turn/start`. `thread/read`, `thread/turns/list`, and `thread/resume` are required only when reading or continuing an existing thread; an empty thread list remains valid. `thread/read` does not activate a thread for writing, so callers must use `resumeThread(threadId)` immediately before `startTurn` for existing threads. If the server explicitly reports a missing capability, the client raises a `CompatibilityError` before making that method call (or while waiting for an unsupported terminal event). A server `thread_not_found` response is mapped by the desktop service to an actionable unavailable-thread error without issuing `turn/start`.
 
 Older app-servers that omit capability information remain supported in compatibility mode: the client allows the protocol methods and terminal events implemented by this prototype, while `supports()` returns `false` for unknown names. Unknown fields in initialize responses are ignored, so newer servers can add metadata without breaking this client.
 

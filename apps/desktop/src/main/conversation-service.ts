@@ -1,4 +1,4 @@
-import { ConfigurationError, ProtocolError, type JsonObject, type JsonValue, type Thread, type Turn, type TurnInput, type TurnItem, type TurnPage, isJsonObject, readString } from "../../../../threadpath-protocol/src/protocol.ts";
+import { AppServerError, ConfigurationError, ProtocolError, ThreadUnavailableError, type JsonObject, type JsonValue, type Thread, type Turn, type TurnInput, type TurnItem, type TurnPage, isJsonObject, readString } from "../../../../threadpath-protocol/src/protocol.ts";
 import type { ConversationItemView, ConversationPagingState, ConversationThreadView, ConversationTurnView, ConversationUpdate, SearchResult, StartTurnResult } from "../shared/api";
 import { type ThreadClient, type ThreadClientProvider, validateThreadId } from "./thread-service.ts";
 import { buildTurnOutline } from "../shared/outline.ts";
@@ -11,6 +11,7 @@ type ToolStatus = Extract<ConversationItemView, { kind: "tool" }>["status"];
 
 export interface ConversationClient extends ThreadClient {
   listTurns(threadId: string, options?: { limit?: number; cursor?: string }): Promise<TurnPage>;
+  resumeThread(threadId: string): Promise<Thread>;
   startTurn(threadId: string, input: readonly TurnInput[]): Promise<Turn>;
   onNotification(listener: (event: { method: string; params: JsonObject }) => void): () => void;
 }
@@ -100,6 +101,17 @@ export class ConversationService {
     try {
       const client = this.clientProvider.getReadyClient();
       this.bindNotifications(client);
+      // thread/read only reads history. thread/resume is the verified app-server
+      // operation that reactivates an existing thread for a subsequent turn.
+      try {
+        const resumedThread = await client.resumeThread(validThreadId);
+        if (resumedThread.canAcceptDirectInput === false) {
+          throw new ThreadUnavailableError("This thread cannot accept direct input. Refresh the thread list and choose another thread.");
+        }
+      } catch (error: unknown) {
+        if (isThreadUnavailable(error)) throw new ThreadUnavailableError(undefined, error.code);
+        throw error;
+      }
       const turn = await client.startTurn(validThreadId, [{ type: "text", text: text.trim() }]);
       this.activeTurn = { threadId: validThreadId, turnId: turn.id };
       return { threadId: validThreadId, turnId: turn.id };
@@ -111,6 +123,10 @@ export class ConversationService {
   onConversationUpdate(listener: ConversationUpdateListener): () => void {
     this.updateListeners.add(listener);
     return () => this.updateListeners.delete(listener);
+  }
+
+  getLoadedThread(threadId: string): ConversationThreadView | undefined {
+    return this.loadedThreads.get(threadId);
   }
 
   close(): void {
@@ -138,11 +154,15 @@ export class ConversationService {
   }
 }
 
+function isThreadUnavailable(error: unknown): error is AppServerError {
+  return error instanceof AppServerError && (/thread[\s_-]*(not[\s_-]*found|unavailable|deleted)/i.test(error.message) || (typeof error.code === "string" && /thread[\s_-]*(not[\s_-]*found|unavailable|deleted)/i.test(error.code)));
+}
+
 export function toConversationThreadView(thread: Thread): ConversationThreadView {
   const turns = (thread.turns ?? []).map((turn, index) => toConversationTurnView(turn, index));
   return {
     id: thread.id,
-    title: thread.title?.trim() || "Untitled thread",
+    title: thread.title?.trim() || thread.name?.trim() || "Untitled thread",
     status: thread.status?.trim() || "unknown",
     turns,
     outline: buildTurnOutline(turns),

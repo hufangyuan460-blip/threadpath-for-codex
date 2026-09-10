@@ -29,6 +29,7 @@ async function verifyHappyPath(hasExistingThread: boolean, expectedOutcome: "com
       assert.equal(threadId, "existing-thread");
       await client.readThread(threadId);
       await client.listTurns(threadId, { limit: 10 });
+      await client.resumeThread(threadId);
     }
     const startedThread = await client.startThread({ cwd, ephemeral: true });
     assert.equal(startedThread.id, "new-thread");
@@ -63,6 +64,7 @@ async function verifyHighLevelErrors(): Promise<void> {
     (client) => client.listThreads(),
     (client) => client.readThread("existing-thread"),
     (client) => client.listTurns("existing-thread"),
+    (client) => client.resumeThread("existing-thread"),
     (client) => client.startThread({ cwd, ephemeral: true }),
     (client) => client.startTurn("existing-thread", []),
   ];
@@ -93,6 +95,7 @@ async function verifyCapabilities(): Promise<void> {
     assert.equal(initialized.compatibility?.status, "compatible");
     assert.equal(completeClient.capabilities.known, true);
     assert.equal(completeClient.supports("thread/turns/list"), true);
+    assert.equal(completeClient.supports("thread/resume"), true);
     assert.equal(completeClient.supports("turn/interrupted"), true);
   } finally {
     await completeClient.close();

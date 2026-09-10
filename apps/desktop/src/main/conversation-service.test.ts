@@ -26,6 +26,7 @@ async function main(): Promise<void> {
     listThreads: async () => [],
     readThread: async () => fixtureThread,
     listTurns: async () => ({ turns: fixtureThread.turns ?? [] }),
+    resumeThread: async () => fixtureThread,
     startTurn: async () => ({ id: "turn-live" }),
     onNotification: (listener) => { notificationListener = listener; return () => { notificationListener = undefined; }; },
   };
@@ -72,6 +73,22 @@ async function main(): Promise<void> {
   assert.deepEqual(updates, ["turn/started", "turn/completed"]);
   unsubscribe();
   await assert.rejects(service.startTurn("thread-conversation", ""), (error: unknown) => error instanceof Error && error.name === "ConfigurationError");
+  let startCalled = false;
+  const unavailableClient: ConversationClient = {
+    ...client,
+    resumeThread: async () => { throw new Error("thread not found"); },
+    startTurn: async () => { startCalled = true; return { id: "should-not-start" }; },
+  };
+  await assert.rejects(new ConversationService({ getReadyClient: () => unavailableClient }).startTurn("thread-conversation", "preserve this text"), /thread not found/);
+  assert.equal(startCalled, false);
+  let readOnlyStartCalled = false;
+  const readOnlyClient: ConversationClient = {
+    ...client,
+    resumeThread: async () => ({ ...fixtureThread, canAcceptDirectInput: false }),
+    startTurn: async () => { readOnlyStartCalled = true; return { id: "should-not-start" }; },
+  };
+  await assert.rejects(new ConversationService({ getReadyClient: () => readOnlyClient }).startTurn("thread-conversation", "read-only input"), /cannot accept direct input/);
+  assert.equal(readOnlyStartCalled, false);
   const failingProvider: ConversationClientProvider = { getReadyClient: () => ({ ...client, readThread: async () => { throw new ProtocolError("fixture read failed"); } }) };
   await assert.rejects(new ConversationService(failingProvider).readThread("thread-conversation"), ProtocolError);
   console.log("[desktop-test] conversation service checks passed");

@@ -16,7 +16,7 @@ function initializeResult(): JsonObject {
       ? ["thread/list", "thread/start"]
       : capabilityMode === "optional-missing"
         ? ["thread/list", "thread/start", "turn/start"]
-        : ["thread/list", "thread/read", "thread/turns/list", "thread/start", "turn/start"];
+        : ["thread/list", "thread/read", "thread/turns/list", "thread/start", "thread/resume", "turn/start"];
     result.capabilities = {
       methods,
       events: ["turn/completed", "turn/failed", "turn/interrupted"],
@@ -60,6 +60,10 @@ lines.on("line", (line: string) => {
     case "initialize": send({ jsonrpc: "2.0", id, result: initializeResult() }); break;
     case "thread/list": send({ jsonrpc: "2.0", id, result: { data: e2eMode || hasExistingThread ? [{ id: e2eMode ? "e2e-thread" : "existing-thread", title: e2eMode ? "E2E conversation" : "Existing" }] : [] } }); break;
     case "thread/read": send({ jsonrpc: "2.0", id, result: { thread: { id: e2eMode ? "e2e-thread" : "existing-thread", title: e2eMode ? "E2E conversation" : "Existing", turns: e2eMode ? e2eTurns() : [] } } }); break;
+    case "thread/resume":
+      if (mode === "e2e-deleted" || mode === "resume-error") send({ jsonrpc: "2.0", id, error: { code: "thread_not_found", message: "thread not found" } });
+      else send({ jsonrpc: "2.0", id, result: { thread: { id: e2eMode ? "e2e-thread" : "existing-thread", title: e2eMode ? "E2E conversation" : "Existing", canAcceptDirectInput: mode !== "e2e-readonly" } } });
+      break;
     case "thread/turns/list": send({ jsonrpc: "2.0", id, result: { data: e2eMode ? e2eTurns() : [] } }); break;
     case "thread/start": send({ jsonrpc: "2.0", id, result: { thread: { id: "new-thread" } } }); break;
     case "turn/start":

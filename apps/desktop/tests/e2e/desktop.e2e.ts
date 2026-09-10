@@ -25,6 +25,7 @@ async function launch(mode: string, executable = fakeExecutable, cwd: string | n
       ELECTRON_DISABLE_GPU: "1",
       ELECTRON_IS_DEV: "0",
       THREADPATH_E2E: "1",
+      THREADPATH_E2E_LANGUAGE: "en-US",
     },
   });
   const output: string[] = [];
@@ -42,10 +43,10 @@ async function waitForText(page: Page, selector: string, text: string): Promise<
 
 async function openThread(page: Page): Promise<void> {
   await waitForText(page, '[aria-label="Connection status"]', "ready");
-  const thread = page.locator('.thread-row').filter({ hasText: "E2E conversation" });
+  const thread = page.locator('.thread-row').first();
   await thread.waitFor({ state: "visible" });
   await thread.click();
-  await page.locator('h2').filter({ hasText: "E2E conversation" }).waitFor({ state: "visible" });
+  await page.locator('.conversation-heading h2').waitFor({ state: "visible" });
 }
 
 async function scrollListToBottom(page: Page): Promise<void> {
@@ -100,6 +101,21 @@ async function runCompletedPath(): Promise<void> {
     await liveTurn.waitFor({ state: "visible" });
     await liveTurn.getByText("streamed fake reply").waitFor({ state: "visible" });
     await liveTurn.getByText("completed", { exact: true }).waitFor({ state: "visible" });
+
+    const renameButton = page.getByRole("button", { name: /Rename:/ }).first();
+    await renameButton.click();
+    const nameInput = page.locator(".thread-name-editor input");
+    await nameInput.fill("Local E2E name");
+    await page.locator(".thread-name-editor button[type=submit]").click();
+    await page.locator(".conversation-heading h2").getByText("Local E2E name", { exact: true }).waitFor({ state: "visible" });
+    await page.getByRole("button", { name: /Rename:/ }).first().click();
+    await page.getByRole("button", { name: "Restore automatic name" }).click();
+    await page.locator(".conversation-heading h2").getByText("User turn 1", { exact: true }).waitFor({ state: "visible" });
+
+    await page.locator("#turn-input").fill("keep input while switching language");
+    await page.getByRole("button", { name: "Switch language" }).click();
+    await page.getByText("会话", { exact: true }).waitFor({ state: "visible" });
+    assert.equal(await page.locator("#turn-input").inputValue(), "keep input while switching language");
   });
 }
 
@@ -123,6 +139,26 @@ async function runTerminalPath(mode: "e2e-failed" | "e2e-interrupted", expected:
   });
 }
 
+async function runUnavailableExistingThreadPath(): Promise<void> {
+  await runScenario("existing-thread-unavailable", "e2e-deleted", async (page) => {
+    await openThread(page);
+    await page.locator("#turn-input").fill("keep this text");
+    await page.locator(".turn-composer button[type=submit]").click();
+    await page.locator(".error-summary").filter({ hasText: "Refresh" }).waitFor({ state: "visible" });
+    assert.equal(await page.locator("#turn-input").inputValue(), "keep this text");
+  });
+}
+
+async function runReadOnlyExistingThreadPath(): Promise<void> {
+  await runScenario("existing-thread-read-only", "e2e-readonly", async (page) => {
+    await openThread(page);
+    await page.locator("#turn-input").fill("keep read-only input");
+    await page.locator(".turn-composer button[type=submit]").click();
+    await page.locator(".error-summary").filter({ hasText: "cannot accept direct input" }).waitFor({ state: "visible" });
+    assert.equal(await page.locator("#turn-input").inputValue(), "keep read-only input");
+  });
+}
+
 async function runStartupFailurePath(): Promise<void> {
   await runScenario("startup-failure", "e2e-completed", async (page) => {
     await waitForText(page, '[aria-label="Connection status"]', "error");
@@ -138,6 +174,8 @@ async function main(): Promise<void> {
   await runCompletedPath();
   await runTerminalPath("e2e-failed", "failed");
   await runTerminalPath("e2e-interrupted", "interrupted");
+  await runUnavailableExistingThreadPath();
+  await runReadOnlyExistingThreadPath();
   await runStartupFailurePath();
   console.log("[e2e] desktop critical paths passed");
 }

@@ -1,0 +1,2 @@
+{"jsonrpc":"2.0","id":8,"method":"thread/resume","params":{"threadId":"thread-1","excludeTurns":true}}
+{"jsonrpc":"2.0","id":8,"result":{"thread":{"id":"thread-1","title":"Read-only fixture thread","canAcceptDirectInput":false}}}

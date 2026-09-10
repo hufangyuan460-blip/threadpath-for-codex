@@ -1,0 +1,2 @@
+{"jsonrpc":"2.0","id":7,"method":"thread/resume","params":{"threadId":"thread-1","excludeTurns":true}}
+{"jsonrpc":"2.0","id":7,"result":{"thread":{"id":"thread-1","title":"Fixture thread","preview":"Continue this conversation","canAcceptDirectInput":true,"unknownFutureField":{"ignored":true}}}}

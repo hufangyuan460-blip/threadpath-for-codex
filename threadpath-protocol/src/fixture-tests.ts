@@ -55,6 +55,11 @@ async function main(): Promise<void> {
   const threadRead = await readJsonLines("thread-read.jsonl");
   assert.equal(threadRead.length, 2);
   assert.equal(getThread(asObject(threadRead[1]).result)?.turns?.[0]?.id, "turn-1");
+  const threadResume = await readJsonLines("thread-resume.jsonl");
+  assert.equal(asObject(threadResume[0]).method, "thread/resume");
+  assert.equal(getThread(asObject(threadResume[1]).result)?.canAcceptDirectInput, true);
+  const readOnlyResume = await readJsonLines("thread-resume-read-only.jsonl");
+  assert.equal(getThread(asObject(readOnlyResume[1]).result)?.canAcceptDirectInput, false);
   const turnsList = await readJsonLines("turns-list.jsonl");
   assert.equal(turnsList.length, 2);
   assert.deepEqual(getTurnPage(asObject(turnsList[1]).result), { turns: [{ id: "turn-1", status: "completed" }] });

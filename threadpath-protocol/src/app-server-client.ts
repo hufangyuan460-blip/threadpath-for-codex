@@ -4,7 +4,7 @@ import { type AppServerCapabilities, type JsonObject, type JsonValue, type Diagn
 
 type RequestId = number;
 type JsonRpcId = number | string;
-const FALLBACK_SUPPORTED_CAPABILITIES = ["thread/list", "thread/read", "thread/turns/list", "thread/start", "turn/start", "turn/completed", "turn/failed", "turn/interrupted"] as const;
+const FALLBACK_SUPPORTED_CAPABILITIES = ["thread/list", "thread/read", "thread/turns/list", "thread/start", "thread/resume", "turn/start", "turn/completed", "turn/failed", "turn/interrupted"] as const;
 const REQUIRED_METHODS = ["thread/list", "thread/start", "turn/start"] as const;
 type NotificationListener = (event: { method: string; params: JsonObject }) => void;
 interface PendingRequest { method: string; resolve: (value: JsonValue) => void; reject: (error: Error) => void; timeout: NodeJS.Timeout; startedAt: number; }
@@ -125,6 +125,15 @@ export class AppServerClient {
     const response = await this.request("thread/read", { threadId, includeTurns: true });
     const thread = getThread(this.requireObject(response, "thread/read"));
     if (thread === undefined) throw new ProtocolError("thread/read response did not contain a thread id");
+    return thread;
+  }
+
+  /** Resume an existing thread before sending a new turn. The app-server keeps this separate from thread/read. */
+  async resumeThread(threadId: string): Promise<Thread> {
+    this.requireCapability("thread/resume");
+    const response = await this.request("thread/resume", { threadId, excludeTurns: true });
+    const thread = getThread(this.requireObject(response, "thread/resume"));
+    if (thread === undefined) throw new ProtocolError("thread/resume response did not contain a thread id");
     return thread;
   }
 
