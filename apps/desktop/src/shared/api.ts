@@ -1,7 +1,9 @@
 export type ConnectionState = "idle" | "connecting" | "ready" | "error" | "stopped";
+export type Language = "zh-CN" | "en-US";
 
 export interface AppInfo {
   readonly version: string;
+  readonly language: Language;
 }
 
 export type OnboardingState = "detecting" | "found" | "connecting" | "ready" | "error";
@@ -93,10 +95,17 @@ export type ConversationUpdate =
 export interface StartTurnResult {
   readonly threadId: string;
   readonly turnId: string;
+  readonly displayName?: string;
+}
+
+export interface ThreadDisplayNameUpdate {
+  readonly threadId: string;
+  readonly title: string;
 }
 
 export interface DesktopApi {
   readonly getAppInfo: () => Promise<AppInfo>;
+  readonly setLanguage: (language: Language) => Promise<Language>;
   readonly getOnboardingState: () => Promise<OnboardingSnapshot>;
   readonly rediscoverCodex: () => Promise<OnboardingSnapshot>;
   readonly chooseCodexExecutable: () => Promise<OnboardingSnapshot>;
@@ -106,6 +115,7 @@ export interface DesktopApi {
   readonly disconnect: () => Promise<ConnectionStateSnapshot>;
   readonly reconnect: () => Promise<ConnectionStateSnapshot>;
   readonly listThreads: () => Promise<ThreadListItem[]>;
+  readonly setThreadDisplayName: (threadId: string, name: string | null) => Promise<ThreadDisplayNameUpdate>;
   readonly readThread: (threadId: string) => Promise<ThreadDetails>;
   readonly loadMoreTurns: (threadId: string) => Promise<ThreadDetails>;
   readonly searchTurns: (threadId: string, query: string) => Promise<SearchResult[]>;

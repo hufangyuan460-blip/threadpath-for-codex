@@ -1,8 +1,9 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { DesktopApi } from "../shared/api";
+import type { DesktopApi, Language } from "../shared/api";
 
 const desktopApi: DesktopApi = {
   getAppInfo: () => ipcRenderer.invoke("app:get-info"),
+  setLanguage: (language: Language) => ipcRenderer.invoke("app:set-language", language),
   getOnboardingState: () => ipcRenderer.invoke("onboarding:get-state"),
   rediscoverCodex: () => ipcRenderer.invoke("onboarding:rediscover"),
   chooseCodexExecutable: () => ipcRenderer.invoke("onboarding:choose-executable"),
@@ -12,6 +13,7 @@ const desktopApi: DesktopApi = {
   disconnect: () => ipcRenderer.invoke("app:disconnect"),
   reconnect: () => ipcRenderer.invoke("app:reconnect"),
   listThreads: () => ipcRenderer.invoke("threads:list"),
+  setThreadDisplayName: (threadId: string, name: string | null) => ipcRenderer.invoke("threads:set-display-name", threadId, name),
   readThread: (threadId) => ipcRenderer.invoke("threads:read", threadId),
   loadMoreTurns: (threadId) => ipcRenderer.invoke("conversation:load-more", threadId),
   searchTurns: (threadId, query) => ipcRenderer.invoke("search:turns", threadId, query),

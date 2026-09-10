@@ -9,6 +9,11 @@ export interface ThreadClientProvider {
   getReadyClient(): ThreadClient;
 }
 
+export interface ThreadDisplayNameProvider {
+  getThreadDisplayName(threadId: string, serverTitle?: string, firstUserText?: string): string;
+  pruneThreadNames(activeThreadIds: readonly string[]): Promise<void>;
+}
+
 export interface ThreadListViewModel {
   readonly id: string;
   readonly title: string;
@@ -21,13 +26,16 @@ export interface ThreadViewModel extends ThreadListViewModel {}
 
 export class ThreadService {
   private readonly clientProvider: ThreadClientProvider;
+  private readonly displayNameProvider: ThreadDisplayNameProvider | undefined;
 
-  constructor(clientProvider: ThreadClientProvider) {
+  constructor(clientProvider: ThreadClientProvider, displayNameProvider?: ThreadDisplayNameProvider) {
     this.clientProvider = clientProvider;
+    this.displayNameProvider = displayNameProvider;
   }
 
   async listThreads(): Promise<ThreadListViewModel[]> {
     const threads = await this.clientProvider.getReadyClient().listThreads();
+    await this.displayNameProvider?.pruneThreadNames(threads.map((thread) => thread.id));
     return threads.map((thread) => this.toViewModel(thread));
   }
 
@@ -37,12 +45,18 @@ export class ThreadService {
     return this.toViewModel(thread);
   }
 
+  async getServerThread(threadId: string): Promise<ThreadSummary | undefined> {
+    return (await this.clientProvider.getReadyClient().listThreads()).find((thread) => thread.id === threadId);
+  }
+
   private toViewModel(thread: ThreadSummary | Thread): ThreadViewModel {
     const turns = "turns" in thread ? thread.turns : undefined;
 
     return {
       id: thread.id,
-      title: thread.title?.trim() || "Untitled thread",
+      title: this.displayNameProvider === undefined
+        ? thread.title?.trim() || "Untitled thread"
+        : this.displayNameProvider.getThreadDisplayName(thread.id, thread.title ?? thread.name, thread.preview),
       status: thread.status?.trim() || "unknown",
       turnCount: turns === undefined ? thread.turnCount ?? null : turns.length,
       ...(thread.createdAt === undefined ? {} : { createdAt: thread.createdAt }),

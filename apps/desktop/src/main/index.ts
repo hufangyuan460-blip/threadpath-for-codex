@@ -5,8 +5,10 @@ import { CodexProcessManager, type ConnectionStateSnapshot as ManagerConnectionS
 import { CodexDiscoveryService, selectedDialogPath, type CodexDiscoveryResult } from "./codex-discovery";
 import { ThreadService } from "./thread-service";
 import { ConversationService } from "./conversation-service";
-import type { AppInfo, ConnectionStateSnapshot, OnboardingSnapshot } from "../shared/api";
-import { ProcessError } from "../../../../threadpath-protocol/src/protocol.ts";
+import { validateThreadId } from "./thread-service";
+import { UserPreferencesService, firstReadableUserText } from "./user-preferences";
+import { ProcessError, ThreadUnavailableError } from "../../../../threadpath-protocol/src/protocol.ts";
+import type { AppInfo, ConnectionStateSnapshot, Language, OnboardingSnapshot, ThreadDisplayNameUpdate } from "../shared/api";
 
 if (process.env.THREADPATH_E2E === "1") app.disableHardwareAcceleration();
 
@@ -16,6 +18,7 @@ let processManager: CodexProcessManager;
 let discoveryService: CodexDiscoveryService;
 let threadService: ThreadService;
 let conversationService: ConversationService;
+let preferencesService: UserPreferencesService;
 let onboardingSnapshot: OnboardingSnapshot = { state: "detecting" };
 
 function publicConnectionState(snapshot: ManagerConnectionState): ConnectionStateSnapshot {
@@ -107,8 +110,16 @@ async function chooseWorkingDirectory(): Promise<OnboardingSnapshot> {
   }
 }
 
+function localizeThreadView<T extends { id: string; title: string; turns?: readonly { items: readonly { kind: string; role?: string; text?: string }[] }[] }>(thread: T): T {
+  return { ...thread, title: preferencesService.getThreadDisplayName(thread.id, thread.title, firstReadableUserText(thread.turns)) };
+}
+
 function registerApi(): void {
-  ipcMain.handle("app:get-info", (): AppInfo => ({ version: app.getVersion() }));
+  ipcMain.handle("app:get-info", (): AppInfo => ({ version: app.getVersion(), language: preferencesService.getLanguage() }));
+  ipcMain.handle("app:set-language", async (_event, language: unknown): Promise<Language> => {
+    if (language !== "zh-CN" && language !== "en-US") throw new ProcessError("language must be zh-CN or en-US");
+    return preferencesService.setLanguage(language);
+  });
   ipcMain.handle("onboarding:get-state", (): OnboardingSnapshot => onboardingSnapshot);
   ipcMain.handle("onboarding:rediscover", async (): Promise<OnboardingSnapshot> => discoverCodex());
   ipcMain.handle("onboarding:choose-executable", async (): Promise<OnboardingSnapshot> => chooseCodexExecutable());
@@ -128,10 +139,26 @@ function registerApi(): void {
     return publicConnectionState(state);
   });
   ipcMain.handle("threads:list", async () => withReadyConnection(() => threadService.listThreads()));
-  ipcMain.handle("threads:read", async (_event, threadId: unknown) => withReadyConnection(() => conversationService.readThread(threadId)));
-  ipcMain.handle("conversation:load-more", async (_event, threadId: unknown) => withReadyConnection(() => conversationService.loadMoreTurns(threadId)));
+  ipcMain.handle("threads:set-display-name", async (_event, threadId: unknown, name: unknown): Promise<ThreadDisplayNameUpdate> => {
+    const validThreadId = validateThreadId(threadId);
+    if (name !== null && typeof name !== "string") throw new ProcessError("thread display name must be plain text or null");
+    const threads = await withReadyConnection(() => threadService.listThreads());
+    const existing = threads.find((thread) => thread.id === validThreadId);
+    if (existing === undefined) throw new ThreadUnavailableError();
+    const serverThread = await threadService.getServerThread(validThreadId);
+    await preferencesService.setThreadDisplayName(validThreadId, name);
+    const loaded = conversationService.getLoadedThread(validThreadId);
+    return { threadId: validThreadId, title: preferencesService.getThreadDisplayName(validThreadId, serverThread?.title, firstReadableUserText(loaded?.turns)) };
+  });
+  ipcMain.handle("threads:read", async (_event, threadId: unknown) => withReadyConnection(async () => localizeThreadView(await conversationService.readThread(threadId))));
+  ipcMain.handle("conversation:load-more", async (_event, threadId: unknown) => withReadyConnection(async () => localizeThreadView(await conversationService.loadMoreTurns(threadId))));
   ipcMain.handle("search:turns", async (_event, threadId: unknown, query: unknown) => withReadyConnection(() => conversationService.searchTurns(threadId, query)));
-  ipcMain.handle("conversation:start-turn", async (_event, threadId: unknown, text: unknown) => withReadyConnection(() => conversationService.startTurn(threadId, text)));
+  ipcMain.handle("conversation:start-turn", async (_event, threadId: unknown, text: unknown) => withReadyConnection(async () => {
+    const result = await conversationService.startTurn(threadId, text);
+    const validText = typeof text === "string" ? text : undefined;
+    const loaded = conversationService.getLoadedThread(result.threadId);
+    return { ...result, displayName: preferencesService.getThreadDisplayName(result.threadId, loaded?.title, firstReadableUserText(loaded?.turns) ?? validText) };
+  }));
   conversationService.onConversationUpdate((update) => {
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send("conversation:update", update);
   });
@@ -164,7 +191,7 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   discoveryService = new CodexDiscoveryService({
     configPath: join(app.getPath("userData"), "threadpath-config.json"),
     env: process.env,
@@ -175,7 +202,10 @@ app.whenReady().then(() => {
     executable: undefined,
     onStateChange: ({ state }) => console.log(`[desktop] connection state: ${state}`),
   });
-  threadService = new ThreadService(processManager);
+  const locale = process.env.THREADPATH_E2E_LANGUAGE ?? app.getLocale();
+  preferencesService = new UserPreferencesService(join(app.getPath("userData"), "threadpath-ui.json"), locale.toLowerCase().startsWith("zh") ? "zh-CN" : "en-US");
+  await preferencesService.load();
+  threadService = new ThreadService(processManager, preferencesService);
   conversationService = new ConversationService(processManager);
   registerApi();
   createWindow();
