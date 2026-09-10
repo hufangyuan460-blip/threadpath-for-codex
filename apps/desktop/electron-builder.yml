@@ -1,0 +1,25 @@
+appId: com.threadpath.codex
+productName: ThreadPath for Codex
+directories:
+  output: ../../release
+files:
+  - out/**
+  - package.json
+win:
+  signAndEditExecutable: false
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: ThreadPath for Codex Setup ${version}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: ThreadPath for Codex
+  uninstallDisplayName: ThreadPath for Codex
+  installerLanguages:
+    - en_US
+    - zh_CN

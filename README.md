@@ -69,6 +69,14 @@ pnpm test:e2e
 
 该命令通过 `CODEX_EXECUTABLE` 指向仓库内的 fake app-server，不使用真实 Codex 认证、桌面配置或网络模型调用；失败时会在 `artifacts/e2e/` 生成测试日志和截图。
 
+生成 Windows x64 NSIS 安装程序：
+
+```powershell
+pnpm package:win
+```
+
+安装程序输出为 `release/ThreadPath for Codex Setup 0.1.0.exe`。安装包只包含 ThreadPath 桌面应用，不包含 Codex CLI；应用启动后仍会查找 PATH 中的 `codex`，或使用 `CODEX_EXECUTABLE` 指定的本地可执行文件。当前安装包未启用自动更新和代码签名。
+
 默认测试工作目录是当前项目目录 `D:\threadPath`。如需测试其他项目：
 
 ```powershell
@@ -146,6 +154,8 @@ The project has completed `v0.0.1` protocol validation, the `M0` desktop shell, 
 GitHub Actions runs the same authentication- and network-independent fixture typecheck, test, and build on Windows after a frozen pnpm install. The real `smoke` command remains a local check because it requires Codex authentication and upstream network access.
 
 For the desktop critical-path check, run `pnpm test:e2e`. It builds the desktop app and launches it against the repository's fake app-server through `CODEX_EXECUTABLE`; it does not use Codex authentication, real desktop configuration, or network model calls. The Windows quality workflow runs the same E2E suite and uploads failure logs, screenshots, and build artifacts.
+
+To build the Windows x64 NSIS installer, run `pnpm package:win`. The installer is written to `release/ThreadPath for Codex Setup 0.1.0.exe`. It contains the ThreadPath desktop app only, not the Codex CLI; the installed app still finds `codex` on PATH or uses the executable specified by `CODEX_EXECUTABLE`. Automatic updates and code signing are not enabled yet.
 
 ### Quick start
 
