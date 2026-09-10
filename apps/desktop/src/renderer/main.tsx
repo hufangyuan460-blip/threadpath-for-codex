@@ -2,11 +2,12 @@ import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Virtuoso, type VirtuosoHandle, type ListRange } from "react-virtuoso";
 import "./styles.css";
-import type { AppInfo, ConnectionStateSnapshot, ConversationItemView, ConversationThreadView, ConversationUpdate, OnboardingSnapshot, SearchResult, ThreadListItem } from "../shared/api";
+import type { AppInfo, ConnectionStateSnapshot, ConversationItemView, ConversationThreadView, ConversationUpdate, OnboardingSnapshot, SearchResult, ThreadListItem, Language } from "../shared/api";
 import { applyConversationUpdate, conversationUpdateKey } from "./conversation-state";
 import { buildTurnOutline } from "../shared/outline";
 import { chooseActiveTurnIdFromRange } from "./scroll-state";
 import { moveSearchSelection, searchNavigationTarget } from "./search-navigation";
+import { messages, type Messages } from "./i18n";
 
 type LoadState = "idle" | "loading" | "ready" | "empty" | "error";
 type NavigateTurn = (turnId: string) => void;
@@ -15,50 +16,50 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function Onboarding({ snapshot, onRediscover, onChooseExecutable, onChooseDirectory, onConnect }: { snapshot: OnboardingSnapshot; onRediscover: () => void; onChooseExecutable: () => void; onChooseDirectory: () => void; onConnect: () => void }): React.JSX.Element | null {
+function Onboarding({ snapshot, onRediscover, onChooseExecutable, onChooseDirectory, onConnect, m }: { snapshot: OnboardingSnapshot; onRediscover: () => void; onChooseExecutable: () => void; onChooseDirectory: () => void; onConnect: () => void; m: Messages }): React.JSX.Element | null {
   if (snapshot.state === "ready") return null;
   const hasExecutable = snapshot.executablePath !== undefined;
   return (
-    <section className="onboarding-card" aria-label="Codex setup">
-      <p className="empty-kicker">First launch setup</p>
-      {snapshot.state === "detecting" ? <><h2>Detecting Codex CLI…</h2><p>Checking the configured executable, saved choice, PATH, and known Windows install locations.</p></> : null}
-      {snapshot.state === "found" ? <><h2>Codex CLI found</h2><p>Version: <strong>{snapshot.version ?? "unknown"}</strong></p><p className="mono">{snapshot.executablePath}</p>{snapshot.cwd === undefined ? <><p>Choose a project directory before connecting.</p><button type="button" onClick={onChooseDirectory}>Choose working directory</button></> : <><p className="mono">Working directory: {snapshot.cwd}</p><button type="button" onClick={onConnect}>Connect and verify</button></>}</> : null}
-      {snapshot.state === "connecting" ? <><h2>Connecting to Codex…</h2><p>Starting the local app-server and validating the protocol.</p></> : null}
-      {snapshot.state === "error" ? <><h2>Codex setup needs attention</h2><p className="error-summary">{snapshot.error ?? "Codex CLI could not be configured."}</p><div className="onboarding-actions"><button type="button" onClick={onRediscover}>Retry detection</button><button type="button" onClick={onChooseExecutable}>Choose Codex CLI</button>{hasExecutable ? <button type="button" onClick={onChooseDirectory}>Choose working directory</button> : null}</div></> : null}
-      {snapshot.state === "found" && hasExecutable ? <div className="onboarding-actions"><button type="button" onClick={onChooseExecutable}>Choose another CLI</button><button type="button" onClick={onRediscover}>Detect again</button></div> : null}
+    <section className="onboarding-card" aria-label={m.setup}>
+      <p className="empty-kicker">{m.firstLaunch}</p>
+      {snapshot.state === "detecting" ? <><h2>{m.detectingCli}</h2><p>{m.detectingDetails}</p></> : null}
+      {snapshot.state === "found" ? <><h2>{m.cliFound}</h2><p>{m.version}: <strong>{snapshot.version ?? "unknown"}</strong></p><p className="mono">{snapshot.executablePath}</p>{snapshot.cwd === undefined ? <><p>{m.chooseProjectBeforeConnect}</p><button type="button" onClick={onChooseDirectory}>{m.chooseWorkingDirectory}</button></> : <><p className="mono">{m.workingDirectory}: {snapshot.cwd}</p><button type="button" onClick={onConnect}>{m.connectVerify}</button></>}</> : null}
+      {snapshot.state === "connecting" ? <><h2>{m.connecting}</h2><p>{m.connectingDetails}</p></> : null}
+      {snapshot.state === "error" ? <><h2>{m.setupAttention}</h2><p className="error-summary">{snapshot.error ?? m.setupAttention}</p><div className="onboarding-actions"><button type="button" onClick={onRediscover}>{m.retryDetection}</button><button type="button" onClick={onChooseExecutable}>{m.chooseCli}</button>{hasExecutable ? <button type="button" onClick={onChooseDirectory}>{m.chooseWorkingDirectory}</button> : null}</div></> : null}
+      {snapshot.state === "found" && hasExecutable ? <div className="onboarding-actions"><button type="button" onClick={onChooseExecutable}>{m.chooseAnotherCli}</button><button type="button" onClick={onRediscover}>{m.detectAgain}</button></div> : null}
     </section>
   );
 }
 
-function ConversationItem({ item }: { item: ConversationItemView }): React.JSX.Element {
+function ConversationItem({ item, m }: { item: ConversationItemView; m: Messages }): React.JSX.Element {
   if (item.kind === "tool") {
     return (
       <div className="conversation-item tool-item">
-        <div className="item-heading"><span className="item-label">Tool</span><strong>{item.name}</strong><span className={`tool-status tool-${item.status}`}>{item.status}</span></div>
+        <div className="item-heading"><span className="item-label">{m.tool}</span><strong>{item.name}</strong><span className={`tool-status tool-${item.status}`}>{item.status}</span></div>
         {item.summary === undefined ? null : <p>{item.summary}</p>}
       </div>
     );
   }
   if (item.kind === "status") {
-    return <div className="conversation-item status-item"><span className="item-label">Status</span><p>{item.text}</p></div>;
+    return <div className="conversation-item status-item"><span className="item-label">{m.status}</span><p>{item.text}</p></div>;
   }
-  return <div className={`conversation-item text-item role-${item.role}`}><span className="item-label">{item.role}</span><p>{item.text}</p></div>;
+  return <div className={`conversation-item text-item role-${item.role}`}><span className="item-label">{m.role(item.role)}</span><p>{item.text}</p></div>;
 }
 
-function SearchPanel({ query, results, selectedIndex, error, onQueryChange, onKeyDown, onNavigate }: { query: string; results: readonly SearchResult[]; selectedIndex: number; error: string | undefined; onQueryChange: (query: string) => void; onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void; onNavigate: (turnId: string) => void }): React.JSX.Element {
+function SearchPanel({ query, results, selectedIndex, error, onQueryChange, onKeyDown, onNavigate, m }: { query: string; results: readonly SearchResult[]; selectedIndex: number; error: string | undefined; onQueryChange: (query: string) => void; onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void; onNavigate: (turnId: string) => void; m: Messages }): React.JSX.Element {
   return (
-    <section className="search-panel" aria-label="Search loaded turns">
-      <label htmlFor="turn-search">Search loaded turns</label>
-      <input id="turn-search" type="search" value={query} onChange={(event) => onQueryChange(event.target.value)} onKeyDown={onKeyDown} placeholder="Search this thread…" />
-      <p className="search-note">Only loaded turns are searched.</p>
-      {error === undefined && query.trim() !== "" ? <p className="search-count">{results.length} match{results.length === 1 ? "" : "es"}</p> : null}
+    <section className="search-panel" aria-label={m.searchLoadedTurns}>
+      <label htmlFor="turn-search">{m.searchLoadedTurns}</label>
+      <input id="turn-search" type="search" value={query} onChange={(event) => onQueryChange(event.target.value)} onKeyDown={onKeyDown} placeholder={m.searchPlaceholder} />
+      <p className="search-note">{m.onlyLoaded}</p>
+      {error === undefined && query.trim() !== "" ? <p className="search-count">{m.match(results.length)}</p> : null}
       {error === undefined ? null : <p className="error-summary">{error}</p>}
       {results.length === 0 ? null : <ol className="search-results">{results.map((result, index) => <li key={result.turnId}><button type="button" className={`search-result${index === selectedIndex ? " selected" : ""}`} onClick={() => onNavigate(result.turnId)}><strong>{result.label}</strong><small>{result.matchKind} · {result.snippet}</small></button></li>)}</ol>}
     </section>
   );
 }
 
-function Conversation({ thread, activeTurnId, searchQuery, searchResults, selectedSearchIndex, searchError, loadingMore, loadMoreError, onLoadMore, onSearchQueryChange, onSearchKeyDown, onNavigate, onVisibleTurn, onUserScroll, setOutlineButton }: { thread: ConversationThreadView; activeTurnId: string | undefined; searchQuery: string; searchResults: readonly SearchResult[]; selectedSearchIndex: number; searchError: string | undefined; loadingMore: boolean; loadMoreError: string | undefined; onLoadMore: () => void; onSearchQueryChange: (query: string) => void; onSearchKeyDown: (event: React.KeyboardEvent<HTMLInputElement>, navigate: NavigateTurn) => void; onNavigate: (turnId: string) => void; onVisibleTurn: (turnId: string | undefined) => void; onUserScroll: () => void; setOutlineButton: (turnId: string, element: HTMLButtonElement | null) => void }): React.JSX.Element {
+function Conversation({ thread, activeTurnId, searchQuery, searchResults, selectedSearchIndex, searchError, loadingMore, loadMoreError, onLoadMore, onSearchQueryChange, onSearchKeyDown, onNavigate, onVisibleTurn, onUserScroll, setOutlineButton, m }: { thread: ConversationThreadView; activeTurnId: string | undefined; searchQuery: string; searchResults: readonly SearchResult[]; selectedSearchIndex: number; searchError: string | undefined; loadingMore: boolean; loadMoreError: string | undefined; onLoadMore: () => void; onSearchQueryChange: (query: string) => void; onSearchKeyDown: (event: React.KeyboardEvent<HTMLInputElement>, navigate: NavigateTurn) => void; onNavigate: (turnId: string) => void; onVisibleTurn: (turnId: string | undefined) => void; onUserScroll: () => void; setOutlineButton: (turnId: string, element: HTMLButtonElement | null) => void; m: Messages }): React.JSX.Element {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const scroller = useRef<HTMLElement | null>(null);
   const turnIndexById = new Map(thread.turns.map((turn, index) => [turn.id, index]));
@@ -84,27 +85,27 @@ function Conversation({ thread, activeTurnId, searchQuery, searchResults, select
   };
   return (
     <div className="conversation-layout">
-      <nav className="outline-panel" aria-label="Turn outline">
-        <SearchPanel query={searchQuery} results={searchResults} selectedIndex={selectedSearchIndex} error={searchError} onQueryChange={onSearchQueryChange} onKeyDown={handleSearchKeyDown} onNavigate={navigate} />
-        <div className="outline-heading"><p className="empty-kicker">Outline</p><span>{thread.outline.length} turns</span></div>
+      <nav className="outline-panel" aria-label={m.outline}>
+        <SearchPanel query={searchQuery} results={searchResults} selectedIndex={selectedSearchIndex} error={searchError} onQueryChange={onSearchQueryChange} onKeyDown={handleSearchKeyDown} onNavigate={navigate} m={m} />
+        <div className="outline-heading"><p className="empty-kicker">{m.outline}</p><span>{m.turns(thread.outline.length)}</span></div>
         <ol className="outline-list">
           {thread.outline.map((entry) => (
             <li key={entry.turnId}>
-              <button ref={(element) => setOutlineButton(entry.turnId, element)} type="button" className={`outline-entry${entry.turnId === activeTurnId ? " active" : ""}`} onClick={() => navigate(entry.turnId)} aria-current={entry.turnId === activeTurnId ? "true" : undefined} aria-label={`Go to turn ${entry.index}: ${entry.label}`}>
+              <button ref={(element) => setOutlineButton(entry.turnId, element)} type="button" className={`outline-entry${entry.turnId === activeTurnId ? " active" : ""}`} onClick={() => navigate(entry.turnId)} aria-current={entry.turnId === activeTurnId ? "true" : undefined} aria-label={m.goToTurn(entry.index, entry.label)}>
                 <span className="outline-index">{entry.index}</span><span className="outline-copy"><strong>{entry.label}</strong><small>{entry.status}</small></span>
               </button>
             </li>
           ))}
         </ol>
       </nav>
-      <div className="conversation" aria-label="Conversation">
-        <div className="conversation-heading"><div><p className="empty-kicker">Conversation</p><h2>{thread.title}</h2></div><span className="thread-status">{thread.status}</span></div>
+      <div className="conversation" aria-label={m.conversation}>
+        <div className="conversation-heading"><div><p className="empty-kicker">{m.conversation}</p><h2>{thread.title}</h2></div><span className="thread-status">{thread.status}</span></div>
         <div className="pagination-controls">
-          {thread.paging.hasMore ? <button type="button" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? "Loading earlier turns…" : "Load earlier turns"}</button> : <span className="panel-note">No more loaded turns.</span>}
+          {thread.paging.hasMore ? <button type="button" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? m.loadingEarlier : m.loadEarlier}</button> : <span className="panel-note">{m.noMore}</span>}
           {loadMoreError === undefined ? null : <p className="error-summary">{loadMoreError}</p>}
         </div>
-        {thread.turns.length === 0 ? <div className="conversation-empty"><p className="empty-kicker">Conversation</p><h2>No readable turns</h2><p>This thread has no conversation content available.</p></div> : null}
-        {thread.turns.length === 0 ? <div className="conversation-empty"><p className="empty-kicker">Conversation</p><h2>No readable turns</h2><p>This thread has no conversation content available.</p></div> : <Virtuoso<ConversationThreadView["turns"][number]>
+        {thread.turns.length === 0 ? <div className="conversation-empty"><p className="empty-kicker">{m.conversation}</p><h2>{m.noReadableTurns}</h2><p>{m.noConversationContent}</p></div> : null}
+        {thread.turns.length === 0 ? null : <Virtuoso<ConversationThreadView["turns"][number]>
           ref={virtuosoRef}
           data={thread.turns}
           computeItemKey={(_, turn) => turn.id}
@@ -116,10 +117,10 @@ function Conversation({ thread, activeTurnId, searchQuery, searchResults, select
           itemContent={(_, turn) => (
             <article className="turn-card" data-turn-id={turn.id} key={turn.id}>
               <header className="turn-heading">
-                <div><span className="turn-index">Turn {turn.index}</span><span className="turn-status">{turn.status}</span></div>
+                <div><span className="turn-index">{m.turn(turn.index)}</span><span className="turn-status">{turn.status}</span></div>
                 {turn.createdAt === undefined ? null : <time dateTime={turn.createdAt}>{turn.createdAt}</time>}
               </header>
-              {turn.items.length === 0 ? <p className="partial-note">No readable items were provided for this turn.</p> : <div className="turn-items">{turn.items.map((item) => <ConversationItem item={item} key={item.id} />)}</div>}
+              {turn.items.length === 0 ? <p className="partial-note">{m.noReadableItems}</p> : <div className="turn-items">{turn.items.map((item) => <ConversationItem item={item} key={item.id} m={m} />)}</div>}
             </article>
           )}
         />}
@@ -130,6 +131,7 @@ function Conversation({ thread, activeTurnId, searchQuery, searchResults, select
 
 function App(): React.JSX.Element {
   const [appInfo, setAppInfo] = useState<AppInfo | undefined>();
+  const [language, setLanguage] = useState<Language>("en-US");
   const [onboardingState, setOnboardingState] = useState<OnboardingSnapshot>({ state: "detecting" });
   const [connectionState, setConnectionState] = useState<ConnectionStateSnapshot>({ state: "idle" });
   const [reconnecting, setReconnecting] = useState(false);
@@ -151,9 +153,12 @@ function App(): React.JSX.Element {
   const [startingTurn, setStartingTurn] = useState(false);
   const [runningTurnId, setRunningTurnId] = useState<string | undefined>();
   const [sendError, setSendError] = useState<string | undefined>();
+  const [editingThreadId, setEditingThreadId] = useState<string | undefined>();
+  const [editingThreadName, setEditingThreadName] = useState("");
   const seenUpdateKeys = useRef(new Set<string>());
   const navigationTarget = useRef<string | undefined>(undefined);
   const outlineButtons = useRef(new Map<string, HTMLButtonElement>());
+  const m = messages[language];
 
   const loadThreads = useCallback(async (): Promise<void> => {
     setThreadLoadState("loading");
@@ -176,6 +181,7 @@ function App(): React.JSX.Element {
         const [info, onboarding, state] = await Promise.all([window.threadPath.getAppInfo(), window.threadPath.getOnboardingState(), window.threadPath.getConnectionState()]);
         if (!active) return;
         setAppInfo(info);
+        setLanguage(info.language);
         setOnboardingState(onboarding);
         setConnectionState(state);
       } catch (error: unknown) {
@@ -186,6 +192,26 @@ function App(): React.JSX.Element {
     const timer = window.setInterval(() => void refresh(), 500);
     return () => { active = false; window.clearInterval(timer); };
   }, []);
+
+  const handleLanguageChange = async (): Promise<void> => {
+    const nextLanguage: Language = language === "zh-CN" ? "en-US" : "zh-CN";
+    try { setLanguage(await window.threadPath.setLanguage(nextLanguage)); }
+    catch (error: unknown) { setSendError(errorMessage(error)); }
+  };
+
+  const beginRename = (thread: ThreadListItem): void => {
+    setEditingThreadId(thread.id);
+    setEditingThreadName(thread.title);
+  };
+
+  const saveThreadName = async (threadId: string, name: string | null): Promise<void> => {
+    try {
+      const update = await window.threadPath.setThreadDisplayName(threadId, name);
+      setThreads((current) => current.map((thread) => thread.id === update.threadId ? { ...thread, title: update.title } : thread));
+      setSelectedThread((current) => current?.id === update.threadId ? { ...current, title: update.title } : current);
+      setEditingThreadId(undefined);
+    } catch (error: unknown) { setThreadError(errorMessage(error)); }
+  };
 
   const handleRediscover = async (): Promise<void> => {
     setOnboardingState({ state: "detecting" });
@@ -249,6 +275,7 @@ function App(): React.JSX.Element {
     void window.threadPath.readThread(selectedThreadId).then((thread) => {
       if (!active) return;
       setSelectedThread(thread);
+      setThreads((current) => current.map((item) => item.id === thread.id ? { ...item, title: thread.title, turnCount: thread.turns.length } : item));
       setSelectedThreadState(thread.turns.length === 0 ? "empty" : "ready");
     }).catch((error: unknown) => {
       if (!active) return;
@@ -313,6 +340,10 @@ function App(): React.JSX.Element {
     setStartingTurn(true);
     try {
       const result = await window.threadPath.startTurn(selectedThreadId, text);
+      if (result.displayName !== undefined) {
+        setThreads((current) => current.map((thread) => thread.id === result.threadId ? { ...thread, title: result.displayName ?? thread.title } : thread));
+        setSelectedThread((current) => current?.id === result.threadId ? { ...current, title: result.displayName ?? current.title } : current);
+      }
       setSelectedThread((current) => {
         if (current === undefined || current.id !== result.threadId) return current;
         const turnId = result.turnId;
@@ -394,34 +425,34 @@ function App(): React.JSX.Element {
     <main className="shell">
       <header className="topbar">
         <div><p className="eyebrow">ThreadPath</p><h1>ThreadPath for Codex</h1></div>
-        <div className="status" aria-label="Connection status"><span className={`status-dot status-${connectionState.state}`} />{connectionState.state}{connectionState.serverVersion === undefined ? null : <span className="status-meta">server {connectionState.serverVersion}</span>}</div>
+        <div className="topbar-actions"><div className="status" aria-label={m.connectionStatus}><span className={`status-dot status-${connectionState.state}`} />{connectionState.state}{connectionState.serverVersion === undefined ? null : <span className="status-meta">{m.server} {connectionState.serverVersion}</span>}</div><button className="language-switch" type="button" onClick={() => void handleLanguageChange()} aria-label={m.language}>{language === "zh-CN" ? "English" : "中文"}</button></div>
       </header>
-      <Onboarding snapshot={onboardingState} onRediscover={() => void handleRediscover()} onChooseExecutable={() => void handleChooseExecutable()} onChooseDirectory={() => void handleChooseDirectory()} onConnect={() => void handleOnboardingConnect()} />
-      <section className="workspace" aria-label="Thread workspace">
+      <Onboarding snapshot={onboardingState} onRediscover={() => void handleRediscover()} onChooseExecutable={() => void handleChooseExecutable()} onChooseDirectory={() => void handleChooseDirectory()} onConnect={() => void handleOnboardingConnect()} m={m} />
+      <section className="workspace" aria-label={m.workspace}>
         <aside className="thread-panel">
-          <div className="panel-heading"><div><p className="eyebrow">Workspace</p><h2>Threads</h2></div><button type="button" onClick={() => void loadThreads()} disabled={connectionState.state !== "ready" || threadLoadState === "loading"}>{threadLoadState === "loading" ? "Loading…" : "Refresh"}</button></div>
-          {threadLoadState === "idle" ? <p className="panel-note">Waiting for the Codex connection.</p> : null}
+          <div className="panel-heading"><div><p className="eyebrow">{m.workspace}</p><h2>{m.threads}</h2></div><button type="button" onClick={() => void loadThreads()} disabled={connectionState.state !== "ready" || threadLoadState === "loading"}>{threadLoadState === "loading" ? m.loading : m.refresh}</button></div>
+          {threadLoadState === "idle" ? <p className="panel-note">{m.waitingConnection}</p> : null}
           {threadLoadState === "error" ? <p className="error-summary">{threadError}</p> : null}
-          {threadLoadState === "empty" ? <p className="panel-note">No threads are available.</p> : null}
-          {threads.length === 0 && threadLoadState === "loading" ? <p className="panel-note">Loading threads…</p> : null}
-          <div className="thread-list" role="listbox" aria-label="Threads">{threads.map((thread) => <button className={`thread-row${thread.id === selectedThreadId ? " selected" : ""}`} key={thread.id} type="button" role="option" aria-selected={thread.id === selectedThreadId} onClick={() => setSelectedThreadId(thread.id)}><span className="thread-title">{thread.title}</span><span className="thread-meta">{thread.status} · {thread.turnCount === null ? "—" : `${thread.turnCount} turns`}</span></button>)}</div>
+          {threadLoadState === "empty" ? <p className="panel-note">{m.noThreads}</p> : null}
+          {threads.length === 0 && threadLoadState === "loading" ? <p className="panel-note">{m.loadingThreads}</p> : null}
+          <div className="thread-list" role="listbox" aria-label={m.threads}>{threads.map((thread) => <div className="thread-row-wrap" key={thread.id}><button className={`thread-row${thread.id === selectedThreadId ? " selected" : ""}`} type="button" role="option" aria-selected={thread.id === selectedThreadId} onClick={() => setSelectedThreadId(thread.id)} onDoubleClick={() => beginRename(thread)}><span className="thread-title">{thread.title}</span><span className="thread-meta">{thread.status} · {thread.turnCount === null ? "—" : `${thread.turnCount} ${m.turns(2).replace(/^\d+\s*/, "")}`}</span></button><button className="thread-edit" type="button" onClick={() => beginRename(thread)} aria-label={`${m.rename}: ${thread.title}`}>{m.rename}</button>{editingThreadId === thread.id ? <form className="thread-name-editor" onSubmit={(event) => { event.preventDefault(); void saveThreadName(thread.id, editingThreadName); }}><input autoFocus value={editingThreadName} onChange={(event) => setEditingThreadName(event.target.value)} placeholder={m.threadNamePlaceholder} /><button type="submit">{m.save}</button><button type="button" onClick={() => void saveThreadName(thread.id, null)}>{m.resetName}</button></form> : null}</div>)}</div>
         </aside>
-        <section className="details-panel" aria-label="Selected thread conversation">
-          {selectedThreadState === "idle" ? <div className="details-empty"><p className="empty-kicker">Conversation</p><h2>Select a thread</h2><p>Choose a thread to read its linear conversation.</p></div> : null}
-          {selectedThreadState === "loading" ? <p className="panel-note">Loading conversation…</p> : null}
+        <section className="details-panel" aria-label={m.selectedConversation}>
+          {selectedThreadState === "idle" ? <div className="details-empty"><p className="empty-kicker">{m.conversation}</p><h2>{m.selectThread}</h2><p>{m.chooseThread}</p></div> : null}
+          {selectedThreadState === "loading" ? <p className="panel-note">{m.loadingConversation}</p> : null}
           {selectedThreadState === "error" ? <p className="error-summary">{selectedThreadError}</p> : null}
-          {(selectedThreadState === "empty" || selectedThreadState === "ready") && selectedThread !== undefined ? <Conversation thread={selectedThread} activeTurnId={activeTurnId} searchQuery={searchQuery} searchResults={searchResults} selectedSearchIndex={selectedSearchIndex} searchError={searchError} loadingMore={loadingMore} loadMoreError={loadMoreError} onLoadMore={() => void handleLoadMore()} onSearchQueryChange={setSearchQuery} onSearchKeyDown={handleSearchKeyDown} onNavigate={handleNavigate} onVisibleTurn={handleVisibleTurn} onUserScroll={handleUserScroll} setOutlineButton={setOutlineButton} /> : null}
+          {(selectedThreadState === "empty" || selectedThreadState === "ready") && selectedThread !== undefined ? <Conversation thread={selectedThread} activeTurnId={activeTurnId} searchQuery={searchQuery} searchResults={searchResults} selectedSearchIndex={selectedSearchIndex} searchError={searchError} loadingMore={loadingMore} loadMoreError={loadMoreError} onLoadMore={() => void handleLoadMore()} onSearchQueryChange={setSearchQuery} onSearchKeyDown={handleSearchKeyDown} onNavigate={handleNavigate} onVisibleTurn={handleVisibleTurn} onUserScroll={handleUserScroll} setOutlineButton={setOutlineButton} m={m} /> : null}
           {selectedThread !== undefined && selectedThreadState !== "loading" && selectedThreadState !== "error" ? (
             <form className="turn-composer" onSubmit={(event) => { event.preventDefault(); void handleStartTurn(); }}>
-              <label htmlFor="turn-input">Send a message</label>
-              <textarea id="turn-input" value={inputText} onChange={(event) => setInputText(event.target.value)} placeholder="Write a plain-text turn…" rows={3} disabled={connectionState.state !== "ready" || startingTurn || runningTurnId !== undefined} />
-              <div className="composer-footer"><span className="composer-status">{startingTurn ? "Starting…" : runningTurnId === undefined ? "Ready" : "Turn running…"}</span><button type="submit" disabled={connectionState.state !== "ready" || inputText.trim() === "" || startingTurn || runningTurnId !== undefined}>{startingTurn ? "Starting…" : runningTurnId === undefined ? "Send" : "Running…"}</button></div>
+              <label htmlFor="turn-input">{m.sendMessage}</label>
+              <textarea id="turn-input" value={inputText} onChange={(event) => setInputText(event.target.value)} placeholder={m.inputPlaceholder} rows={3} disabled={connectionState.state !== "ready" || startingTurn || runningTurnId !== undefined} />
+              <div className="composer-footer"><span className="composer-status">{startingTurn ? m.starting : runningTurnId === undefined ? m.ready : m.turnRunning}</span><button type="submit" disabled={connectionState.state !== "ready" || inputText.trim() === "" || startingTurn || runningTurnId !== undefined}>{startingTurn ? m.starting : runningTurnId === undefined ? m.send : m.running}</button></div>
               {sendError === undefined ? null : <p className="error-summary">{sendError}</p>}
             </form>
           ) : null}
         </section>
       </section>
-      <footer className="footer"><span>{appInfo === undefined ? "ThreadPath" : `ThreadPath ${appInfo.version}`}</span>{connectionState.state === "error" || connectionState.state === "stopped" ? <button type="button" onClick={() => void handleReconnect()} disabled={reconnecting}>{reconnecting ? "Reconnecting…" : "Reconnect"}</button> : null}{connectionState.error === undefined ? null : <span className="footer-error">{connectionState.error}</span>}</footer>
+      <footer className="footer"><span>{appInfo === undefined ? "ThreadPath" : `ThreadPath ${appInfo.version}`}</span>{connectionState.state === "error" || connectionState.state === "stopped" ? <button type="button" onClick={() => void handleReconnect()} disabled={reconnecting}>{reconnecting ? m.reconnecting : m.reconnect}</button> : null}{connectionState.error === undefined ? null : <span className="footer-error">{connectionState.error}</span>}</footer>
     </main>
   );
 }
