@@ -71,6 +71,7 @@ async function discoverCodex(): Promise<OnboardingSnapshot> {
     const message = error instanceof Error ? error.message : String(error);
     const failed: OnboardingSnapshot = { state: "error", error: message };
     setOnboardingSnapshot(failed);
+    processManager.reportError(error instanceof AppServerError ? error : new ProcessError(message));
     return failed;
   }
 }
