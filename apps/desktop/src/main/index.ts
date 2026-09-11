@@ -7,7 +7,7 @@ import { ThreadService } from "./thread-service";
 import { ConversationService } from "./conversation-service";
 import { validateThreadId } from "./thread-service";
 import { UserPreferencesService, firstReadableUserText } from "./user-preferences";
-import { ProcessError, ThreadUnavailableError } from "../../../../threadpath-protocol/src/protocol.ts";
+import { AppServerError, ProcessError, ThreadUnavailableError } from "../../../../threadpath-protocol/src/protocol.ts";
 import type { AppInfo, ConnectionStateSnapshot, Language, OnboardingSnapshot, ThreadDisplayNameUpdate } from "../shared/api";
 
 if (process.env.THREADPATH_E2E === "1") app.disableHardwareAcceleration();
