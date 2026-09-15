@@ -75,7 +75,7 @@ export class NetworkTimeoutError extends AppServerError {
   constructor(message: string, code?: JsonValue) { super(message, "network-timeout", code); this.name = "NetworkTimeoutError"; }
 }
 
-export interface ThreadSummary { id: string; title?: string; status?: string; turnCount?: number; createdAt?: string; preview?: string; name?: string; canAcceptDirectInput?: boolean; }
+export interface ThreadSummary { id: string; title?: string; status?: string; turnCount?: number; createdAt?: string; preview?: string; name?: string; canAcceptDirectInput?: boolean; cwd?: string; }
 export interface Thread extends ThreadSummary { turns?: Turn[]; }
 export interface Turn { id: string; status?: string; createdAt?: string; items?: TurnItem[]; }
 export interface TurnPage {
@@ -177,7 +177,8 @@ export function getThreads(value: JsonValue): ThreadSummary[] {
     const preview = readString(item, "preview");
     const name = readString(item, "name");
     const status = readString(item, "status");
-    return id === undefined ? [] : [{ id, ...(title === undefined ? {} : { title }), ...(preview === undefined ? {} : { preview }), ...(name === undefined ? {} : { name }), ...(status === undefined ? {} : { status }), ...(turnCount === undefined ? {} : { turnCount }), ...(createdAt === undefined ? {} : { createdAt }) }];
+    const cwd = readString(item, "cwd");
+    return id === undefined ? [] : [{ id, ...(title === undefined ? {} : { title }), ...(preview === undefined ? {} : { preview }), ...(name === undefined ? {} : { name }), ...(status === undefined ? {} : { status }), ...(turnCount === undefined ? {} : { turnCount }), ...(createdAt === undefined ? {} : { createdAt }), ...(cwd === undefined ? {} : { cwd }) }];
   });
 }
 
@@ -195,6 +196,7 @@ export function getThread(value: JsonValue): Thread | undefined {
     ...(readString(source, "name") === undefined ? {} : { name: readString(source, "name") }),
     ...(readString(source, "status") === undefined ? {} : { status: readString(source, "status") }),
     ...(typeof source.canAcceptDirectInput === "boolean" ? { canAcceptDirectInput: source.canAcceptDirectInput } : {}),
+    ...(readString(source, "cwd") === undefined ? {} : { cwd: readString(source, "cwd") }),
     ...(turnCount === undefined ? {} : { turnCount }),
     ...(createdAt === undefined ? {} : { createdAt }),
     turns: Array.isArray(source.turns) ? source.turns.flatMap((item) => isJsonObject(item) ? [parseTurn(item)] : []).filter((turn): turn is Turn => turn !== undefined) : undefined,

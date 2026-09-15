@@ -10,6 +10,7 @@ const INITIAL_FIRST_ITEM_INDEX = 1_000_000;
 type ToolStatus = Extract<ConversationItemView, { kind: "tool" }>["status"];
 
 export interface ConversationClient extends ThreadClient {
+  startThread(options: { cwd: string; ephemeral?: boolean }): Promise<Thread>;
   listTurns(threadId: string, options?: { limit?: number; cursor?: string }): Promise<TurnPage>;
   resumeThread(threadId: string): Promise<Thread>;
   startTurn(threadId: string, input: readonly TurnInput[]): Promise<Turn>;
@@ -52,7 +53,9 @@ export class ConversationService {
       hasMore: page.nextCursor !== undefined,
       loadMoreError: undefined,
     });
-    const initialView = { ...view, turns: initialTurns, outline: buildTurnOutline(initialTurns), paging: { ...view.paging, orderedTurnIds: initialTurns.map((turn) => turn.id) } };
+    const previouslyLoaded = this.loadedThreads.get(validThreadId);
+    const mergedInitialTurns = previouslyLoaded === undefined ? initialTurns : mergeConversationTurns(initialTurns, previouslyLoaded.turns, "append");
+    const initialView = { ...view, turns: mergedInitialTurns, outline: buildTurnOutline(mergedInitialTurns), paging: { ...view.paging, orderedTurnIds: mergedInitialTurns.map((turn) => turn.id) } };
     if (this.remoteActiveThreads.has(validThreadId) && !initialView.remoteActive && !page.turns.some(isActiveTurn)) this.clearRemoteActive(validThreadId);
     const nextView = this.applyObservedActivity(validThreadId, initialView, [...(thread.turns ?? []), ...page.turns]);
     this.loadedThreads.set(validThreadId, nextView);
@@ -147,6 +150,33 @@ export class ConversationService {
     }
   }
 
+  async startNewConversation(cwd: unknown, text: unknown): Promise<StartTurnResult> {
+    if (typeof cwd !== "string" || cwd.trim() === "") throw new ConfigurationError("workspace path must be a non-empty directory path");
+    const validText = validateTurnText(text);
+    if (this.startingTurn || this.activeTurn !== undefined) throw new ProtocolError("only one turn may run at a time");
+    this.startingTurn = true;
+    try {
+      const client = this.clientProvider.getReadyClient();
+      this.bindNotifications(client);
+      const thread = await client.startThread({ cwd: cwd.trim(), ephemeral: false });
+      this.loadedThreads.set(thread.id, toConversationThreadView(thread));
+      let turn: Turn;
+      try {
+        turn = await client.startTurn(thread.id, [{ type: "text", text: validText }]);
+      } catch (error: unknown) {
+        if (isActiveWriterError(error)) {
+          this.markRemoteActive(thread.id);
+          throw new ActiveTurnError();
+        }
+        throw error;
+      }
+      this.activeTurn = { threadId: thread.id, turnId: turn.id };
+      return { threadId: thread.id, turnId: turn.id };
+    } finally {
+      this.startingTurn = false;
+    }
+  }
+
   onConversationUpdate(listener: ConversationUpdateListener): () => void {
     this.updateListeners.add(listener);
     return () => this.updateListeners.delete(listener);
@@ -220,6 +250,11 @@ function isThreadUnavailable(error: unknown): error is AppServerError {
 function isActiveWriterError(error: unknown): boolean {
   if (!(error instanceof AppServerError)) return error instanceof Error && /already has an active writer|active writer/i.test(error.message);
   return /already has an active writer|active writer/i.test(`${error.message} ${String(error.code)}`);
+}
+
+function validateTurnText(text: unknown): string {
+  if (typeof text !== "string" || text.trim() === "" || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)) throw new ConfigurationError("turn text must be non-empty plain text");
+  return text.trim();
 }
 
 function isActiveStatus(status: string | undefined): boolean {

@@ -13,11 +13,17 @@ const desktopApi: DesktopApi = {
   disconnect: () => ipcRenderer.invoke("app:disconnect"),
   reconnect: () => ipcRenderer.invoke("app:reconnect"),
   listThreads: () => ipcRenderer.invoke("threads:list"),
+  getWorkspaceState: () => ipcRenderer.invoke("workspace:get-state"),
+  chooseWorkspaceDirectory: () => ipcRenderer.invoke("workspace:choose-directory"),
+  setCurrentWorkspace: (path) => ipcRenderer.invoke("workspace:set-current", path),
+  toggleWorkspace: (path) => ipcRenderer.invoke("workspace:toggle", path),
+  associateThreadWorkspace: (threadId, path) => ipcRenderer.invoke("workspace:associate-thread", threadId, path),
   setThreadDisplayName: (threadId: string, name: string | null) => ipcRenderer.invoke("threads:set-display-name", threadId, name),
   readThread: (threadId) => ipcRenderer.invoke("threads:read", threadId),
   loadMoreTurns: (threadId) => ipcRenderer.invoke("conversation:load-more", threadId),
   searchTurns: (threadId, query) => ipcRenderer.invoke("search:turns", threadId, query),
   startTurn: (threadId, text) => ipcRenderer.invoke("conversation:start-turn", threadId, text),
+  startNewConversation: (workspacePath, text) => ipcRenderer.invoke("conversation:start-new", workspacePath, text),
   onConversationUpdate: (listener) => {
     const handler = (_event: unknown, update: Parameters<typeof listener>[0]): void => listener(update);
     ipcRenderer.on("conversation:update", handler);

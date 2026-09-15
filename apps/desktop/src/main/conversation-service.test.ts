@@ -26,6 +26,7 @@ async function main(): Promise<void> {
     listThreads: async () => [],
     readThread: async () => fixtureThread,
     listTurns: async () => ({ turns: [...(fixtureThread.turns ?? [])].reverse() }),
+    startThread: async () => ({ id: "thread-new" }),
     resumeThread: async () => ({ id: fixtureThread.id, title: fixtureThread.title, canAcceptDirectInput: true }),
     startTurn: async () => ({ id: "turn-live" }),
     onNotification: (listener) => { notificationListener = listener; return () => { notificationListener = undefined; }; },
@@ -111,6 +112,15 @@ async function main(): Promise<void> {
   assert.equal(activeOnlyView.remoteActive, undefined);
   assert.deepEqual(await activeOnlyService.startTurn("thread-conversation", "available input"), { threadId: "thread-conversation", turnId: "turn-active-only" });
   assert.equal(activeOnlyStartCalled, true);
+  let newThreadOptions: { cwd: string; ephemeral?: boolean } | undefined;
+  const newConversationClient: ConversationClient = {
+    ...client,
+    startThread: async (options) => { newThreadOptions = options; return { id: "thread-new", title: "New thread" }; },
+    startTurn: async () => ({ id: "turn-new" }),
+  };
+  const newConversationService = new ConversationService({ getReadyClient: () => newConversationClient });
+  assert.deepEqual(await newConversationService.startNewConversation("D:\\threadPath", "first message"), { threadId: "thread-new", turnId: "turn-new" });
+  assert.deepEqual(newThreadOptions, { cwd: "D:\\threadPath", ephemeral: false });
   const activeWriterResponseClient: ConversationClient = {
     ...client,
     readThread: async () => ({ id: fixtureThread.id, title: "Available fixture", status: "completed" }),

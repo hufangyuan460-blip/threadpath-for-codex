@@ -7,6 +7,10 @@ const MAX_THREAD_NAME_LENGTH = 72;
 export interface UserPreferencesFile {
   readonly language?: Language;
   readonly threadNames?: Readonly<Record<string, string>>;
+  readonly workingDirectories?: readonly string[];
+  readonly currentWorkingDirectory?: string;
+  readonly expandedWorkingDirectories?: Readonly<Record<string, boolean>>;
+  readonly threadWorkingDirectories?: Readonly<Record<string, string>>;
 }
 
 export interface ThreadNameParts {
@@ -87,8 +91,38 @@ export class UserPreferencesService {
   async pruneThreadNames(activeThreadIds: readonly string[]): Promise<void> {
     const active = new Set(activeThreadIds);
     const names = Object.fromEntries(Object.entries(this.data.threadNames ?? {}).filter(([id]) => active.has(id)));
-    if (Object.keys(names).length === Object.keys(this.data.threadNames ?? {}).length) return;
-    this.data = { ...this.data, threadNames: names };
+    const directories = Object.fromEntries(Object.entries(this.data.threadWorkingDirectories ?? {}).filter(([id]) => active.has(id)));
+    if (Object.keys(names).length === Object.keys(this.data.threadNames ?? {}).length && Object.keys(directories).length === Object.keys(this.data.threadWorkingDirectories ?? {}).length) return;
+    this.data = { ...this.data, threadNames: names, threadWorkingDirectories: directories };
+    await this.persist();
+  }
+
+  getWorkingDirectories(): string[] { return [...(this.data.workingDirectories ?? [])]; }
+  getCurrentWorkingDirectory(): string | undefined { return this.data.currentWorkingDirectory; }
+  getWorkspaceExpanded(path: string): boolean { return this.data.expandedWorkingDirectories?.[path] ?? true; }
+  getThreadWorkingDirectory(threadId: string): string | undefined { return this.data.threadWorkingDirectories?.[threadId]; }
+
+  async addWorkingDirectory(path: string): Promise<void> {
+    this.data = { ...this.data, workingDirectories: [...new Set([...this.getWorkingDirectories(), path])], currentWorkingDirectory: path };
+    await this.persist();
+  }
+
+  async setCurrentWorkingDirectory(path: string): Promise<void> {
+    if (!this.getWorkingDirectories().includes(path)) return this.addWorkingDirectory(path);
+    this.data = { ...this.data, currentWorkingDirectory: path };
+    await this.persist();
+  }
+
+  async setWorkspaceExpanded(path: string, expanded: boolean): Promise<void> {
+    this.data = { ...this.data, expandedWorkingDirectories: { ...(this.data.expandedWorkingDirectories ?? {}), [path]: expanded } };
+    await this.persist();
+  }
+
+  async setThreadWorkingDirectory(threadId: string, path: string | undefined): Promise<void> {
+    const directories = { ...(this.data.threadWorkingDirectories ?? {}) };
+    if (path === undefined) delete directories[threadId];
+    else directories[threadId] = path;
+    this.data = { ...this.data, threadWorkingDirectories: directories };
     await this.persist();
   }
 
@@ -105,6 +139,13 @@ function isPreferencesFile(value: unknown): value is UserPreferencesFile {
   if (language !== undefined && language !== "zh-CN" && language !== "en-US") return false;
   const names = object.threadNames;
   if (names !== undefined && (names === null || typeof names !== "object" || Array.isArray(names) || Object.values(names).some((name) => typeof name !== "string"))) return false;
+  const directories = object.workingDirectories;
+  if (directories !== undefined && (!Array.isArray(directories) || directories.some((path) => typeof path !== "string"))) return false;
+  if (object.currentWorkingDirectory !== undefined && typeof object.currentWorkingDirectory !== "string") return false;
+  const expanded = object.expandedWorkingDirectories;
+  if (expanded !== undefined && (expanded === null || typeof expanded !== "object" || Array.isArray(expanded) || Object.values(expanded).some((value) => typeof value !== "boolean"))) return false;
+  const associations = object.threadWorkingDirectories;
+  if (associations !== undefined && (associations === null || typeof associations !== "object" || Array.isArray(associations) || Object.values(associations).some((path) => typeof path !== "string"))) return false;
   return true;
 }
 

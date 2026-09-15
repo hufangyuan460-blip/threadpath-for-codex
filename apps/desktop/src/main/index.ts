@@ -7,6 +7,7 @@ import { ThreadService } from "./thread-service";
 import { ConversationService } from "./conversation-service";
 import { validateThreadId } from "./thread-service";
 import { UserPreferencesService, firstReadableUserText } from "./user-preferences";
+import { WorkspaceService, validateWorkspacePath } from "./workspace-service";
 import { AppServerError, ProcessError, ThreadUnavailableError } from "../../../../threadpath-protocol/src/protocol.ts";
 import type { AppInfo, ConnectionStateSnapshot, Language, OnboardingSnapshot, ThreadDisplayNameUpdate } from "../shared/api";
 
@@ -20,6 +21,7 @@ let threadService: ThreadService;
 let conversationService: ConversationService;
 let preferencesService: UserPreferencesService;
 let onboardingSnapshot: OnboardingSnapshot = { state: "detecting" };
+let workspaceService: WorkspaceService;
 
 function publicConnectionState(snapshot: ManagerConnectionState): ConnectionStateSnapshot {
   return {
@@ -47,6 +49,7 @@ function publicDiscoveryResult(result: CodexDiscoveryResult, state: OnboardingSn
 
 async function applyDiscoveryResult(result: CodexDiscoveryResult): Promise<OnboardingSnapshot> {
   processManager.configure({ cwd: result.cwd ?? "", executable: result.executablePath });
+  if (result.cwd !== undefined) await preferencesService.addWorkingDirectory(result.cwd);
   const found = publicDiscoveryResult(result, result.cwd === undefined ? "found" : "connecting");
   setOnboardingSnapshot(found);
   if (result.cwd === undefined) return found;
@@ -115,6 +118,11 @@ function localizeThreadView<T extends { id: string; title: string; turns?: reado
   return { ...thread, title: preferencesService.getThreadDisplayName(thread.id, thread.title, firstReadableUserText(thread.turns)) };
 }
 
+async function getWorkspaceState() {
+  const threads = await withReadyConnection(() => threadService.listThreads());
+  return workspaceService.getState(threads.map((thread) => ({ ...thread, workspacePath: preferencesService.getThreadWorkingDirectory(thread.id) ?? thread.workspacePath })));
+}
+
 function registerApi(): void {
   ipcMain.handle("app:get-info", (): AppInfo => ({ version: app.getVersion(), language: preferencesService.getLanguage() }));
   ipcMain.handle("app:set-language", async (_event, language: unknown): Promise<Language> => {
@@ -140,6 +148,29 @@ function registerApi(): void {
     return publicConnectionState(state);
   });
   ipcMain.handle("threads:list", async () => withReadyConnection(() => threadService.listThreads()));
+  ipcMain.handle("workspace:get-state", async () => getWorkspaceState());
+  ipcMain.handle("workspace:set-current", async (_event, path: unknown) => {
+    await workspaceService.setCurrent(path);
+    return getWorkspaceState();
+  });
+  ipcMain.handle("workspace:toggle", async (_event, path: unknown) => {
+    await workspaceService.toggle(path);
+    return getWorkspaceState();
+  });
+  ipcMain.handle("workspace:associate-thread", async (_event, threadId: unknown, path: unknown) => {
+    const validThreadId = validateThreadId(threadId);
+    await workspaceService.associateThread(validThreadId, path);
+    return getWorkspaceState();
+  });
+  ipcMain.handle("workspace:choose-directory", async () => {
+    const selection = await dialog.showOpenDialog({ title: "Choose workspace directory", properties: ["openDirectory", "createDirectory"] });
+    const selectedPath = selectedDialogPath(selection.canceled, selection.filePaths);
+    if (selectedPath !== undefined) {
+      await workspaceService.addDirectory(selectedPath);
+      await workspaceService.setCurrent(selectedPath);
+    }
+    return getWorkspaceState();
+  });
   ipcMain.handle("threads:set-display-name", async (_event, threadId: unknown, name: unknown): Promise<ThreadDisplayNameUpdate> => {
     const validThreadId = validateThreadId(threadId);
     if (name !== null && typeof name !== "string") throw new ProcessError("thread display name must be plain text or null");
@@ -159,6 +190,14 @@ function registerApi(): void {
     const validText = typeof text === "string" ? text : undefined;
     const loaded = conversationService.getLoadedThread(result.threadId);
     return { ...result, displayName: preferencesService.getThreadDisplayName(result.threadId, loaded?.title, firstReadableUserText(loaded?.turns) ?? validText) };
+  }));
+  ipcMain.handle("conversation:start-new", async (_event, workspacePath: unknown, text: unknown) => withReadyConnection(async () => {
+    const path = validateWorkspacePath(workspacePath);
+    await workspaceService.setCurrent(path);
+    const result = await conversationService.startNewConversation(path, text);
+    await workspaceService.associateThread(result.threadId, path);
+    const loaded = conversationService.getLoadedThread(result.threadId);
+    return { ...result, workspacePath: path, displayName: preferencesService.getThreadDisplayName(result.threadId, loaded?.title, firstReadableUserText(loaded?.turns) ?? (typeof text === "string" ? text : undefined)) };
   }));
   conversationService.onConversationUpdate((update) => {
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send("conversation:update", update);
@@ -216,6 +255,7 @@ app.whenReady().then(async () => {
   const locale = process.env.THREADPATH_E2E_LANGUAGE ?? app.getLocale();
   preferencesService = new UserPreferencesService(join(app.getPath("userData"), "threadpath-ui.json"), locale.toLowerCase().startsWith("zh") ? "zh-CN" : "en-US");
   await preferencesService.load();
+  workspaceService = new WorkspaceService({ preferences: preferencesService });
   threadService = new ThreadService(processManager, preferencesService);
   conversationService = new ConversationService(processManager);
   registerApi();

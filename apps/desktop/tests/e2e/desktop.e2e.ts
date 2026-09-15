@@ -56,6 +56,22 @@ async function scrollListToBottom(page: Page): Promise<void> {
   await page.waitForTimeout(200);
 }
 
+async function assertFixedComposerGeometry(page: Page, expectWelcome: boolean): Promise<number> {
+  const geometry = await page.evaluate(() => {
+    const rect = (selector: string): { top: number; bottom: number; height: number } | null => {
+      const element = document.querySelector<HTMLElement>(selector);
+      if (element === null) return null;
+      const bounds = element.getBoundingClientRect();
+      return { top: bounds.top, bottom: bounds.bottom, height: bounds.height };
+    };
+    return { viewportHeight: window.innerHeight, workspace: rect(".workspace"), details: rect(".details-panel"), composer: rect(".turn-composer"), welcome: rect(".new-conversation-space") };
+  });
+  assert.ok(geometry.workspace !== null && Math.abs(geometry.workspace.bottom - geometry.viewportHeight) <= 3, `workspace does not reach viewport bottom: ${JSON.stringify(geometry)}`);
+  assert.ok(geometry.details !== null && geometry.composer !== null && Math.abs(geometry.composer.bottom - geometry.details.bottom) <= 12, `composer is not anchored to details bottom: ${JSON.stringify(geometry)}`);
+  if (expectWelcome) assert.ok(geometry.welcome !== null && geometry.composer !== null && geometry.welcome.bottom <= geometry.composer.top, `welcome overlaps composer: ${JSON.stringify(geometry)}`);
+  return geometry.composer?.bottom ?? -1;
+}
+
 type ScenarioAction = (page: Page) => Promise<void>;
 
 async function runScenario(name: string, mode: string, action: ScenarioAction, executable = fakeExecutable, cwd: string | null = repositoryDirectory): Promise<void> {
@@ -80,10 +96,22 @@ async function runCompletedPath(): Promise<void> {
     await waitForText(page, '[aria-label="Connection status"]', "ready");
     const historyList = page.locator(".thread-list");
     await historyList.waitFor({ state: "visible" });
+    const nestedHistoryScrollers = await page.locator(".workspace-history *").evaluateAll((elements) => elements.filter((element) => {
+      const style = window.getComputedStyle(element);
+      return style.overflowY === "auto" || style.overflowY === "scroll";
+    }).length);
+    assert.equal(nestedHistoryScrollers, 1, `workspace history must have one global scroller, found ${nestedHistoryScrollers}`);
     await historyList.evaluate((element) => { element.scrollTop = element.scrollHeight; });
     const historyScrollTop = await historyList.evaluate((element) => element.scrollTop);
     assert.ok(historyScrollTop > 0, "history list did not scroll independently");
     await openThread(page);
+    const composerBottomBeforeScroll = await assertFixedComposerGeometry(page, false);
+    await scrollListToBottom(page);
+    await page.screenshot({ path: join(artifactDirectory, "selected-long-conversation.png"), fullPage: true });
+    const composerBottomAfterScroll = await page.locator(".turn-composer").evaluate((element) => element.getBoundingClientRect().bottom);
+    assert.ok(Math.abs(composerBottomAfterScroll - composerBottomBeforeScroll) <= 1, "composer moved after conversation scrolling");
+    assert.equal(await page.locator("#composer-model").isDisabled(), true, "model selector must degrade safely without confirmed server support");
+    assert.equal(await page.locator("#composer-reasoning").isDisabled(), true, "reasoning selector must degrade safely without confirmed server support");
     await page.locator("[data-turn-id]").first().waitFor({ state: "visible" });
     const renderedCount = await page.locator("[data-turn-id]").count();
     assert.ok(renderedCount > 0 && renderedCount < 24, `expected virtualized DOM, got ${renderedCount} turn nodes`);
@@ -101,7 +129,6 @@ async function runCompletedPath(): Promise<void> {
     await search.press("Enter");
     await page.locator('[data-turn-id="e2e-turn-12"]').waitFor({ state: "visible" });
 
-    await scrollListToBottom(page);
     await page.locator("#turn-input").fill("E2E message");
     await page.locator(".turn-composer button[type=submit]").click();
     const liveTurn = page.locator('[data-turn-id="e2e-live-turn"]');
@@ -109,18 +136,21 @@ async function runCompletedPath(): Promise<void> {
     await liveTurn.getByText("streamed fake reply").waitFor({ state: "visible" });
     await liveTurn.getByText("completed", { exact: true }).waitFor({ state: "visible" });
 
-    const renameButton = page.getByRole("button", { name: /Rename:/ }).first();
-    await renameButton.click();
-    const nameInput = page.locator(".thread-name-editor input");
+    const threadActionsButton = page.getByRole("button", { name: /Thread actions:/ }).first();
+    await threadActionsButton.click();
+    await page.getByRole("menuitem", { name: "Rename", exact: true }).click();
+    const nameInput = page.locator("[role=dialog] input");
     await nameInput.fill("Local E2E name");
-    await page.locator(".thread-name-editor button[type=submit]").click();
+    await page.getByRole("dialog").getByRole("button", { name: "Save", exact: true }).click();
     await page.locator(".conversation-heading h2").getByText("Local E2E name", { exact: true }).waitFor({ state: "visible" });
-    await page.getByRole("button", { name: /Rename:/ }).first().click();
-    await page.getByRole("button", { name: "Restore automatic name" }).click();
+    await threadActionsButton.click();
+    await page.getByRole("menuitem", { name: "Rename", exact: true }).click();
+    await page.locator("[role=dialog] input").fill("");
+    await page.getByRole("dialog").getByRole("button", { name: "Save", exact: true }).click();
     await page.locator(".conversation-heading h2").getByText("User turn 1", { exact: true }).waitFor({ state: "visible" });
 
     await page.getByRole("button", { name: "Back to conversation history" }).click();
-    await page.getByRole("heading", { name: "Threads" }).waitFor({ state: "visible" });
+    await page.getByRole("heading", { name: "Workspace history" }).waitFor({ state: "visible" });
     await page.waitForFunction((previousScrollTop) => {
       const element = document.querySelector<HTMLElement>(".thread-list");
       if (element === null) return false;
@@ -135,6 +165,22 @@ async function runCompletedPath(): Promise<void> {
     await page.getByRole("button", { name: "Switch language" }).click();
     await page.getByRole("button", { name: "返回会话历史" }).waitFor({ state: "visible" });
     assert.equal(await page.locator("#turn-input").inputValue(), "keep input while switching language");
+  });
+}
+
+async function runNewConversationPath(): Promise<void> {
+  await runScenario("new-conversation", "e2e-new", async (page) => {
+    await waitForText(page, '[aria-label="Connection status"]', "ready");
+    await page.locator("#turn-input").waitFor({ state: "visible" });
+    await assertFixedComposerGeometry(page, true);
+    await page.screenshot({ path: join(artifactDirectory, "unselected-thread.png"), fullPage: true });
+    await page.locator("#turn-input").fill("Start a new workspace conversation");
+    await page.locator(".turn-composer button[type=submit]").click();
+    await scrollListToBottom(page);
+    const liveTurn = page.locator('[data-turn-id="e2e-live-turn"]');
+    await liveTurn.waitFor({ state: "visible" });
+    await liveTurn.getByText("streamed fake reply").waitFor({ state: "visible" });
+    await liveTurn.getByText("completed", { exact: true }).waitFor({ state: "visible" });
   });
 }
 
@@ -204,6 +250,7 @@ async function runStartupFailurePath(): Promise<void> {
 async function main(): Promise<void> {
   await mkdir(artifactDirectory, { recursive: true });
   await runFirstLaunchDiscoveryPath();
+  await runNewConversationPath();
   await runCompletedPath();
   await runTerminalPath("e2e-failed", "failed");
   await runTerminalPath("e2e-interrupted", "interrupted");

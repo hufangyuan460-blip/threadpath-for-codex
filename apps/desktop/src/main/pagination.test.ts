@@ -23,6 +23,7 @@ function providerFor(pages: TurnPage[], failOnce = false): ConversationClientPro
   const client: ConversationClient = {
     listThreads: async () => [],
     readThread: async (): Promise<Thread> => ({ id: "thread-page", title: "Paged fixture", status: "active" }),
+    startThread: async (): Promise<Thread> => ({ id: "thread-new" }),
     resumeThread: async (): Promise<Thread> => ({ id: "thread-page" }),
     listTurns: async () => {
       if (failOnce && pageIndex === 1 && !failed) {

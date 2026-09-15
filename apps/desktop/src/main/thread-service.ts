@@ -20,6 +20,7 @@ export interface ThreadListViewModel {
   readonly status: string;
   readonly turnCount: number | null;
   readonly createdAt?: string;
+  readonly workspacePath?: string;
 }
 
 export interface ThreadViewModel extends ThreadListViewModel {}
@@ -60,6 +61,7 @@ export class ThreadService {
       status: thread.status?.trim() || "unknown",
       turnCount: turns === undefined ? thread.turnCount ?? null : turns.length,
       ...(thread.createdAt === undefined ? {} : { createdAt: thread.createdAt }),
+      ...(thread.cwd === undefined ? {} : { workspacePath: thread.cwd }),
     };
   }
 

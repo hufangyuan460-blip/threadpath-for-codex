@@ -32,6 +32,20 @@ export interface ThreadListItem {
   readonly status: string;
   readonly turnCount: number | null;
   readonly createdAt?: string;
+  readonly workspacePath?: string;
+}
+
+export interface WorkingDirectoryView {
+  readonly path: string;
+  readonly name: string;
+  readonly expanded: boolean;
+  readonly threads: readonly ThreadListItem[];
+}
+
+export interface WorkspaceState {
+  readonly currentPath?: string;
+  readonly directories: readonly WorkingDirectoryView[];
+  readonly unclassifiedThreads: readonly ThreadListItem[];
 }
 
 export interface ConversationTurnView {
@@ -101,6 +115,10 @@ export interface StartTurnResult {
   readonly displayName?: string;
 }
 
+export interface StartNewConversationResult extends StartTurnResult {
+  readonly workspacePath: string;
+}
+
 export interface ThreadDisplayNameUpdate {
   readonly threadId: string;
   readonly title: string;
@@ -118,10 +136,16 @@ export interface DesktopApi {
   readonly disconnect: () => Promise<ConnectionStateSnapshot>;
   readonly reconnect: () => Promise<ConnectionStateSnapshot>;
   readonly listThreads: () => Promise<ThreadListItem[]>;
+  readonly getWorkspaceState: () => Promise<WorkspaceState>;
+  readonly chooseWorkspaceDirectory: () => Promise<WorkspaceState>;
+  readonly setCurrentWorkspace: (path: string) => Promise<WorkspaceState>;
+  readonly toggleWorkspace: (path: string) => Promise<WorkspaceState>;
+  readonly associateThreadWorkspace: (threadId: string, path: string | null) => Promise<WorkspaceState>;
   readonly setThreadDisplayName: (threadId: string, name: string | null) => Promise<ThreadDisplayNameUpdate>;
   readonly readThread: (threadId: string) => Promise<ThreadDetails>;
   readonly loadMoreTurns: (threadId: string) => Promise<ThreadDetails>;
   readonly searchTurns: (threadId: string, query: string) => Promise<SearchResult[]>;
   readonly startTurn: (threadId: string, text: string) => Promise<StartTurnResult>;
+  readonly startNewConversation: (workspacePath: string, text: string) => Promise<StartNewConversationResult>;
   readonly onConversationUpdate: (listener: (update: ConversationUpdate) => void) => () => void;
 }
