@@ -24,6 +24,9 @@ export interface AppServerClientOptions {
 }
 
 export class AppServerClient {
+  /** Protocol facts verified by the versioned turn-page fixtures. */
+  readonly threadReadOrder = "oldest-first" as const;
+  readonly turnPageOrder = "newest-first" as const;
   private readonly child: ChildProcessWithoutNullStreams;
   private readonly requestTimeoutMs: number;
   private readonly pendingRequests = new Map<RequestId, PendingRequest>();

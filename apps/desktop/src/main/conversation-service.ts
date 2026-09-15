@@ -7,9 +7,17 @@ import { searchLoadedTurns } from "./search-service.ts";
 
 const MAX_DISPLAY_SUMMARY_LENGTH = 500;
 const INITIAL_FIRST_ITEM_INDEX = 1_000_000;
+export type TurnCollectionOrder = "oldest-first" | "newest-first";
+// Adapter facts established by the checked-in protocol fixtures: thread/read
+// is oldest-first, while thread/turns/list returns the newest page first and
+// its nextCursor walks toward older pages.
+const DEFAULT_THREAD_READ_ORDER: TurnCollectionOrder = "oldest-first";
+const DEFAULT_TURN_PAGE_ORDER: TurnCollectionOrder = "newest-first";
 type ToolStatus = Extract<ConversationItemView, { kind: "tool" }>["status"];
 
 export interface ConversationClient extends ThreadClient {
+  readonly threadReadOrder?: TurnCollectionOrder;
+  readonly turnPageOrder?: TurnCollectionOrder;
   startThread(options: { cwd: string; ephemeral?: boolean }): Promise<Thread>;
   listTurns(threadId: string, options?: { limit?: number; cursor?: string }): Promise<TurnPage>;
   resumeThread(threadId: string): Promise<Thread>;
@@ -29,6 +37,7 @@ export class ConversationService {
   private boundClient: ConversationClient | undefined;
   private unsubscribeNotifications: (() => void) | undefined;
   private readonly loadedThreads = new Map<string, ConversationThreadView>();
+  private readonly olderCachedTurnIds = new Map<string, Set<string>>();
   private readonly remoteActiveThreads = new Set<string>();
   private readonly remoteActiveTurnIds = new Map<string, string>();
   private activeTurn: { threadId: string; turnId: string } | undefined;
@@ -44,20 +53,29 @@ export class ConversationService {
     this.bindNotifications(client);
     const thread = await client.readThread(validThreadId);
     const page = await client.listTurns(validThreadId, { limit: 20 });
-    const sourceTurns = page.turns.length === 0 && (thread.turns?.length ?? 0) > 0
-      ? pageTurnsInDisplayOrder(thread.turns ?? [])
-      : pageTurnsInDisplayOrder(page.turns);
-    const initialTurns = mergeConversationTurns([], sourceTurns.map((turn, index) => toConversationTurnView(turn, index)));
+    const readTurns = normalizeTurnCollection(thread.turns ?? [], client.threadReadOrder ?? DEFAULT_THREAD_READ_ORDER);
+    const pageTurns = normalizeTurnCollection(page.turns, client.turnPageOrder ?? DEFAULT_TURN_PAGE_ORDER);
+    const freshTurns = mergeConversationSources(
+      readTurns.map((turn, index) => toConversationTurnView(turn, index)),
+      pageTurns.map((turn, index) => toConversationTurnView(turn, index)),
+    );
     const view = withPaging(toConversationThreadView({ ...thread, turns: [] }), {
       nextCursor: page.nextCursor,
       hasMore: page.nextCursor !== undefined,
       loadMoreError: undefined,
     });
     const previouslyLoaded = this.loadedThreads.get(validThreadId);
-    const mergedInitialTurns = previouslyLoaded === undefined ? initialTurns : mergeConversationTurns(initialTurns, previouslyLoaded.turns, "append");
-    const initialView = { ...view, turns: mergedInitialTurns, outline: buildTurnOutline(mergedInitialTurns), paging: { ...view.paging, orderedTurnIds: mergedInitialTurns.map((turn) => turn.id) } };
+    const freshIds = new Set(freshTurns.map((turn) => turn.id));
+    const cachedOlderIds = this.olderCachedTurnIds.get(validThreadId) ?? new Set<string>();
+    const readSnapshotIds = new Set(readTurns.map((turn) => turn.id));
+    const readSnapshotIsComplete = thread.turns !== undefined;
+    const cachedOlderTurns = previouslyLoaded?.turns.filter((turn) => cachedOlderIds.has(turn.id) && !freshIds.has(turn.id) && (!readSnapshotIsComplete || readSnapshotIds.has(turn.id))) ?? [];
+    const mergedInitialTurns = mergeConversationTurns(cachedOlderTurns, freshTurns, "append");
+    const firstItemIndex = cachedOlderTurns.length > 0 && previouslyLoaded !== undefined ? previouslyLoaded.paging.firstItemIndex : view.paging.firstItemIndex;
+    const initialView = { ...view, turns: mergedInitialTurns, outline: buildTurnOutline(mergedInitialTurns), paging: { ...view.paging, firstItemIndex, orderedTurnIds: mergedInitialTurns.map((turn) => turn.id) } };
     if (this.remoteActiveThreads.has(validThreadId) && !initialView.remoteActive && !page.turns.some(isActiveTurn)) this.clearRemoteActive(validThreadId);
     const nextView = this.applyObservedActivity(validThreadId, initialView, [...(thread.turns ?? []), ...page.turns]);
+    this.olderCachedTurnIds.set(validThreadId, new Set(cachedOlderTurns.map((turn) => turn.id)));
     this.loadedThreads.set(validThreadId, nextView);
     return nextView;
   }
@@ -74,9 +92,13 @@ export class ConversationService {
     this.loadedThreads.set(validThreadId, loading);
     try {
       const page = await client.listTurns(validThreadId, { limit: 20, cursor: current.paging.nextCursor });
-      const incomingTurns = pageTurnsInDisplayOrder(page.turns).map((turn, index) => toConversationTurnView(turn, index));
+      const incomingTurns = normalizeTurnCollection(page.turns, client.turnPageOrder ?? DEFAULT_TURN_PAGE_ORDER).map((turn, index) => toConversationTurnView(turn, index));
       const turns = mergeConversationTurns(current.turns, incomingTurns, "prepend");
-      const addedTurnCount = Math.max(0, turns.length - current.turns.length);
+      const existingIds = new Set(current.turns.map((turn) => turn.id));
+      const addedTurnCount = incomingTurns.filter((turn) => !existingIds.has(turn.id)).length;
+      const olderIds = this.olderCachedTurnIds.get(validThreadId) ?? new Set<string>();
+      for (const turn of incomingTurns) if (!existingIds.has(turn.id)) olderIds.add(turn.id);
+      this.olderCachedTurnIds.set(validThreadId, olderIds);
       const repeatedCursor = page.nextCursor !== undefined && page.nextCursor === current.paging.nextCursor;
       const next = this.applyObservedActivity(validThreadId, withPaging({ ...current, turns, outline: buildTurnOutline(turns) }, {
         nextCursor: page.nextCursor,
@@ -193,6 +215,7 @@ export class ConversationService {
     this.activeTurn = undefined;
     this.remoteActiveThreads.clear();
     this.remoteActiveTurnIds.clear();
+    this.olderCachedTurnIds.clear();
     this.loadedThreads.clear();
   }
 
@@ -263,17 +286,14 @@ function isActiveStatus(status: string | undefined): boolean {
 
 function isActiveTurn(turn: Turn): boolean { return isActiveStatus(turn.status); }
 
-function pageTurnsInDisplayOrder(turns: readonly Turn[]): Turn[] {
-  if (turns.length < 2) return [...turns];
-  const firstCreatedAt = turns[0]?.createdAt;
-  const lastCreatedAt = turns[turns.length - 1]?.createdAt;
-  const first = firstCreatedAt === undefined ? Number.NaN : Date.parse(firstCreatedAt);
-  const last = lastCreatedAt === undefined ? Number.NaN : Date.parse(lastCreatedAt);
-  if (Number.isFinite(first) && Number.isFinite(last) && first !== last) return first < last ? [...turns] : [...turns].reverse();
-  // Codex returns the newest turn first for an otherwise unoriented page.
-  // Keep this as a page-orientation fallback only; mergeConversationTurns
-  // never reorders already positioned turns by timestamp.
-  return [...turns].reverse();
+function normalizeTurnCollection(turns: readonly Turn[], order: TurnCollectionOrder): Turn[] {
+  if (order === "oldest-first") return [...turns];
+  const normalized: Turn[] = [];
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    if (turn !== undefined) normalized.push(turn);
+  }
+  return normalized;
 }
 
 export function toConversationThreadView(thread: Thread): ConversationThreadView {
@@ -297,11 +317,33 @@ function withPaging(thread: ConversationThreadView, update: Partial<Conversation
 
 export function mergeConversationTurns(existing: readonly ConversationTurnView[], incoming: readonly ConversationTurnView[], placement: "append" | "prepend" = "append"): ConversationTurnView[] {
   const byId = new Map<string, ConversationTurnView>();
-  const order: string[] = [];
-  for (const turn of placement === "prepend" ? [...incoming, ...existing] : [...existing, ...incoming]) {
+  const existingIds = new Set(existing.map((turn) => turn.id));
+  const newIncoming = incoming.filter((turn) => !existingIds.has(turn.id));
+  const order = (placement === "prepend" ? [...newIncoming, ...existing] : [...existing, ...newIncoming]).map((turn) => turn.id);
+  for (const turn of existing) byId.set(turn.id, turn);
+  for (const turn of incoming) {
     const prior = byId.get(turn.id);
-    if (prior === undefined) order.push(turn.id);
     byId.set(turn.id, prior === undefined ? turn : mergeConversationTurn(prior, turn));
+  }
+  return order.map((id) => byId.get(id)).filter((turn): turn is ConversationTurnView => turn !== undefined).map((turn, index) => ({ ...turn, index: index + 1 }));
+}
+
+function mergeConversationSources(base: readonly ConversationTurnView[], incoming: readonly ConversationTurnView[]): ConversationTurnView[] {
+  const byId = new Map(base.map((turn) => [turn.id, turn]));
+  const order = base.map((turn) => turn.id);
+  for (let incomingIndex = 0; incomingIndex < incoming.length; incomingIndex += 1) {
+    const turn = incoming[incomingIndex];
+    if (turn === undefined) continue;
+    const prior = byId.get(turn.id);
+    if (prior !== undefined) {
+      byId.set(turn.id, mergeConversationTurn(prior, turn));
+      continue;
+    }
+    const nextKnownId = incoming.slice(incomingIndex + 1).find((candidate) => candidate !== undefined && byId.has(candidate.id))?.id;
+    const nextIndex = nextKnownId === undefined ? -1 : order.indexOf(nextKnownId);
+    if (nextIndex >= 0) order.splice(nextIndex, 0, turn.id);
+    else order.push(turn.id);
+    byId.set(turn.id, turn);
   }
   return order.map((id) => byId.get(id)).filter((turn): turn is ConversationTurnView => turn !== undefined).map((turn, index) => ({ ...turn, index: index + 1 }));
 }
@@ -333,7 +375,11 @@ function mergeConversationItems(existing: readonly ConversationItemView[], incom
 }
 
 function mergeConversationItem(existing: ConversationItemView, incoming: ConversationItemView): ConversationItemView {
-  if (existing.kind === "text" && incoming.kind === "text") return { ...existing, ...incoming, text: incoming.text.length >= existing.text.length ? incoming.text : existing.text };
+  if (existing.kind === "text" && incoming.kind === "text") {
+    const text = incoming.text.length >= existing.text.length ? incoming.text : existing.text;
+    const phase = textPhaseRank(incoming.phase) >= textPhaseRank(existing.phase) ? incoming.phase : existing.phase;
+    return { ...existing, ...incoming, text, phase };
+  }
   if (existing.kind === "tool" && incoming.kind === "tool") return { ...existing, ...incoming, status: richerToolStatus(existing.status, incoming.status), ...(longerText(existing.summary, incoming.summary) === undefined ? {} : { summary: longerText(existing.summary, incoming.summary) }) };
   if (existing.kind === "status" && incoming.kind === "status") return incoming.text.length >= existing.text.length ? incoming : existing;
   return incoming.kind === "status" && existing.kind !== "status" ? existing : incoming;
@@ -353,6 +399,12 @@ function richerTurnStatus(left: string, right: string): string {
 function richerToolStatus(left: ToolStatus, right: ToolStatus): ToolStatus {
   const rank = (value: string): number => value === "unknown" ? 0 : value === "running" ? 1 : 2;
   return rank(right) >= rank(left) ? right : left;
+}
+
+function textPhaseRank(phase: Extract<ConversationItemView, { kind: "text" }>["phase"]): number {
+  if (phase === "final") return 2;
+  if (phase === "streaming") return 1;
+  return 0;
 }
 
 export function toConversationUpdate(method: string, params: JsonObject): ConversationUpdate | undefined {
@@ -389,21 +441,25 @@ export function toConversationUpdate(method: string, params: JsonObject): Conver
 }
 
 function toConversationTurnView(turn: Turn, index: number): ConversationTurnView {
+  const active = isActiveTurn(turn);
   return {
     id: turn.id,
     index: index + 1,
     status: turn.status?.trim() || "unknown",
     ...(turn.createdAt === undefined ? {} : { createdAt: turn.createdAt }),
-    items: (turn.items ?? []).map((item, itemIndex) => toConversationItemView(item, turn.id, itemIndex)),
+    items: (turn.items ?? []).map((item, itemIndex) => toConversationItemView(item, turn.id, itemIndex, active)),
   };
 }
 
-function toConversationItemView(item: TurnItem, turnId: string, itemIndex: number): ConversationItemView {
+function toConversationItemView(item: TurnItem, turnId: string, itemIndex: number, active = false): ConversationItemView {
   const id = item.id?.trim() || `${turnId}:item-${itemIndex + 1}`;
   const type = item.type?.trim().toLowerCase() ?? "";
   const text = displayText(item.text ?? item.content);
   const role = textRole(item, type);
-  if (role !== undefined) return { kind: "text", id, role, text: text || "(No text provided)" };
+  if (role !== undefined) {
+    const phase = role === "user" ? "historical" : active ? "streaming" : "final";
+    return { kind: "text", id, role, text: text || "(No text provided)", phase };
+  }
   if (isToolItem(item, type)) {
     const summary = displayText(item.summary ?? item.aggregatedOutput);
     return { kind: "tool", id, name: item.name?.trim() || toolName(type), status: toolStatus(item.status), ...(summary === "" ? {} : { summary: limitDisplayText(summary) }) };

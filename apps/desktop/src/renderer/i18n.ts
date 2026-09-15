@@ -35,6 +35,9 @@ export interface Messages {
   readonly renameHint: string;
   readonly cancel: string;
   readonly close: string;
+  readonly copy: string;
+  readonly copied: string;
+  readonly linkUnavailable: string;
   readonly welcome: string;
   readonly threads: string;
   readonly refresh: string;
@@ -112,6 +115,9 @@ const englishWorkspaceMessages = {
   renameHint: "Keep it short and easy to recognize",
   cancel: "Cancel",
   close: "Close",
+  copy: "Copy",
+  copied: "Copied",
+  linkUnavailable: "Links are disabled in this preview.",
   welcome: "What are we building in ThreadPath for Codex?",
 } as const;
 
@@ -132,6 +138,9 @@ const chineseWorkspaceMessages = {
   renameHint: "保持简短且易于识别",
   cancel: "取消",
   close: "关闭",
+  copy: "复制",
+  copied: "已复制",
+  linkUnavailable: "当前预览不支持打开链接。",
   welcome: "我们要在 ThreadPath for Codex 中做什么？",
 } as const;
 

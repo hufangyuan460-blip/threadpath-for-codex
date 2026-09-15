@@ -115,6 +115,8 @@ async function runCompletedPath(): Promise<void> {
     await page.locator("[data-turn-id]").first().waitFor({ state: "visible" });
     const renderedCount = await page.locator("[data-turn-id]").count();
     assert.ok(renderedCount > 0 && renderedCount < 24, `expected virtualized DOM, got ${renderedCount} turn nodes`);
+    await page.getByRole("button", { name: "Go to turn 1: User turn 1", exact: true }).click();
+    await page.locator('[data-turn-id="e2e-turn-1"] .markdown-message h1').waitFor({ state: "visible" });
 
     await page.locator('.outline-entry').filter({ hasText: "User turn 16" }).click();
     await page.locator('[data-turn-id="e2e-turn-16"]').waitFor({ state: "visible" });
@@ -134,6 +136,7 @@ async function runCompletedPath(): Promise<void> {
     const liveTurn = page.locator('[data-turn-id="e2e-live-turn"]');
     await liveTurn.waitFor({ state: "visible" });
     await liveTurn.getByText("streamed fake reply").waitFor({ state: "visible" });
+    await liveTurn.locator(".markdown-message strong").getByText("streamed fake reply", { exact: true }).waitFor({ state: "visible" });
     await liveTurn.getByText("completed", { exact: true }).waitFor({ state: "visible" });
 
     const threadActionsButton = page.getByRole("button", { name: /Thread actions:/ }).first();

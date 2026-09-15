@@ -36,17 +36,18 @@ function updateTurn(turn: ConversationTurnView, update: ConversationUpdate): Con
     const status = update.type.slice("turn/".length);
     if (turn.status === status) return turn;
     const message = update.message;
-    const items = message === undefined ? turn.items : addStatusItem(turn.items, `${turn.id}:terminal`, message);
-    return { ...turn, status, items };
+    const items = status === "completed" ? finalizeTextItems(turn.items) : turn.items;
+    const withMessage = message === undefined ? items : addStatusItem(items, `${turn.id}:terminal`, message);
+    return { ...turn, status, items: withMessage };
   }
   if (update.type === "item/agentMessage/delta") {
     if (update.delta === "") return turn;
     const itemIndex = turn.items.findIndex((item) => item.id === update.itemId);
-    if (itemIndex < 0) return { ...turn, items: [...turn.items, { kind: "text", id: update.itemId, role: "assistant", text: update.delta }] };
+    if (itemIndex < 0) return { ...turn, items: [...turn.items, { kind: "text", id: update.itemId, role: "assistant", text: update.delta, phase: "streaming" }] };
     const item = turn.items[itemIndex];
     const nextItem: ConversationItemView = item.kind === "text" && item.role === "assistant"
-      ? { ...item, text: item.text === "(No text provided)" ? update.delta : item.text + update.delta }
-      : { kind: "text", id: update.itemId, role: "assistant", text: update.delta };
+      ? { ...item, text: item.text === "(No text provided)" ? update.delta : item.text + update.delta, phase: "streaming" }
+      : { kind: "text", id: update.itemId, role: "assistant", text: update.delta, phase: "streaming" };
     return replaceItem(turn, itemIndex, nextItem);
   }
   if (update.type === "item/started") {
@@ -74,6 +75,10 @@ function replaceItem(turn: ConversationTurnView, itemIndex: number, item: Conver
 function addStatusItem(items: readonly ConversationItemView[], id: string, text: string): readonly ConversationItemView[] {
   if (items.some((item) => item.id === id)) return items;
   return [...items, { kind: "status", id, text }];
+}
+
+function finalizeTextItems(items: readonly ConversationItemView[]): readonly ConversationItemView[] {
+  return items.map((item) => item.kind === "text" && item.role !== "user" && item.phase === "streaming" ? { ...item, phase: "final" } : item);
 }
 
 function isToolUpdate(itemType: string | undefined, itemName: string | undefined): boolean {

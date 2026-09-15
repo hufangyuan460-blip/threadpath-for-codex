@@ -26,6 +26,7 @@ ThreadPath for Codex 是一个独立的桌面客户端项目，目标是让 Code
 - 在主进程通过类型化服务加载线程列表，并读取选中线程的安全元数据视图；
 - renderer 仅通过 preload 使用受限的线程列表和读取 API；
 - 按回合顺序显示用户、助手、系统和工具状态的纯文本视图，并为回合保留稳定锚点；
+- 将历史助手/系统文本与流式回合统一为带阶段的内容块；稳定历史和完成回合安全渲染 Markdown，流式与失败/中断内容保持纯文本降级；
 - 在线程选中且连接就绪时发送纯文本回合，接收助手 delta，并显示完成、失败和中断状态；
 - 通过 preload 暴露可取消的受限会话更新订阅，并对重复事件和旧线程事件做去重/过滤；
 - 从类型化会话模型生成安全回合大纲，支持键盘聚焦、Enter 激活和稳定锚点跳转；
@@ -144,6 +145,7 @@ The project has completed `v0.0.1` protocol validation, the `M0` desktop shell, 
 - Loads threads and reads selected-thread metadata through typed main-process services;
 - Exposes only restricted thread-list and thread-read APIs through preload;
 - Renders user, assistant, system, and tool-status text in turn order with stable turn anchors;
+- Normalizes historical and streaming content into phase-tagged blocks; safely renders Markdown for stable history and completed turns while keeping streaming and failed/interrupted text in plain-text fallback;
 - Sends one plain-text turn at a time and applies allowlisted assistant deltas and terminal states;
 - Exposes a removable, restricted conversation-update subscription through preload with duplicate and stale-thread filtering;
 - Generates a safe turn outline from typed conversation data and supports keyboard/click navigation to stable anchors;

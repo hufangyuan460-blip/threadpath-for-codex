@@ -11,8 +11,8 @@ function makeThread(id: string, turns: ConversationTurnView[]): ConversationThre
 function main(): void {
   const longStatus = `<b>${"sensitive status ".repeat(20)}</b>`;
   const turns: ConversationTurnView[] = [
-    { id: "turn-1", index: 1, status: "completed", items: [{ kind: "text", id: "user-1", role: "user", text: "修复登录超时" }, { kind: "text", id: "assistant-1", role: "assistant", text: "Fix login timeout" }] },
-    { id: "turn-2", index: 2, status: "completed", items: [{ kind: "text", id: "user-2", role: "user", text: "Deploy API" }] },
+    { id: "turn-1", index: 1, status: "completed", items: [{ kind: "text", id: "user-1", role: "user", text: "修复登录超时", phase: "historical" }, { kind: "text", id: "assistant-1", role: "assistant", text: "Fix login timeout", phase: "final" }] },
+    { id: "turn-2", index: 2, status: "completed", items: [{ kind: "text", id: "user-2", role: "user", text: "Deploy API", phase: "historical" }] },
     { id: "turn-3", index: 3, status: "failed", items: [{ kind: "status", id: "status-3", text: longStatus }] },
     { id: "turn-4", index: 4, status: "completed", items: [] },
   ];

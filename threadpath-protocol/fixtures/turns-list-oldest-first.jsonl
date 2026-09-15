@@ -1,0 +1,2 @@
+{"jsonrpc":"2.0","id":20,"method":"thread/turns/list","params":{"threadId":"thread-oldest-first","limit":2}}
+{"jsonrpc":"2.0","id":20,"result":{"data":[{"id":"turn-oldest","items":[{"id":"oldest-item","role":"user","text":"Oldest"}]},{"id":"turn-latest","items":[{"id":"latest-item","role":"assistant","text":"Latest"}]}],"nextCursor":"cursor-oldest-first"}}

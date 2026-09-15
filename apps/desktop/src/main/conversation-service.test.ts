@@ -43,12 +43,12 @@ async function main(): Promise<void> {
     status: "completed",
     createdAt: "2026-01-02T03:04:05Z",
     items: [
-      { kind: "text", id: "item-user", role: "user", text: "Please inspect this project." },
-      { kind: "text", id: "item-assistant", role: "assistant", text: "I will inspect the project." },
+      { kind: "text", id: "item-user", role: "user", text: "Please inspect this project.", phase: "historical" },
+      { kind: "text", id: "item-assistant", role: "assistant", text: "I will inspect the project.", phase: "final" },
       { kind: "tool", id: "item-tool", name: "shell", status: "completed", summary: "Listed project files." },
-      { kind: "text", id: "item-system", role: "system", text: "Turn completed." },
+      { kind: "text", id: "item-system", role: "system", text: "Turn completed.", phase: "final" },
       { kind: "status", id: "item-unknown", text: "Unsupported item type: futureitem" },
-      { kind: "text", id: "turn-1:item-6", role: "assistant", text: "(No text provided)" },
+      { kind: "text", id: "turn-1:item-6", role: "assistant", text: "(No text provided)", phase: "final" },
     ],
   });
   assert.deepEqual(view.outline, [
@@ -57,10 +57,21 @@ async function main(): Promise<void> {
   ]);
   assert.equal((await service.searchTurns("thread-conversation", "contains"))[0]?.turnId, "turn-2");
   assert.deepEqual(view.turns[1]?.items, [
-    { kind: "text", id: "item-user-2", role: "user", text: "What did you find?" },
-    { kind: "text", id: "item-assistant-2", role: "assistant", text: "The project contains a protocol package." },
+    { kind: "text", id: "item-user-2", role: "user", text: "What did you find?", phase: "historical" },
+    { kind: "text", id: "item-assistant-2", role: "assistant", text: "The project contains a protocol package.", phase: "final" },
   ]);
   assert.deepEqual(toConversationThreadView({ id: "empty", turns: [] }), { id: "empty", title: "Untitled thread", status: "unknown", turns: [], outline: [], paging: { orderedTurnIds: [], firstItemIndex: 1000000, hasMore: false, isLoadingMore: false } });
+  const incompleteHistory = toConversationThreadView({
+    id: "incomplete-history",
+    turns: [
+      { id: "turn-unknown", status: "unknown", items: [{ id: "assistant-unknown", type: "assistant_message", text: "# Unknown status" }] },
+      { id: "turn-missing", items: [{ id: "assistant-missing", role: "assistant", text: "**Missing status**" }] },
+    ],
+  });
+  const unknownAssistant = incompleteHistory.turns[0]?.items[0];
+  const missingAssistant = incompleteHistory.turns[1]?.items[0];
+  assert.equal(unknownAssistant?.kind === "text" ? unknownAssistant.phase : undefined, "final");
+  assert.equal(missingAssistant?.kind === "text" ? missingAssistant.phase : undefined, "final");
 
   await assert.rejects(service.readThread(" invalid-id"), (error: unknown) => error instanceof Error && error.name === "ConfigurationError");
   const updates: string[] = [];

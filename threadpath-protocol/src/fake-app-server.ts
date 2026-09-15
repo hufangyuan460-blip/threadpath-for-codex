@@ -33,7 +33,7 @@ function e2eTurns(): JsonObject[] {
     createdAt: `2026-01-${String(index + 1).padStart(2, "0")}T00:00:00Z`,
     items: [
       { id: `e2e-user-${index + 1}`, type: "userMessage", role: "user", text: `User turn ${index + 1}` },
-      { id: `e2e-assistant-${index + 1}`, type: "agentMessage", role: "assistant", text: `Assistant reply ${index + 1}` },
+      { id: `e2e-assistant-${index + 1}`, type: "agentMessage", role: "assistant", text: index === 0 ? "# Assistant reply 1\n\n**Formatted** response with `code`." : `Assistant reply ${index + 1}` },
     ],
   }));
 }
@@ -86,7 +86,7 @@ lines.on("line", (line: string) => {
         if (e2eMode) {
           send({ jsonrpc: "2.0", method: "turn/started", params: { threadId: e2eThreadId(), turnId, turn: { id: turnId } } });
           send({ jsonrpc: "2.0", method: "item/started", params: { threadId: e2eThreadId(), turnId, item: { id: "e2e-live-item", type: "agentMessage", role: "assistant" } } });
-          send({ jsonrpc: "2.0", method: "item/agentMessage/delta", params: { threadId: e2eThreadId(), turnId, itemId: "e2e-live-item", delta: "streamed fake reply" } });
+          send({ jsonrpc: "2.0", method: "item/agentMessage/delta", params: { threadId: e2eThreadId(), turnId, itemId: "e2e-live-item", delta: "**streamed fake reply**" } });
           send({ jsonrpc: "2.0", method: "item/completed", params: { threadId: e2eThreadId(), turnId, item: { id: "e2e-live-item", type: "agentMessage", role: "assistant", status: "completed" } } });
         }
         const params: JsonObject = { ...(threadId === undefined ? {} : { threadId }), turn: { id: turnId } };

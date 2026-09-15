@@ -66,7 +66,7 @@ export interface ConversationPagingState {
 }
 
 export type ConversationItemView =
-  | { readonly kind: "text"; readonly id: string; readonly role: "user" | "assistant" | "system"; readonly text: string }
+  | { readonly kind: "text"; readonly id: string; readonly role: "user" | "assistant" | "system"; readonly text: string; readonly phase: "historical" | "streaming" | "final" }
   | { readonly kind: "tool"; readonly id: string; readonly name: string; readonly status: "running" | "completed" | "failed" | "unknown"; readonly summary?: string }
   | { readonly kind: "status"; readonly id: string; readonly text: string };
 

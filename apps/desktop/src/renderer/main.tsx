@@ -8,6 +8,7 @@ import { buildTurnOutline } from "../shared/outline";
 import { chooseActiveTurnIdFromRange } from "./scroll-state";
 import { moveSearchSelection, searchNavigationTarget } from "./search-navigation";
 import { messages, type Messages } from "./i18n";
+import { MarkdownMessage } from "./markdown.tsx";
 
 type LoadState = "idle" | "loading" | "ready" | "empty" | "error";
 type NavigateTurn = (turnId: string) => void;
@@ -35,7 +36,7 @@ function Onboarding({ snapshot, onRediscover, onChooseExecutable, onChooseDirect
   );
 }
 
-function ConversationItem({ item, m }: { item: ConversationItemView; m: Messages }): React.JSX.Element {
+function ConversationItem({ item, markdown, m }: { item: ConversationItemView; markdown: boolean; m: Messages }): React.JSX.Element {
   if (item.kind === "tool") {
     return (
       <div className="conversation-item tool-item">
@@ -47,7 +48,7 @@ function ConversationItem({ item, m }: { item: ConversationItemView; m: Messages
   if (item.kind === "status") {
     return <div className="conversation-item status-item"><span className="item-label">{m.status}</span><p>{item.text}</p></div>;
   }
-  return <div className={`conversation-item text-item role-${item.role}`}><span className="item-label">{m.role(item.role)}</span><p>{item.text}</p></div>;
+  return <div className={`conversation-item text-item role-${item.role}`}><span className="item-label">{m.role(item.role)}</span>{markdown && (item.role === "assistant" || item.role === "system") ? <MarkdownMessage text={item.text} m={m} /> : <p>{item.text}</p>}</div>;
 }
 
 function SearchPanel({ query, results, selectedIndex, error, onQueryChange, onKeyDown, onNavigate, m }: { query: string; results: readonly SearchResult[]; selectedIndex: number; error: string | undefined; onQueryChange: (query: string) => void; onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void; onNavigate: (turnId: string) => void; m: Messages }): React.JSX.Element {
@@ -169,7 +170,7 @@ function Conversation({ thread, activeTurnId, loadingMore, loadMoreError, onLoad
                 <div><span className="turn-index">{m.turn(turn.index)}</span><span className="turn-status">{turn.status}</span></div>
                 {turn.createdAt === undefined ? null : <time dateTime={turn.createdAt}>{turn.createdAt}</time>}
               </header>
-              {turn.items.length === 0 ? <p className="partial-note">{m.noReadableItems}</p> : <div className="turn-items">{turn.items.map((item) => <ConversationItem item={item} key={item.id} m={m} />)}</div>}
+              {turn.items.length === 0 ? <p className="partial-note">{m.noReadableItems}</p> : <div className="turn-items">{turn.items.map((item) => <ConversationItem item={item} markdown={item.kind === "text" && item.role !== "user" && item.phase === "final"} key={item.id} m={m} />)}</div>}
             </article>
           )}
         />}
@@ -532,7 +533,7 @@ function App(): React.JSX.Element {
         if (current === undefined || current.id !== result.threadId) return current;
         const turnId = result.turnId;
         if (current.turns.some((turn) => turn.id === turnId)) return current;
-        const newTurn: ConversationThreadView["turns"][number] = { id: turnId, index: current.turns.length + 1, status: "running", createdAt: new Date().toISOString(), items: [{ kind: "text", id: `${turnId}:user`, role: "user", text }] };
+        const newTurn: ConversationThreadView["turns"][number] = { id: turnId, index: current.turns.length + 1, status: "running", createdAt: new Date().toISOString(), items: [{ kind: "text", id: `${turnId}:user`, role: "user", text, phase: "historical" }] };
         const turns = [...current.turns, newTurn];
         return { ...current, turns, outline: buildTurnOutline(turns), paging: { ...current.paging, orderedTurnIds: turns.map((item) => item.id) } };
       });

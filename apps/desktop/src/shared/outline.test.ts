@@ -9,11 +9,11 @@ function turn(id: string, index: number, items: ConversationTurnView["items"]): 
 function main(): void {
   const longText = `${"sensitive conversation ".repeat(10)}<b>hidden markup</b>`;
   const entries = buildTurnOutline([
-    turn("turn-user", 1, [{ kind: "text", id: "user", role: "user", text: "  User question  " }]),
-    turn("turn-assistant", 2, [{ kind: "text", id: "assistant", role: "assistant", text: "Assistant fallback" }]),
+    turn("turn-user", 1, [{ kind: "text", id: "user", role: "user", text: "  User question  ", phase: "historical" }]),
+    turn("turn-assistant", 2, [{ kind: "text", id: "assistant", role: "assistant", text: "Assistant fallback", phase: "final" }]),
     turn("turn-status", 3, [{ kind: "status", id: "status", text: "Tool is running" }]),
     turn("turn-empty", 4, []),
-    turn("turn-long", 5, [{ kind: "text", id: "long", role: "user", text: longText }]),
+    turn("turn-long", 5, [{ kind: "text", id: "long", role: "user", text: longText, phase: "historical" }]),
   ]);
 
   assert.deepEqual(entries.map((entry) => entry.turnId), ["turn-user", "turn-assistant", "turn-status", "turn-empty", "turn-long"]);
