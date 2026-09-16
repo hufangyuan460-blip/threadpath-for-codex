@@ -1,0 +1,4 @@
+{"jsonrpc":"2.0","id":30,"method":"thread/list","params":{"archived":false,"limit":100}}
+{"jsonrpc":"2.0","id":30,"result":{"data":[{"id":"thread-current","title":"Current title","status":"active","cwd":"D:\\threadPath","createdAt":"2026-09-15T00:00:00Z","updatedAt":"2026-09-16T00:00:00Z","archived":false}],"nextCursor":"cursor-older-threads"}}
+{"jsonrpc":"2.0","id":31,"method":"thread/list","params":{"archived":true,"limit":100,"cursor":"cursor-older-threads"}}
+{"jsonrpc":"2.0","id":31,"result":{"data":[{"id":"thread-archived","title":"Archived title","status":"completed","archived":true,"cwd":"D:\\another-project"}]}}

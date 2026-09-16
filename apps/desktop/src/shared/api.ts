@@ -1,4 +1,5 @@
 export type ConnectionState = "idle" | "connecting" | "ready" | "error" | "stopped";
+export type AppRunMode = "setup" | "history" | "workspace";
 export type Language = "zh-CN" | "en-US";
 
 export interface AppInfo {
@@ -20,10 +21,26 @@ export interface OnboardingSnapshot {
 
 export interface ConnectionStateSnapshot {
   readonly state: ConnectionState;
+  readonly mode?: AppRunMode;
   readonly error?: string;
   readonly serverVersion?: string;
   readonly protocolVersion?: string;
   readonly capabilitiesKnown?: boolean;
+}
+
+export type HistorySyncState = "idle" | "syncing" | "complete" | "partial" | "failed";
+
+export interface HistorySyncSnapshot {
+  readonly state: HistorySyncState;
+  readonly threadCount: number;
+  readonly missingThreadIds: readonly string[];
+  readonly syncedAt?: string;
+  readonly error?: string;
+}
+
+export interface HistorySyncWorkspaceResult {
+  readonly workspace: WorkspaceState;
+  readonly snapshot: HistorySyncSnapshot;
 }
 
 export interface ThreadListItem {
@@ -32,7 +49,11 @@ export interface ThreadListItem {
   readonly status: string;
   readonly turnCount: number | null;
   readonly createdAt?: string;
+  readonly updatedAt?: string;
+  readonly archived?: boolean;
   readonly workspacePath?: string;
+  readonly workingDirectory?: string;
+  readonly missingFromLatestSnapshot?: boolean;
 }
 
 export interface WorkingDirectoryView {
@@ -42,10 +63,29 @@ export interface WorkingDirectoryView {
   readonly threads: readonly ThreadListItem[];
 }
 
+export type WorkspaceDirectoryAccess = "read" | "write";
+export type WorkspaceSource = "synced" | "user-configured" | "local-organization";
+export type WorkspaceApplyState = "not-applied" | "applied" | "verification-failed";
+
+export interface ConfiguredWorkspaceDirectory {
+  readonly path: string;
+  readonly access: WorkspaceDirectoryAccess;
+}
+
+export interface ConfiguredWorkspace {
+  readonly id: string;
+  readonly primaryDirectory: string;
+  readonly additionalDirectories: readonly ConfiguredWorkspaceDirectory[];
+  readonly source: WorkspaceSource;
+  readonly applyState: WorkspaceApplyState;
+}
+
 export interface WorkspaceState {
   readonly currentPath?: string;
   readonly directories: readonly WorkingDirectoryView[];
   readonly unclassifiedThreads: readonly ThreadListItem[];
+  readonly configuredWorkspaces: readonly ConfiguredWorkspace[];
+  readonly sync: HistorySyncSnapshot;
 }
 
 export interface ConversationTurnView {
@@ -75,12 +115,17 @@ export interface ConversationThreadView {
   readonly title: string;
   readonly status: string;
   readonly canAcceptDirectInput?: boolean;
+  readonly workspacePath?: string;
   readonly remoteActive?: boolean;
   readonly remoteActiveTurnId?: string;
+  readonly writeState?: ThreadWriteState;
+  readonly writeStateMessage?: string;
   readonly turns: readonly ConversationTurnView[];
   readonly outline: readonly TurnOutlineEntry[];
   readonly paging: ConversationPagingState;
 }
+
+export type ThreadWriteState = "available" | "localTurnRunning" | "externalThreadWriter" | "workspaceLocked" | "stateUnknown" | "inputUnavailable";
 
 export type ThreadDetails = ConversationThreadView;
 
@@ -136,13 +181,17 @@ export interface DesktopApi {
   readonly disconnect: () => Promise<ConnectionStateSnapshot>;
   readonly reconnect: () => Promise<ConnectionStateSnapshot>;
   readonly listThreads: () => Promise<ThreadListItem[]>;
+  readonly getHistorySyncState: () => Promise<HistorySyncSnapshot>;
+  readonly syncHistory: () => Promise<HistorySyncWorkspaceResult>;
   readonly getWorkspaceState: () => Promise<WorkspaceState>;
+  readonly onWorkspaceStateChanged: (listener: (state: WorkspaceState) => void) => () => void;
   readonly chooseWorkspaceDirectory: () => Promise<WorkspaceState>;
   readonly setCurrentWorkspace: (path: string) => Promise<WorkspaceState>;
   readonly toggleWorkspace: (path: string) => Promise<WorkspaceState>;
   readonly associateThreadWorkspace: (threadId: string, path: string | null) => Promise<WorkspaceState>;
   readonly setThreadDisplayName: (threadId: string, name: string | null) => Promise<ThreadDisplayNameUpdate>;
   readonly readThread: (threadId: string) => Promise<ThreadDetails>;
+  readonly refreshThread: (threadId: string) => Promise<ThreadDetails>;
   readonly loadMoreTurns: (threadId: string) => Promise<ThreadDetails>;
   readonly searchTurns: (threadId: string, query: string) => Promise<SearchResult[]>;
   readonly startTurn: (threadId: string, text: string) => Promise<StartTurnResult>;

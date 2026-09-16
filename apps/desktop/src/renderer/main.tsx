@@ -9,6 +9,7 @@ import { chooseActiveTurnIdFromRange } from "./scroll-state";
 import { moveSearchSelection, searchNavigationTarget } from "./search-navigation";
 import { messages, type Messages } from "./i18n";
 import { MarkdownMessage } from "./markdown.tsx";
+import { replaceThreadTitle } from "../shared/workspace-state";
 
 type LoadState = "idle" | "loading" | "ready" | "empty" | "error";
 type NavigateTurn = (turnId: string) => void;
@@ -19,6 +20,10 @@ function errorMessage(error: unknown): string {
 
 function isActiveWriterMessage(error: unknown): boolean {
   return /active writer|already responding|active_writer/i.test(errorMessage(error));
+}
+
+function isWorkspaceLockMessage(error: unknown): boolean {
+  return /workspace.*(already|another|unknown)|state is unknown/i.test(errorMessage(error));
 }
 
 function Onboarding({ snapshot, onRediscover, onChooseExecutable, onChooseDirectory, onConnect, m }: { snapshot: OnboardingSnapshot; onRediscover: () => void; onChooseExecutable: () => void; onChooseDirectory: () => void; onConnect: () => void; m: Messages }): React.JSX.Element | null {
@@ -62,7 +67,7 @@ function SearchPanel({ query, results, selectedIndex, error, onQueryChange, onKe
   );
 }
 
-function WorkspaceSidebar({ state, loading, listElement, onScroll, onChoose, onSelectThread, onSetCurrent, onToggle, onRename, onMove, m }: { state: WorkspaceState | undefined; loading: boolean; listElement: React.RefObject<HTMLDivElement | null>; onScroll: (top: number) => void; onChoose: () => void; onSelectThread: (threadId: string) => void; onSetCurrent: (path: string) => void; onToggle: (path: string) => void; onRename: (thread: ThreadListItem) => void; onMove: (threadId: string, path: string | null) => void; m: Messages }): React.JSX.Element {
+function WorkspaceSidebar({ state, loading, listElement, onScroll, onChoose, onSync, onSelectThread, onSetCurrent, onToggle, onRename, onMove, m }: { state: WorkspaceState | undefined; loading: boolean; listElement: React.RefObject<HTMLDivElement | null>; onScroll: (top: number) => void; onChoose: () => void; onSync: () => void; onSelectThread: (threadId: string) => void; onSetCurrent: (path: string) => void; onToggle: (path: string) => void; onRename: (thread: ThreadListItem) => void; onMove: (threadId: string, path: string | null) => void; m: Messages }): React.JSX.Element {
   const [openMenuThreadId, setOpenMenuThreadId] = useState<string | undefined>();
   const [movingThreadId, setMovingThreadId] = useState<string | undefined>();
   const closeMenus = (): void => { setOpenMenuThreadId(undefined); setMovingThreadId(undefined); };
@@ -82,8 +87,11 @@ function WorkspaceSidebar({ state, loading, listElement, onScroll, onChoose, onS
     <div className="workspace-group-row">{path === "__unclassified__" ? <div className="workspace-toggle"><span aria-hidden="true">•</span><span aria-hidden="true">📁</span><span className="workspace-name" title={path}>{name}</span></div> : <button className="workspace-toggle" type="button" onClick={() => onToggle(path)} aria-expanded={expanded} aria-label={expanded ? m.collapseWorkspace : m.expandWorkspace}><span aria-hidden="true">{expanded ? "⌄" : "›"}</span><span aria-hidden="true">📁</span><span className="workspace-name" title={path}>{name}</span></button>}{path === "__unclassified__" ? null : <button className={`workspace-select${state?.currentPath === path ? " selected" : ""}`} type="button" onClick={() => onSetCurrent(path)} aria-label={`${m.workingDirectory}: ${name}`}>•</button>}</div>
     {expanded ? <div className="workspace-thread-list">{groupThreads.map((thread) => renderThread(thread))}</div> : null}
   </section>;
+  const sync = state?.sync;
+  const syncLabel = sync?.state === "syncing" ? m.syncing : sync?.state === "partial" ? m.partialHistory : sync?.state === "failed" ? m.syncFailed : sync?.syncedAt === undefined ? undefined : m.syncedAt(new Date(sync.syncedAt).toLocaleTimeString());
   return <div className="workspace-history">
-    <div className="panel-heading"><h2>{m.workspaceHistory}</h2><button type="button" onClick={onChoose} aria-label={m.addWorkspace} title={m.addWorkspace}>＋</button></div>
+    <div className="panel-heading"><h2>{m.workspaceHistory}</h2><div><button type="button" onClick={onSync} aria-label={m.syncNow} title={m.syncNow}>↻</button><button type="button" onClick={onChoose} aria-label={m.addWorkspace} title={m.addWorkspace}>＋</button></div></div>
+    {syncLabel === undefined ? null : <p className={`sync-note sync-${sync?.state ?? "idle"}`} role="status">{syncLabel}</p>}
     {loading ? <p className="panel-note">{m.loading}</p> : null}
     <div ref={listElement} className="thread-list workspace-history-list" role="listbox" aria-label={m.workspaceHistory} onScroll={(event) => onScroll(event.currentTarget.scrollTop)}>
       {state?.directories.map((directory) => renderGroup(directory.path, directory.name, directory.expanded, directory.threads))}
@@ -110,7 +118,7 @@ function ThreadDirectory({ thread, workspacePath, workspaceState, activeTurnId, 
   );
 }
 
-function Conversation({ thread, activeTurnId, loadingMore, loadMoreError, onLoadMore, onNavigate, onVisibleTurn, onUserScroll, m, onNavigateReady, onRefreshStatus }: { thread: ConversationThreadView; activeTurnId: string | undefined; loadingMore: boolean; loadMoreError: string | undefined; onLoadMore: () => void; onNavigate: (turnId: string) => void; onVisibleTurn: (turnId: string | undefined) => void; onUserScroll: () => void; m: Messages; onNavigateReady: (navigate: NavigateTurn | undefined) => void; onRefreshStatus: () => void }): React.JSX.Element {
+function Conversation({ thread, activeTurnId, loadingMore, loadMoreError, onLoadMore, onNavigate, onVisibleTurn, onUserScroll, m, onNavigateReady, onRefreshStatus, scrollToLatest, onScrollToLatestHandled, newContent, onNewContentHandled }: { thread: ConversationThreadView; activeTurnId: string | undefined; loadingMore: boolean; loadMoreError: string | undefined; onLoadMore: () => void; onNavigate: (turnId: string) => void; onVisibleTurn: (turnId: string | undefined) => void; onUserScroll: () => void; m: Messages; onNavigateReady: (navigate: NavigateTurn | undefined) => void; onRefreshStatus: () => void; scrollToLatest: boolean; onScrollToLatestHandled: () => void; newContent: boolean; onNewContentHandled: () => void }): React.JSX.Element {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const scroller = useRef<HTMLElement | null>(null);
   const lastTurnId = thread.turns[thread.turns.length - 1]?.id;
@@ -123,17 +131,19 @@ function Conversation({ thread, activeTurnId, loadingMore, loadMoreError, onLoad
     virtuosoRef.current?.scrollToIndex({ index, align: "start", behavior: reducedMotion ? "auto" : "smooth" });
     onNavigate(turnId);
   };
-  const statusLabel = thread.remoteActive ? m.remoteTurnRunning : thread.canAcceptDirectInput === false ? m.inputUnavailable : undefined;
+  const statusLabel = thread.remoteActive || thread.writeState === "externalThreadWriter" ? m.remoteTurnRunning : thread.writeState === "workspaceLocked" ? m.workspaceLocked : thread.writeState === "stateUnknown" ? m.stateUnknown : thread.writeState === "localTurnRunning" ? m.localTurnRunning : thread.canAcceptDirectInput === false ? m.inputUnavailable : undefined;
   useEffect(() => {
     onNavigateReady(navigate);
     return () => onNavigateReady(undefined);
   }, [thread.id, thread.turns, onNavigateReady]);
   useEffect(() => {
     const lastIndex = thread.turns.length - 1;
+    if (!scrollToLatest) return;
     if (lastIndex < 0 || lastTurnId === undefined || lastAutoScrolledTurnId.current === lastTurnId) return;
     lastAutoScrolledTurnId.current = lastTurnId;
     virtuosoRef.current?.scrollToIndex({ index: lastIndex, align: "end", behavior: "auto" });
-  }, [thread.id, lastTurnId]);
+    onScrollToLatestHandled();
+  }, [thread.id, lastTurnId, scrollToLatest, onScrollToLatestHandled]);
   const onRangeChanged = (range: ListRange): void => onVisibleTurn(chooseActiveTurnIdFromRange(thread.turns.map((turn) => turn.id), range));
   const setScroller = (element: HTMLElement | Window | null): void => {
     if (scroller.current !== null) {
@@ -149,7 +159,7 @@ function Conversation({ thread, activeTurnId, loadingMore, loadMoreError, onLoad
   return (
     <div className="conversation-layout">
       <div className="conversation" aria-label={m.conversation}>
-        <div className="conversation-heading"><div><h2>{thread.title}</h2></div><div className="conversation-heading-actions">{thread.remoteActive ? <button className="refresh-status" type="button" onClick={onRefreshStatus} aria-label={m.refreshStatus} title={m.refreshStatus}>↻</button> : null}{statusLabel === undefined ? null : <span className="thread-status">{statusLabel}</span>}</div></div>
+        <div className="conversation-heading"><div><h2>{thread.title}</h2></div><div className="conversation-heading-actions">{newContent ? <button className="new-content-button" type="button" onClick={() => { const lastIndex = thread.turns.length - 1; if (lastIndex >= 0) virtuosoRef.current?.scrollToIndex({ index: lastIndex, align: "end", behavior: "auto" }); onNewContentHandled(); }}>{m.newContent}</button> : null}<button className="refresh-status" type="button" onClick={onRefreshStatus} aria-label={m.refreshStatus} title={m.refreshStatus}>↻</button>{statusLabel === undefined ? null : <span className="thread-status">{statusLabel}</span>}</div></div>
         <div className="pagination-controls">
           {thread.paging.hasMore ? <button type="button" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? m.loadingEarlier : m.loadEarlier}</button> : <span className="panel-note">{m.noMore}</span>}
           {loadMoreError === undefined ? null : <p className="error-summary">{loadMoreError}</p>}
@@ -209,6 +219,8 @@ function App(): React.JSX.Element {
   const [selectedThread, setSelectedThread] = useState<ConversationThreadView | undefined>();
   const [selectedThreadState, setSelectedThreadState] = useState<LoadState>("idle");
   const [selectedThreadError, setSelectedThreadError] = useState<string | undefined>();
+  const [scrollToLatest, setScrollToLatest] = useState(false);
+  const [newContentAvailable, setNewContentAvailable] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState<string | undefined>();
   const [activeTurnId, setActiveTurnId] = useState<string | undefined>();
@@ -238,13 +250,15 @@ function App(): React.JSX.Element {
   const selectedListThread = selectedThreadId === undefined ? undefined : threads.find((thread) => thread.id === selectedThreadId);
   const currentWorkspacePath = selectedThreadId === undefined ? workspaceState?.currentPath : selectedListThread?.workspacePath;
   const selectedThreadWorkspacePath = selectedThreadId === undefined ? undefined : selectedListThread?.workspacePath;
-  const showWorkspacePicker = selectedThreadId === undefined || selectedThreadWorkspacePath === undefined;
+  const historyMode = connectionState.mode === "history";
+  const showWorkspacePicker = historyMode || selectedThreadId === undefined || selectedThreadWorkspacePath === undefined;
   const inputText = selectedThreadId === undefined ? newDraft : draftByThreadId[selectedThreadId] ?? "";
   const sendError = selectedThreadId === undefined ? newSendError : sendErrorByThreadId[selectedThreadId];
   const localRunningTurnId = selectedThreadId === undefined ? undefined : runningTurnByThreadId[selectedThreadId];
-  const remoteActive = selectedThreadId !== undefined && (remoteActiveByThreadId[selectedThreadId] === true || selectedThread?.remoteActive === true);
-  const inputUnavailable = selectedThread?.canAcceptDirectInput === false;
-  const turnIsRunning = startingTurn || localRunningTurnId !== undefined || remoteActive;
+  const writeState = selectedThread?.writeState;
+  const remoteActive = selectedThreadId !== undefined && (remoteActiveByThreadId[selectedThreadId] === true || selectedThread?.remoteActive === true || writeState === "externalThreadWriter");
+  const inputUnavailable = historyMode || selectedThread?.canAcceptDirectInput === false || writeState === "inputUnavailable" || writeState === "stateUnknown" || writeState === "workspaceLocked";
+  const turnIsRunning = startingTurn || localRunningTurnId !== undefined || remoteActive || writeState === "localTurnRunning";
 
   const setInputText = (text: string): void => {
     if (selectedThreadId === undefined) setNewDraft(text);
@@ -255,7 +269,9 @@ function App(): React.JSX.Element {
     setThreadLoadState("loading");
     setThreadError(undefined);
     try {
-      const [nextThreads, nextWorkspaceState] = await Promise.all([window.threadPath.listThreads(), window.threadPath.getWorkspaceState()]);
+      const syncResult = await window.threadPath.syncHistory();
+      const nextWorkspaceState = syncResult.workspace;
+      const nextThreads = [...nextWorkspaceState.directories.flatMap((directory) => directory.threads), ...nextWorkspaceState.unclassifiedThreads];
       setThreads(nextThreads);
       setWorkspaceState(nextWorkspaceState);
       setThreadLoadState(nextThreads.length === 0 ? "empty" : "ready");
@@ -268,8 +284,23 @@ function App(): React.JSX.Element {
 
   const refreshWorkspaceState = useCallback(async (): Promise<void> => {
     setWorkspaceLoading(true);
-    try { setWorkspaceState(await window.threadPath.getWorkspaceState()); }
+    try {
+      const state = await window.threadPath.getWorkspaceState();
+      setWorkspaceState(state);
+      setThreads([...state.directories.flatMap((directory) => directory.threads), ...state.unclassifiedThreads]);
+    }
     catch (error: unknown) { setThreadError(errorMessage(error)); }
+    finally { setWorkspaceLoading(false); }
+  }, []);
+
+  const syncHistory = useCallback(async (): Promise<void> => {
+    setWorkspaceLoading(true);
+    try {
+      const syncResult = await window.threadPath.syncHistory();
+      const state = syncResult.workspace;
+      setWorkspaceState(state);
+      setThreads([...state.directories.flatMap((directory) => directory.threads), ...state.unclassifiedThreads]);
+    } catch (error: unknown) { setThreadError(errorMessage(error)); }
     finally { setWorkspaceLoading(false); }
   }, []);
 
@@ -309,6 +340,7 @@ function App(): React.JSX.Element {
     try {
       const update = await window.threadPath.setThreadDisplayName(threadId, name);
       setThreads((current) => current.map((thread) => thread.id === update.threadId ? { ...thread, title: update.title } : thread));
+      setWorkspaceState((current) => current === undefined ? current : replaceThreadTitle(current, update.threadId, update.title));
       setSelectedThread((current) => current?.id === update.threadId ? { ...current, title: update.title } : current);
       setEditingThreadId(undefined);
     } catch (error: unknown) { setThreadError(errorMessage(error)); }
@@ -393,6 +425,11 @@ function App(): React.JSX.Element {
     }
   }, [connectionState.state, loadThreads]);
 
+  useEffect(() => window.threadPath.onWorkspaceStateChanged((state) => {
+    setWorkspaceState(state);
+    setThreads([...state.directories.flatMap((directory) => directory.threads), ...state.unclassifiedThreads]);
+  }), []);
+
   useEffect(() => {
     if (selectedThreadId === undefined) {
       setSelectedThread(undefined);
@@ -420,6 +457,8 @@ function App(): React.JSX.Element {
     setLoadMoreError(undefined);
     setSelectedThreadState("loading");
     setSelectedThreadError(undefined);
+    setScrollToLatest(true);
+    setNewContentAvailable(false);
     void window.threadPath.readThread(selectedThreadId).then((thread) => {
       if (!active) return;
       setSelectedThread(thread);
@@ -504,6 +543,11 @@ function App(): React.JSX.Element {
   const handleStartTurn = async (): Promise<void> => {
     const text = inputText.trim();
     if (connectionState.state !== "ready" || text === "" || turnIsRunning) return;
+    if (historyMode) {
+      if (selectedThreadId === undefined) setNewSendError(m.confirmWorkspaceToSend);
+      else setSendErrorByThreadId((current) => ({ ...current, [selectedThreadId]: m.confirmWorkspaceToSend }));
+      return;
+    }
     if (selectedThreadId === undefined) {
       if (currentWorkspacePath === undefined) { setNewSendError(m.chooseWorkspace); return; }
       setNewSendError(undefined);
@@ -513,6 +557,7 @@ function App(): React.JSX.Element {
         setNewDraft("");
         setNewSendError(undefined);
         setSelectedThreadId(result.threadId);
+        setRunningTurnByThreadId((current) => ({ ...current, [result.threadId]: result.turnId }));
         void loadThreads();
       } catch (error: unknown) {
         setNewSendError(errorMessage(error));
@@ -523,6 +568,7 @@ function App(): React.JSX.Element {
     if (inputUnavailable) return;
     setSendErrorByThreadId((current) => { const next = { ...current }; delete next[threadId]; return next; });
     setStartingTurn(true);
+    setScrollToLatest(true);
     try {
       const result = await window.threadPath.startTurn(threadId, text);
       if (result.displayName !== undefined) {
@@ -546,7 +592,9 @@ function App(): React.JSX.Element {
         setSelectedThread((current) => current?.id === currentThreadId ? { ...current, remoteActive: true } : current);
         setSendErrorByThreadId((current) => ({ ...current, [currentThreadId]: m.remoteTurnRunning }));
       } else if (currentThreadId !== undefined) {
-        setSendErrorByThreadId((current) => ({ ...current, [currentThreadId]: errorMessage(error) }));
+        const workspaceBlocked = isWorkspaceLockMessage(error);
+        if (workspaceBlocked) setSelectedThread((current) => current?.id === currentThreadId ? { ...current, writeState: /unknown/i.test(errorMessage(error)) ? "stateUnknown" : "workspaceLocked" } : current);
+        setSendErrorByThreadId((current) => ({ ...current, [currentThreadId]: workspaceBlocked ? (/unknown/i.test(errorMessage(error)) ? m.stateUnknown : m.workspaceLocked) : errorMessage(error) }));
       }
     } finally {
       setStartingTurn(false);
@@ -620,8 +668,11 @@ function App(): React.JSX.Element {
   const handleRefreshStatus = async (): Promise<void> => {
     if (selectedThreadId === undefined) return;
     try {
-      const refreshed = await window.threadPath.readThread(selectedThreadId);
+      const previousLatestTurnId = selectedThread?.turns.at(-1)?.id;
+      const refreshed = await window.threadPath.refreshThread(selectedThreadId);
       setSelectedThread(refreshed);
+      setScrollToLatest(false);
+      setNewContentAvailable(previousLatestTurnId !== undefined && refreshed.turns.at(-1)?.id !== previousLatestTurnId);
       setRemoteActiveByThreadId((current) => ({ ...current, [refreshed.id]: refreshed.remoteActive === true }));
       setSendErrorByThreadId((current) => { const next = { ...current }; delete next[selectedThreadId]; return next; });
     } catch (error: unknown) {
@@ -638,14 +689,14 @@ function App(): React.JSX.Element {
       <Onboarding snapshot={onboardingState} onRediscover={() => void handleRediscover()} onChooseExecutable={() => void handleChooseExecutable()} onChooseDirectory={() => void handleChooseDirectory()} onConnect={() => void handleOnboardingConnect()} m={m} />
       <section className="workspace" aria-label={m.workspace}>
         <aside className="thread-panel">
-          {selectedThreadId !== undefined ? <ThreadDirectory thread={selectedThread} workspacePath={selectedThreadWorkspacePath} workspaceState={workspaceState} activeTurnId={activeTurnId} query={searchQuery} results={searchResults} selectedIndex={selectedSearchIndex} error={searchError} onQueryChange={setSearchQuery} onSearchKeyDown={(event) => handleSearchKeyDown(event, (turnId) => navigateToTurn?.(turnId))} onNavigate={(turnId) => navigateToTurn?.(turnId)} onBack={() => setSelectedThreadId(undefined)} onRename={() => { const current = threads.find((thread) => thread.id === selectedThreadId); if (current !== undefined) beginRename(current); }} onMove={(threadId, path) => void moveThreadToWorkspace(threadId, path)} setOutlineButton={setOutlineButton} m={m} /> : <WorkspaceSidebar state={workspaceState} loading={workspaceLoading || threadLoadState === "loading"} listElement={threadListElement} onScroll={(top) => { threadListScrollTop.current = top; }} onChoose={() => void handleChooseWorkspaceDirectory()} onSelectThread={setSelectedThreadId} onSetCurrent={(path) => void handleSetCurrentWorkspace(path)} onToggle={(path) => void handleToggleWorkspace(path)} onRename={beginRename} onMove={(threadId, path) => void moveThreadToWorkspace(threadId, path)} m={m} />}
+          {selectedThreadId !== undefined ? <ThreadDirectory thread={selectedThread} workspacePath={selectedThreadWorkspacePath} workspaceState={workspaceState} activeTurnId={activeTurnId} query={searchQuery} results={searchResults} selectedIndex={selectedSearchIndex} error={searchError} onQueryChange={setSearchQuery} onSearchKeyDown={(event) => handleSearchKeyDown(event, (turnId) => navigateToTurn?.(turnId))} onNavigate={(turnId) => navigateToTurn?.(turnId)} onBack={() => setSelectedThreadId(undefined)} onRename={() => { const current = threads.find((thread) => thread.id === selectedThreadId); if (current !== undefined) beginRename(current); }} onMove={(threadId, path) => void moveThreadToWorkspace(threadId, path)} setOutlineButton={setOutlineButton} m={m} /> : <WorkspaceSidebar state={workspaceState} loading={workspaceLoading || threadLoadState === "loading"} listElement={threadListElement} onScroll={(top) => { threadListScrollTop.current = top; }} onChoose={() => void handleChooseWorkspaceDirectory()} onSync={() => void syncHistory()} onSelectThread={setSelectedThreadId} onSetCurrent={(path) => void handleSetCurrentWorkspace(path)} onToggle={(path) => void handleToggleWorkspace(path)} onRename={beginRename} onMove={(threadId, path) => void moveThreadToWorkspace(threadId, path)} m={m} />}
         </aside>
         <section className="details-panel" aria-label={m.selectedConversation}>
           <div className="details-content">
             {selectedThreadState === "idle" && selectedThreadId !== undefined ? <div className="details-empty"><p className="empty-kicker">{m.conversation}</p><h2>{m.selectThread}</h2><p>{m.chooseThread}</p></div> : null}
             {selectedThreadState === "loading" ? <p className="panel-note">{m.loadingConversation}</p> : null}
             {selectedThreadState === "error" ? <p className="error-summary">{selectedThreadError}</p> : null}
-            {(selectedThreadState === "empty" || selectedThreadState === "ready") && selectedThread !== undefined ? <Conversation thread={selectedThread} activeTurnId={activeTurnId} loadingMore={loadingMore} loadMoreError={loadMoreError} onLoadMore={() => void handleLoadMore()} onNavigate={handleNavigate} onVisibleTurn={handleVisibleTurn} onUserScroll={handleUserScroll} m={m} onNavigateReady={handleNavigateReady} onRefreshStatus={() => void handleRefreshStatus()} /> : null}
+            {(selectedThreadState === "empty" || selectedThreadState === "ready") && selectedThread !== undefined ? <Conversation thread={selectedThread} activeTurnId={activeTurnId} loadingMore={loadingMore} loadMoreError={loadMoreError} onLoadMore={() => void handleLoadMore()} onNavigate={handleNavigate} onVisibleTurn={handleVisibleTurn} onUserScroll={handleUserScroll} m={m} onNavigateReady={handleNavigateReady} onRefreshStatus={() => void handleRefreshStatus()} scrollToLatest={scrollToLatest} onScrollToLatestHandled={() => setScrollToLatest(false)} newContent={newContentAvailable} onNewContentHandled={() => setNewContentAvailable(false)} /> : null}
             {selectedThreadId === undefined ? <div className="new-conversation-space"><p>{m.welcome}</p></div> : null}
           </div>
           <form className="turn-composer" onSubmit={(event) => { event.preventDefault(); void handleStartTurn(); }}>
@@ -657,8 +708,8 @@ function App(): React.JSX.Element {
                   <label title={m.reasoningUnavailable}><span className="sr-only">{m.reasoning}</span><select id="composer-reasoning" value={reasoningSelection} onChange={(event) => setReasoningSelection(event.target.value)} disabled aria-label={m.reasoning}><option value="default">{m.codexDefault}</option></select></label>
                 </div>
                 <textarea ref={inputElement} id="turn-input" aria-label={m.sendMessage} value={inputText} onChange={(event) => setInputText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void handleStartTurn(); } }} placeholder={m.inputPlaceholder} rows={1} disabled={connectionState.state !== "ready" || turnIsRunning || inputUnavailable} />
-                <span className="composer-status" aria-live="polite">{startingTurn ? m.starting : selectedThreadId === undefined && currentWorkspacePath === undefined ? m.chooseWorkspace : remoteActive ? m.remoteTurnRunning : inputUnavailable ? m.inputUnavailable : localRunningTurnId === undefined ? null : m.turnRunning}</span>
-                <button className="composer-send" type="submit" aria-label={turnIsRunning ? m.pauseUnavailable : inputUnavailable ? m.inputUnavailable : selectedThreadId === undefined && currentWorkspacePath === undefined ? m.chooseWorkspace : m.send} title={turnIsRunning ? m.pauseUnavailable : inputUnavailable ? m.inputUnavailable : selectedThreadId === undefined && currentWorkspacePath === undefined ? m.chooseWorkspace : m.send} disabled={connectionState.state !== "ready" || inputText.trim() === "" || turnIsRunning || inputUnavailable || (selectedThreadId === undefined && currentWorkspacePath === undefined)}><span aria-hidden="true">{turnIsRunning ? "Ⅱ" : "➤"}</span><span className="sr-only">{turnIsRunning ? m.pauseUnavailable : inputUnavailable ? m.inputUnavailable : m.send}</span></button>
+                <span className="composer-status" aria-live="polite">{startingTurn ? m.starting : historyMode ? m.confirmWorkspaceToSend : selectedThreadId === undefined && currentWorkspacePath === undefined ? m.chooseWorkspace : remoteActive ? m.remoteTurnRunning : inputUnavailable ? m.inputUnavailable : localRunningTurnId === undefined ? null : m.turnRunning}</span>
+                <button className="composer-send" type="submit" aria-label={turnIsRunning ? m.pauseUnavailable : historyMode ? m.confirmWorkspaceToSend : inputUnavailable ? m.inputUnavailable : selectedThreadId === undefined && currentWorkspacePath === undefined ? m.chooseWorkspace : m.send} title={turnIsRunning ? m.pauseUnavailable : historyMode ? m.confirmWorkspaceToSend : inputUnavailable ? m.inputUnavailable : selectedThreadId === undefined && currentWorkspacePath === undefined ? m.chooseWorkspace : m.send} disabled={connectionState.state !== "ready" || inputText.trim() === "" || turnIsRunning || inputUnavailable || (selectedThreadId === undefined && currentWorkspacePath === undefined)}><span aria-hidden="true">{turnIsRunning ? "Ⅱ" : "➤"}</span><span className="sr-only">{turnIsRunning ? m.pauseUnavailable : historyMode ? m.confirmWorkspaceToSend : inputUnavailable ? m.inputUnavailable : m.send}</span></button>
               </div>
               {sendError === undefined ? null : <p className="error-summary">{sendError}</p>}
           </form>

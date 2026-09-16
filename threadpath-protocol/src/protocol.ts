@@ -75,7 +75,7 @@ export class NetworkTimeoutError extends AppServerError {
   constructor(message: string, code?: JsonValue) { super(message, "network-timeout", code); this.name = "NetworkTimeoutError"; }
 }
 
-export interface ThreadSummary { id: string; title?: string; status?: string; turnCount?: number; createdAt?: string; preview?: string; name?: string; canAcceptDirectInput?: boolean; cwd?: string; }
+export interface ThreadSummary { id: string; title?: string; status?: string; turnCount?: number; createdAt?: string; updatedAt?: string; preview?: string; name?: string; archived?: boolean; canAcceptDirectInput?: boolean; cwd?: string; }
 export interface Thread extends ThreadSummary { turns?: Turn[]; }
 export interface Turn { id: string; status?: string; createdAt?: string; items?: TurnItem[]; }
 export interface TurnPage {
@@ -85,6 +85,15 @@ export interface TurnPage {
 export interface TurnListOptions {
   limit?: number;
   cursor?: string;
+}
+export interface ThreadListOptions {
+  archived?: boolean;
+  limit?: number;
+  cursor?: string;
+}
+export interface ThreadPage {
+  threads: ThreadSummary[];
+  nextCursor?: string;
 }
 export interface TurnItem { id?: string; type?: string; role?: string; text?: string; content?: JsonValue; name?: string; status?: string; summary?: string; command?: string; aggregatedOutput?: string; }
 export interface TurnEvent { method: string; params: JsonObject; }
@@ -173,12 +182,14 @@ export function getThreads(value: JsonValue): ThreadSummary[] {
     const id = readString(item, "id");
     const turnCount = readNumber(item, "turnCount");
     const createdAt = readString(item, "createdAt");
+    const updatedAt = readString(item, "updatedAt");
     const title = readString(item, "title");
     const preview = readString(item, "preview");
     const name = readString(item, "name");
     const status = readString(item, "status");
+    const archived = typeof item.archived === "boolean" ? item.archived : undefined;
     const cwd = readString(item, "cwd");
-    return id === undefined ? [] : [{ id, ...(title === undefined ? {} : { title }), ...(preview === undefined ? {} : { preview }), ...(name === undefined ? {} : { name }), ...(status === undefined ? {} : { status }), ...(turnCount === undefined ? {} : { turnCount }), ...(createdAt === undefined ? {} : { createdAt }), ...(cwd === undefined ? {} : { cwd }) }];
+    return id === undefined ? [] : [{ id, ...(title === undefined ? {} : { title }), ...(preview === undefined ? {} : { preview }), ...(name === undefined ? {} : { name }), ...(status === undefined ? {} : { status }), ...(turnCount === undefined ? {} : { turnCount }), ...(createdAt === undefined ? {} : { createdAt }), ...(updatedAt === undefined ? {} : { updatedAt }), ...(archived === undefined ? {} : { archived }), ...(cwd === undefined ? {} : { cwd }) }];
   });
 }
 
@@ -189,6 +200,7 @@ export function getThread(value: JsonValue): Thread | undefined {
   if (id === undefined) return undefined;
   const turnCount = readNumber(source, "turnCount");
   const createdAt = readString(source, "createdAt");
+  const updatedAt = readString(source, "updatedAt");
   return {
     id,
     ...(readString(source, "title") === undefined ? {} : { title: readString(source, "title") }),
@@ -197,6 +209,8 @@ export function getThread(value: JsonValue): Thread | undefined {
     ...(readString(source, "status") === undefined ? {} : { status: readString(source, "status") }),
     ...(typeof source.canAcceptDirectInput === "boolean" ? { canAcceptDirectInput: source.canAcceptDirectInput } : {}),
     ...(readString(source, "cwd") === undefined ? {} : { cwd: readString(source, "cwd") }),
+    ...(updatedAt === undefined ? {} : { updatedAt }),
+    ...(typeof source.archived === "boolean" ? { archived: source.archived } : {}),
     ...(turnCount === undefined ? {} : { turnCount }),
     ...(createdAt === undefined ? {} : { createdAt }),
     turns: Array.isArray(source.turns) ? source.turns.flatMap((item) => isJsonObject(item) ? [parseTurn(item)] : []).filter((turn): turn is Turn => turn !== undefined) : undefined,
@@ -243,6 +257,13 @@ function parseTurnItem(value: JsonObject): TurnItem {
 
 export function getTurns(value: JsonValue): Turn[] {
   return getTurnPage(value).turns;
+}
+
+export function getThreadPage(value: JsonValue): ThreadPage {
+  if (!isJsonObject(value)) return { threads: [] };
+  const threads = getThreads(value);
+  const nextCursor = readString(value, "nextCursor") ?? readString(value, "next_cursor") ?? readString(value, "cursor");
+  return { threads, ...(nextCursor === undefined ? {} : { nextCursor }) };
 }
 
 export function getTurnPage(value: JsonValue): TurnPage {

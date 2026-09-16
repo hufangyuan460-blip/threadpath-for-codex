@@ -40,6 +40,7 @@ export class ConversationService {
   private readonly olderCachedTurnIds = new Map<string, Set<string>>();
   private readonly remoteActiveThreads = new Set<string>();
   private readonly remoteActiveTurnIds = new Map<string, string>();
+  private readonly recentUpdates = new Map<string, ConversationUpdate[]>();
   private activeTurn: { threadId: string; turnId: string } | undefined;
   private startingTurn = false;
 
@@ -65,16 +66,28 @@ export class ConversationService {
       loadMoreError: undefined,
     });
     const previouslyLoaded = this.loadedThreads.get(validThreadId);
-    const freshIds = new Set(freshTurns.map((turn) => turn.id));
+    const bufferedUpdates = this.recentUpdates.get(validThreadId) ?? [];
+    const bufferedTurnId = bufferedUpdates.at(-1)?.turnId;
+    const localTurnId = this.activeTurn?.threadId === validThreadId ? this.activeTurn.turnId : bufferedTurnId;
+    const cachedLocalTurn = localTurnId === undefined ? undefined : previouslyLoaded?.turns.find((turn) => turn.id === localTurnId);
+    const localTurn = localTurnId === undefined || freshTurns.some((turn) => turn.id === localTurnId)
+      ? undefined
+      : cachedLocalTurn ?? { id: localTurnId, index: freshTurns.length + 1, status: "running", items: [] };
+    const freshWithLocalTurn = localTurn === undefined ? freshTurns : [...freshTurns, localTurn];
+    const freshIds = new Set(freshWithLocalTurn.map((turn) => turn.id));
     const cachedOlderIds = this.olderCachedTurnIds.get(validThreadId) ?? new Set<string>();
     const readSnapshotIds = new Set(readTurns.map((turn) => turn.id));
     const readSnapshotIsComplete = thread.turns !== undefined;
     const cachedOlderTurns = previouslyLoaded?.turns.filter((turn) => cachedOlderIds.has(turn.id) && !freshIds.has(turn.id) && (!readSnapshotIsComplete || readSnapshotIds.has(turn.id))) ?? [];
-    const mergedInitialTurns = mergeConversationTurns(cachedOlderTurns, freshTurns, "append");
+    const mergedInitialTurns = mergeConversationTurns(cachedOlderTurns, freshWithLocalTurn, "append");
     const firstItemIndex = cachedOlderTurns.length > 0 && previouslyLoaded !== undefined ? previouslyLoaded.paging.firstItemIndex : view.paging.firstItemIndex;
     const initialView = { ...view, turns: mergedInitialTurns, outline: buildTurnOutline(mergedInitialTurns), paging: { ...view.paging, firstItemIndex, orderedTurnIds: mergedInitialTurns.map((turn) => turn.id) } };
     if (this.remoteActiveThreads.has(validThreadId) && !initialView.remoteActive && !page.turns.some(isActiveTurn)) this.clearRemoteActive(validThreadId);
-    const nextView = this.applyObservedActivity(validThreadId, initialView, [...(thread.turns ?? []), ...page.turns]);
+    let nextView = this.applyObservedActivity(validThreadId, initialView, [...(thread.turns ?? []), ...page.turns]);
+    if (localTurn !== undefined && cachedLocalTurn === undefined) {
+      for (const update of bufferedUpdates.filter((update) => update.turnId === localTurn.id)) nextView = applyConversationUpdate(nextView, update);
+    }
+    if (localTurnId !== undefined) this.recentUpdates.delete(validThreadId);
     this.olderCachedTurnIds.set(validThreadId, new Set(cachedOlderTurns.map((turn) => turn.id)));
     this.loadedThreads.set(validThreadId, nextView);
     return nextView;
@@ -193,6 +206,10 @@ export class ConversationService {
         throw error;
       }
       this.activeTurn = { threadId: thread.id, turnId: turn.id };
+      const current = this.loadedThreads.get(thread.id) ?? toConversationThreadView(thread);
+      const createdTurn: ConversationTurnView = { id: turn.id, index: current.turns.length + 1, status: "running", items: [{ kind: "text", id: `${turn.id}:user`, role: "user", text: validText, phase: "historical" }] };
+      const turns = mergeConversationTurns(current.turns, [createdTurn], "append");
+      this.loadedThreads.set(thread.id, { ...current, turns, outline: buildTurnOutline(turns), paging: { ...current.paging, orderedTurnIds: turns.map((item) => item.id) } });
       return { threadId: thread.id, turnId: turn.id };
     } finally {
       this.startingTurn = false;
@@ -215,6 +232,7 @@ export class ConversationService {
     this.activeTurn = undefined;
     this.remoteActiveThreads.clear();
     this.remoteActiveTurnIds.clear();
+    this.recentUpdates.clear();
     this.olderCachedTurnIds.clear();
     this.loadedThreads.clear();
   }
@@ -226,6 +244,9 @@ export class ConversationService {
     this.unsubscribeNotifications = client.onNotification(({ method, params }) => {
       const update = toConversationUpdate(method, params);
       if (update === undefined) return;
+      const updates = this.recentUpdates.get(update.threadId) ?? [];
+      updates.push(update);
+      this.recentUpdates.set(update.threadId, updates.slice(-32));
       if (update.type === "turn/started") this.markRemoteActive(update.threadId, update.turnId);
       if (update.type === "turn/completed" || update.type === "turn/failed" || update.type === "turn/interrupted") {
         if (this.activeTurn?.threadId === update.threadId && this.activeTurn.turnId === update.turnId) this.activeTurn = undefined;
@@ -304,6 +325,7 @@ export function toConversationThreadView(thread: Thread): ConversationThreadView
     title: thread.title?.trim() || thread.name?.trim() || "Untitled thread",
     status: thread.status?.trim() || "unknown",
     ...(thread.canAcceptDirectInput === undefined ? {} : { canAcceptDirectInput: thread.canAcceptDirectInput }),
+    ...(thread.cwd === undefined ? {} : { workspacePath: thread.cwd }),
     ...(activeTurn === undefined ? {} : { remoteActive: true, remoteActiveTurnId: activeTurn.id }),
     turns,
     outline: buildTurnOutline(turns),

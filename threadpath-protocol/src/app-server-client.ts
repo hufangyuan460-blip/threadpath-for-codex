@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams, type SpawnOptionsWithoutStdio } from "node:child_process";
 import { createInterface } from "node:readline";
-import { type AppServerCapabilities, type JsonObject, type JsonValue, type DiagnosticRecord, type InitializeResult, type StartThreadOptions, type TerminalTurnEvent, type Thread, type ThreadSummary, type Turn, type TurnInput, type TurnListOptions, type TurnPage, AppServerError, CompatibilityError, ConfigurationError, ProcessError, ProtocolError, TimeoutError, errorFromServer, getThread, getThreads, getTurnId, getTurnPage, isJsonObject, parseInitializeResult, terminalTurnEvent } from "./protocol.ts";
+import { type AppServerCapabilities, type JsonObject, type JsonValue, type DiagnosticRecord, type InitializeResult, type StartThreadOptions, type TerminalTurnEvent, type Thread, type ThreadListOptions, type ThreadPage, type ThreadSummary, type Turn, type TurnInput, type TurnListOptions, type TurnPage, AppServerError, CompatibilityError, ConfigurationError, ProcessError, ProtocolError, TimeoutError, errorFromServer, getThread, getThreadPage, getTurnId, getTurnPage, isJsonObject, parseInitializeResult, terminalTurnEvent } from "./protocol.ts";
 
 type RequestId = number;
 type JsonRpcId = number | string;
@@ -27,6 +27,7 @@ export class AppServerClient {
   /** Protocol facts verified by the versioned turn-page fixtures. */
   readonly threadReadOrder = "oldest-first" as const;
   readonly turnPageOrder = "newest-first" as const;
+  readonly threadListFacts = { archivedFilter: true, pagination: true } as const;
   private readonly child: ChildProcessWithoutNullStreams;
   private readonly requestTimeoutMs: number;
   private readonly pendingRequests = new Map<RequestId, PendingRequest>();
@@ -112,15 +113,31 @@ export class AppServerClient {
     return result;
   }
 
-  async listThreads(options: { archived?: boolean; limit?: number } = {}): Promise<ThreadSummary[]> {
+  async listThreadPage(options: ThreadListOptions = {}): Promise<ThreadPage> {
     this.requireCapability("thread/list");
-    const response = await this.request("thread/list", {
+    const params: JsonObject = {
       archived: options.archived ?? false,
-      limit: options.limit ?? 10,
-    });
+      limit: options.limit ?? 100,
+    };
+    if (options.cursor !== undefined) params.cursor = options.cursor;
+    const response = await this.request("thread/list", params);
     const object = this.requireObject(response, "thread/list");
     if (!Array.isArray(object.data) && !Array.isArray(object.threads)) throw new ProtocolError("thread/list response is missing a thread list");
-    return getThreads(object);
+    return getThreadPage(object);
+  }
+
+  async listThreads(options: { archived?: boolean; limit?: number } = {}): Promise<ThreadSummary[]> {
+    const result: ThreadSummary[] = [];
+    const seenCursors = new Set<string>();
+    let cursor: string | undefined;
+    do {
+      const page = await this.listThreadPage({ ...options, ...(cursor === undefined ? {} : { cursor }) });
+      result.push(...page.threads);
+      if (page.nextCursor === undefined || seenCursors.has(page.nextCursor)) break;
+      seenCursors.add(page.nextCursor);
+      cursor = page.nextCursor;
+    } while (true);
+    return result;
   }
 
   async readThread(threadId: string): Promise<Thread> {

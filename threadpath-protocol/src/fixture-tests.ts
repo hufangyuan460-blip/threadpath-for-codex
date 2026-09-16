@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { errorFromServer, getThread, getThreads, getTurnPage, isJsonObject, parseInitializeResult, readString, terminalTurnEvent, type JsonObject } from "./protocol.ts";
+import { errorFromServer, getThread, getThreadPage, getThreads, getTurnPage, isJsonObject, parseInitializeResult, readString, terminalTurnEvent, type JsonObject } from "./protocol.ts";
 
 const fixtureDirectory = fileURLToPath(new URL("../fixtures/", import.meta.url));
 
@@ -52,6 +52,9 @@ async function main(): Promise<void> {
   const existingThreads = await readJsonLines("thread-list-existing.jsonl");
   assert.equal(existingThreads.length, 2);
   assert.deepEqual(getThreads(asObject(existingThreads[1]).result), [{ id: "thread-1", title: "Fixture thread", status: "completed" }]);
+  const archivedPage = await readJsonLines("thread-list-archived-page.jsonl");
+  assert.equal(getThreadPage(asObject(archivedPage[1]).result).nextCursor, "cursor-older-threads");
+  assert.equal(getThreadPage(asObject(archivedPage[3]).result).threads[0]?.archived, true);
   const threadRead = await readJsonLines("thread-read.jsonl");
   assert.equal(threadRead.length, 2);
   assert.equal(getThread(asObject(threadRead[1]).result)?.turns?.[0]?.id, "turn-1");

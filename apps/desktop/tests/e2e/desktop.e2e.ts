@@ -26,6 +26,7 @@ async function launch(mode: string, executable = fakeExecutable, cwd: string | n
       ELECTRON_IS_DEV: "0",
       THREADPATH_E2E: "1",
       THREADPATH_E2E_LANGUAGE: "en-US",
+      ...(executable.includes("missing-fake-app-server") ? { PATH: "", LOCALAPPDATA: join(artifactDirectory, "missing-local-appdata") } : {}),
     },
   });
   const output: string[] = [];
@@ -146,6 +147,11 @@ async function runCompletedPath(): Promise<void> {
     await nameInput.fill("Local E2E name");
     await page.getByRole("dialog").getByRole("button", { name: "Save", exact: true }).click();
     await page.locator(".conversation-heading h2").getByText("Local E2E name", { exact: true }).waitFor({ state: "visible" });
+    await page.getByRole("button", { name: "Back to conversation history" }).click();
+    await page.getByRole("heading", { name: "Workspace history" }).waitFor({ state: "visible" });
+    await page.locator(".thread-row").filter({ hasText: "Local E2E name" }).waitFor({ state: "visible" });
+    await page.locator(".thread-row").filter({ hasText: "Local E2E name" }).click();
+    await page.locator(".thread-directory").waitFor({ state: "visible" });
     await threadActionsButton.click();
     await page.getByRole("menuitem", { name: "Rename", exact: true }).click();
     await page.locator("[role=dialog] input").fill("");
@@ -189,9 +195,11 @@ async function runNewConversationPath(): Promise<void> {
 
 async function runFirstLaunchDiscoveryPath(): Promise<void> {
   await runScenario("first-launch", "e2e-completed", async (page) => {
-    await page.getByRole("heading", { name: "Codex CLI found" }).waitFor({ state: "visible" });
-    await page.getByText("Choose a project directory before connecting.").waitFor({ state: "visible" });
-    await page.getByRole("button", { name: "Choose working directory" }).waitFor({ state: "visible" });
+    await waitForText(page, '[aria-label="Connection status"]', "ready");
+    await page.locator(".onboarding-card").waitFor({ state: "hidden" });
+    await page.locator("#turn-input").waitFor({ state: "visible" });
+    assert.equal(await page.locator(".composer-send").isDisabled(), true);
+    await page.locator(".composer-status").getByText("Confirm a working directory before sending.", { exact: true }).waitFor({ state: "visible" });
   }, fakeExecutable, null);
 }
 
@@ -236,7 +244,7 @@ async function runActiveWriterPath(): Promise<void> {
     assert.equal(await page.locator("#turn-input").inputValue(), "keep active writer input");
     assert.equal(await page.locator(".composer-send").isDisabled(), true);
     await page.locator(".refresh-status").click();
-    await page.locator(".refresh-status").waitFor({ state: "hidden" });
+    await page.locator(".refresh-status").waitFor({ state: "visible" });
     assert.equal(await page.locator("#turn-input").inputValue(), "keep active writer input");
   });
 }

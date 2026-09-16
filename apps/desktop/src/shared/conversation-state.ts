@@ -24,7 +24,7 @@ export function applyConversationUpdate(thread: ConversationThreadView, update: 
   if (update.type === "turn/started") return { ...nextThread, remoteActive: true, remoteActiveTurnId: update.turnId };
   if (update.type === "turn/completed" || update.type === "turn/failed" || update.type === "turn/interrupted") {
     if (thread.remoteActiveTurnId !== update.turnId && thread.remoteActive !== true) return nextThread;
-    const { remoteActiveTurnId: _remoteActiveTurnId, remoteActive: _remoteActive, ...inactiveThread } = nextThread;
+    const { remoteActiveTurnId: _remoteActiveTurnId, remoteActive: _remoteActive, writeState: _writeState, ...inactiveThread } = nextThread;
     return inactiveThread;
   }
   return nextThread;

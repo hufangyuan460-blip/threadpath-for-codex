@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { Language } from "../shared/api";
+import type { ConfiguredWorkspace, Language } from "../shared/api";
+import type { ThreadSummary } from "../../../../threadpath-protocol/src/protocol.ts";
 
 const MAX_THREAD_NAME_LENGTH = 72;
 
@@ -11,6 +12,8 @@ export interface UserPreferencesFile {
   readonly currentWorkingDirectory?: string;
   readonly expandedWorkingDirectories?: Readonly<Record<string, boolean>>;
   readonly threadWorkingDirectories?: Readonly<Record<string, string>>;
+  readonly historyMirror?: Readonly<Record<string, ThreadSummary>>;
+  readonly configuredWorkspaces?: Readonly<Record<string, ConfiguredWorkspace>>;
 }
 
 export interface ThreadNameParts {
@@ -101,9 +104,19 @@ export class UserPreferencesService {
   getCurrentWorkingDirectory(): string | undefined { return this.data.currentWorkingDirectory; }
   getWorkspaceExpanded(path: string): boolean { return this.data.expandedWorkingDirectories?.[path] ?? true; }
   getThreadWorkingDirectory(threadId: string): string | undefined { return this.data.threadWorkingDirectories?.[threadId]; }
+  getHistoryMirror(): ThreadSummary[] { return Object.values(this.data.historyMirror ?? {}); }
+  getConfiguredWorkspaces(): ConfiguredWorkspace[] { return Object.values(this.data.configuredWorkspaces ?? {}); }
+
+  async setHistoryMirror(threads: readonly ThreadSummary[]): Promise<void> {
+    const historyMirror = Object.fromEntries(threads.map((thread) => [thread.id, thread]));
+    this.data = { ...this.data, historyMirror };
+    await this.persist();
+  }
 
   async addWorkingDirectory(path: string): Promise<void> {
-    this.data = { ...this.data, workingDirectories: [...new Set([...this.getWorkingDirectories(), path])], currentWorkingDirectory: path };
+    const configuredWorkspaces = { ...(this.data.configuredWorkspaces ?? {}) };
+    if (configuredWorkspaces[path] === undefined) configuredWorkspaces[path] = { id: path, primaryDirectory: path, additionalDirectories: [], source: "user-configured", applyState: "applied" };
+    this.data = { ...this.data, workingDirectories: [...new Set([...this.getWorkingDirectories(), path])], currentWorkingDirectory: path, configuredWorkspaces };
     await this.persist();
   }
 
@@ -146,7 +159,24 @@ function isPreferencesFile(value: unknown): value is UserPreferencesFile {
   if (expanded !== undefined && (expanded === null || typeof expanded !== "object" || Array.isArray(expanded) || Object.values(expanded).some((value) => typeof value !== "boolean"))) return false;
   const associations = object.threadWorkingDirectories;
   if (associations !== undefined && (associations === null || typeof associations !== "object" || Array.isArray(associations) || Object.values(associations).some((path) => typeof path !== "string"))) return false;
+  const mirror = object.historyMirror;
+  if (mirror !== undefined && (mirror === null || typeof mirror !== "object" || Array.isArray(mirror) || Object.values(mirror).some((item) => !isThreadMirror(item)))) return false;
+  const configured = object.configuredWorkspaces;
+  if (configured !== undefined && (configured === null || typeof configured !== "object" || Array.isArray(configured) || Object.values(configured).some((item) => !isConfiguredWorkspace(item)))) return false;
   return true;
+}
+
+function isConfiguredWorkspace(value: unknown): value is ConfiguredWorkspace {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const item = value as Record<string, unknown>;
+  const additional = item.additionalDirectories;
+  return typeof item.id === "string" && typeof item.primaryDirectory === "string" && (item.source === "synced" || item.source === "user-configured" || item.source === "local-organization") && (item.applyState === "not-applied" || item.applyState === "applied" || item.applyState === "verification-failed") && Array.isArray(additional) && additional.every((entry) => entry !== null && typeof entry === "object" && !Array.isArray(entry) && typeof (entry as Record<string, unknown>).path === "string" && ((entry as Record<string, unknown>).access === "read" || (entry as Record<string, unknown>).access === "write"));
+}
+
+function isThreadMirror(value: unknown): value is ThreadSummary {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const item = value as Record<string, unknown>;
+  return typeof item.id === "string" && (item.title === undefined || typeof item.title === "string") && (item.status === undefined || typeof item.status === "string") && (item.cwd === undefined || typeof item.cwd === "string") && (item.archived === undefined || typeof item.archived === "boolean");
 }
 
 function isMissingFile(error: unknown): boolean {

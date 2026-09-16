@@ -51,6 +51,7 @@ When a supported app-server message changes, update the smallest relevant fixtur
 ```text
 initialize()
 listThreads(options)
+listThreadPage(options) → { threads, nextCursor? }
 readThread(threadId)
 resumeThread(threadId) → re-activate an existing thread before a new turn
 listTurns(threadId, options?) → { turns, nextCursor? }
@@ -112,7 +113,7 @@ An empty `thread/list` is valid. In that case the live smoke test skips the read
 
 ## Capability detection
 
-`initialize()` also returns and stores the server version, protocol version, compatibility information, and a typed capability set. Callers can inspect `client.capabilities` and use `client.supports("thread/turns/list")` before selecting a protocol path. `listTurns(threadId, { limit, cursor })` returns a typed page with `turns` and an optional `nextCursor`; callers should pass that cursor to load older pages.
+`initialize()` also returns and stores the server version, protocol version, compatibility information, and a typed capability set. Callers can inspect `client.capabilities` and use `client.supports("thread/turns/list")` before selecting a protocol path. `listThreadPage()` exposes the public `thread/list` cursor when the server returns one; `listThreads()` follows non-repeating cursors and no longer fixes the directory at ten items. The desktop history synchronizer requests both `archived: false` and `archived: true` using this public API. If an installation rejects archived listing or does not expose verified pagination, the desktop reports a partial sync and retains the prior local mirror instead of claiming that all history was synchronized. `listTurns(threadId, { limit, cursor })` returns a typed page with `turns` and an optional `nextCursor`; callers should pass that cursor to load older pages.
 
 The minimum method set for the current live flow is `thread/list`, `thread/start`, and `turn/start`. `thread/read`, `thread/turns/list`, and `thread/resume` are required only when reading or continuing an existing thread; an empty thread list remains valid. `thread/read` does not activate a thread for writing, so callers must use `resumeThread(threadId)` immediately before `startTurn` for existing threads. If the server explicitly reports a missing capability, the client raises a `CompatibilityError` before making that method call (or while waiting for an unsupported terminal event). A server `thread_not_found` response is mapped by the desktop service to an actionable unavailable-thread error without issuing `turn/start`.
 

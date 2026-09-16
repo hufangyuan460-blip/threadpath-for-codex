@@ -1,4 +1,4 @@
-import { existsSync, statSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import { AppServerError, ConfigurationError, ProcessError, type AppServerCapabilities, type InitializeResult } from "../../../../threadpath-protocol/src/protocol.ts";
 import { AppServerClient } from "../../../../threadpath-protocol/src/app-server-client.ts";
 
@@ -77,7 +77,7 @@ export class CodexProcessManager {
     this.setSnapshot({ state: "connecting" });
     let client: AppServerClient | undefined;
     try {
-      this.validateConfiguration();
+      await this.validateConfiguration();
       const executable = this.options.executable?.trim() || "codex";
       client = new AppServerClient({
         cwd: this.options.cwd,
@@ -104,13 +104,17 @@ export class CodexProcessManager {
     }
   }
 
-  private validateConfiguration(): void {
+  private async validateConfiguration(): Promise<void> {
     const cwd = this.options.cwd.trim();
     if (cwd === "") throw new ConfigurationError("Codex working directory is empty");
-    if (!existsSync(cwd) || !statSync(cwd).isDirectory()) throw new ConfigurationError(`Codex working directory does not exist: ${cwd}`);
+    const cwdInfo = await stat(cwd).catch(() => undefined);
+    if (cwdInfo === undefined || !cwdInfo.isDirectory()) throw new ConfigurationError(`Codex working directory does not exist: ${cwd}`);
     const executable = this.options.executable?.trim() || "codex";
     const isPath = executable.includes("\\") || executable.includes("/") || executable.toLowerCase().endsWith(".exe");
-    if (isPath && (!existsSync(executable) || statSync(executable).isDirectory())) throw new ConfigurationError(`Codex executable does not exist: ${executable}`);
+    if (isPath) {
+      const executableInfo = await stat(executable).catch(() => undefined);
+      if (executableInfo === undefined || executableInfo.isDirectory()) throw new ConfigurationError(`Codex executable does not exist: ${executable}`);
+    }
   }
 
   private connectionInfo(initialized: InitializeResult): Omit<ConnectionStateSnapshot, "state"> {

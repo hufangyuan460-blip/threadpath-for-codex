@@ -1,7 +1,7 @@
 import { ConfigurationError, type Thread, type ThreadSummary } from "../../../../threadpath-protocol/src/protocol.ts";
 
 export interface ThreadClient {
-  listThreads(): Promise<ThreadSummary[]>;
+  listThreads(options?: { archived?: boolean; limit?: number }): Promise<ThreadSummary[]>;
   readThread(threadId: string): Promise<Thread>;
 }
 
@@ -21,6 +21,9 @@ export interface ThreadListViewModel {
   readonly turnCount: number | null;
   readonly createdAt?: string;
   readonly workspacePath?: string;
+  readonly workingDirectory?: string;
+  readonly updatedAt?: string;
+  readonly archived?: boolean;
 }
 
 export interface ThreadViewModel extends ThreadListViewModel {}
@@ -40,6 +43,10 @@ export class ThreadService {
     return threads.map((thread) => this.toViewModel(thread));
   }
 
+  mapThreads(threads: readonly ThreadSummary[]): ThreadListViewModel[] {
+    return threads.map((thread) => this.toViewModel(thread));
+  }
+
   async readThread(threadId: unknown): Promise<ThreadViewModel> {
     const validThreadId = validateThreadId(threadId);
     const thread = await this.clientProvider.getReadyClient().readThread(validThreadId);
@@ -47,7 +54,11 @@ export class ThreadService {
   }
 
   async getServerThread(threadId: string): Promise<ThreadSummary | undefined> {
-    return (await this.clientProvider.getReadyClient().listThreads()).find((thread) => thread.id === threadId);
+    const client = this.clientProvider.getReadyClient();
+    const active = await client.listThreads({ archived: false, limit: 100 });
+    const found = active.find((thread) => thread.id === threadId);
+    if (found !== undefined) return found;
+    return (await client.listThreads({ archived: true, limit: 100 })).find((thread) => thread.id === threadId);
   }
 
   private toViewModel(thread: ThreadSummary | Thread): ThreadViewModel {
@@ -61,7 +72,9 @@ export class ThreadService {
       status: thread.status?.trim() || "unknown",
       turnCount: turns === undefined ? thread.turnCount ?? null : turns.length,
       ...(thread.createdAt === undefined ? {} : { createdAt: thread.createdAt }),
-      ...(thread.cwd === undefined ? {} : { workspacePath: thread.cwd }),
+      ...(thread.updatedAt === undefined ? {} : { updatedAt: thread.updatedAt }),
+      ...(thread.archived === undefined ? {} : { archived: thread.archived }),
+      ...(thread.cwd === undefined ? {} : { workspacePath: thread.cwd, workingDirectory: thread.cwd }),
     };
   }
 

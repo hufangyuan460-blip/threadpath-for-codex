@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { DesktopApi, Language } from "../shared/api";
+import type { DesktopApi, Language, WorkspaceState } from "../shared/api";
 
 const desktopApi: DesktopApi = {
   getAppInfo: () => ipcRenderer.invoke("app:get-info"),
@@ -13,13 +13,21 @@ const desktopApi: DesktopApi = {
   disconnect: () => ipcRenderer.invoke("app:disconnect"),
   reconnect: () => ipcRenderer.invoke("app:reconnect"),
   listThreads: () => ipcRenderer.invoke("threads:list"),
+  getHistorySyncState: () => ipcRenderer.invoke("history:get-sync-state"),
+  syncHistory: () => ipcRenderer.invoke("history:sync"),
   getWorkspaceState: () => ipcRenderer.invoke("workspace:get-state"),
+  onWorkspaceStateChanged: (listener: (state: WorkspaceState) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: WorkspaceState): void => listener(state);
+    ipcRenderer.on("workspace:state-changed", handler);
+    return () => ipcRenderer.removeListener("workspace:state-changed", handler);
+  },
   chooseWorkspaceDirectory: () => ipcRenderer.invoke("workspace:choose-directory"),
   setCurrentWorkspace: (path) => ipcRenderer.invoke("workspace:set-current", path),
   toggleWorkspace: (path) => ipcRenderer.invoke("workspace:toggle", path),
   associateThreadWorkspace: (threadId, path) => ipcRenderer.invoke("workspace:associate-thread", threadId, path),
   setThreadDisplayName: (threadId: string, name: string | null) => ipcRenderer.invoke("threads:set-display-name", threadId, name),
   readThread: (threadId) => ipcRenderer.invoke("threads:read", threadId),
+  refreshThread: (threadId) => ipcRenderer.invoke("threads:refresh", threadId),
   loadMoreTurns: (threadId) => ipcRenderer.invoke("conversation:load-more", threadId),
   searchTurns: (threadId, query) => ipcRenderer.invoke("search:turns", threadId, query),
   startTurn: (threadId, text) => ipcRenderer.invoke("conversation:start-turn", threadId, text),
