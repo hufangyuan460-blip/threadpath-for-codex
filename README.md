@@ -1,16 +1,16 @@
 # ThreadPath for Codex
 
-> 面向 Codex CLI 的可视化对话导航与分支工作区。  
-> A visual conversation navigation and branching workspace for Codex CLI.
+> 面向 Codex CLI 的可视化对话导航与工作区管理。
+> A visual conversation navigation and workspace client for Codex CLI.
 
 [![Status: Prototype](https://img.shields.io/badge/status-prototype-orange.svg)](https://github.com/hufangyuan460-blip/threadpath-for-codex)
 [![License: TBD](https://img.shields.io/badge/license-TBD-lightgrey.svg)](https://github.com/hufangyuan460-blip/threadpath-for-codex)
 
 ## 中文
 
-ThreadPath for Codex 是一个独立的桌面客户端项目，目标是让 Codex CLI 对话更容易浏览、搜索和导航，并为未来的线程 Fork、树视图、DAG 可视化与分支比较提供基础。
+ThreadPath for Codex 是一个独立的桌面客户端原型，目标是让 Codex CLI 对话更容易浏览、搜索、导航和按工作目录整理，并为未来的线程 Fork、树视图、DAG 可视化与分支比较提供基础。当前实际可运行代码位于 `threadpath-protocol/` 和 `apps/desktop/`；`SPEC.md` 中尚未实现的未来架构不应视为当前功能。
 
-项目已完成 `v0.0.1` 协议验证、`M0` 桌面应用外壳、`M1-A` 生命周期接入、`M1-B` 线程列表读取、`M2-A` 只读线性对话渲染、`M2-B` 最小回合发送与流式更新、`M3-A` 回合大纲跳转、`M3-B` 滚动联动高亮、`M3-C` 已加载回合搜索、`M4-A` 回合分页加载、`M4-B` 对话虚拟化和 `M4-C` 桌面端关键路径 E2E。协议代码集中在 `threadpath-protocol/`，Electron 主进程管理 app-server 和会话应用服务；当前不提供跨线程搜索、未加载页面搜索、Tree View 或 DAG。
+项目已完成 `v0.0.1` 协议验证、`M0` 至 `M4-C` 桌面端能力，并包含 `M4-D` Windows x64 NSIS 安装配置。当前主分支是可运行的预发布桌面原型，尚未宣称为稳定的 GitHub Release；协议代码集中在 `threadpath-protocol/`，Electron 主进程管理 app-server 和会话应用服务。
 
 ### 当前能力
 
@@ -21,12 +21,19 @@ ThreadPath for Codex 是一个独立的桌面客户端项目，目标是让 Code
 - 接收并处理流式通知；
 - 处理请求超时、进程退出、格式错误输出、服务端错误和协议错误；
 - 以 fake app-server 覆盖已有/空线程、三种回合终态和关键故障路径；
+- 按 `CODEX_EXECUTABLE`、已保存选择、PATH、已知 Windows 安装目录和手动选择的顺序自动发现 Codex CLI，并通过 `codex --version` 验证候选；
 - 提供 `apps/desktop/` M0 安全桌面外壳，启用 context isolation 并禁用 renderer Node 集成；
 - 由 Electron 主进程管理 app-server 连接状态、初始化、关闭和重连；
+- 未确认工作目录时使用隔离的 `history-runtime` 进入只读历史模式；确认工作目录后才允许新建、续聊和发送回合；
+- 同步未归档与已归档线程，构建 ThreadPath 本地历史镜像，并按本地绑定或 Codex 返回的 `cwd` 分组工作区；无法确认归属的线程进入未分类历史；
+- 未选中线程时可选择工作目录并创建持久线程；线程工作区绑定、展开状态和本地展示名称保存在 ThreadPath 配置中，不修改 Codex 原始线程数据；
 - 在主进程通过类型化服务加载线程列表，并读取选中线程的安全元数据视图；
+- 既有线程发送前使用已验证的 `thread/resume` 流程；线程不可用、不可写或存在远端 active writer 时阻止发送、保留草稿并显示可操作提示；
+- 以工作区和线程为粒度维护本地/外部写入锁，支持多个并发锁安全共存和分别释放；
 - renderer 仅通过 preload 使用受限的线程列表和读取 API；
 - 按回合顺序显示用户、助手、系统和工具状态的纯文本视图，并为回合保留稳定锚点；
 - 将历史助手/系统文本与流式回合统一为带阶段的内容块；稳定历史和完成回合安全渲染 Markdown，流式与失败/中断内容保持纯文本降级；
+- 助手和系统最终文本支持安全 Markdown 结构化展示；用户输入、流式文本、失败/中断内容和工具状态按不可信纯文本或独立状态块处理；
 - 在线程选中且连接就绪时发送纯文本回合，接收助手 delta，并显示完成、失败和中断状态；
 - 通过 preload 暴露可取消的受限会话更新订阅，并对重复事件和旧线程事件做去重/过滤；
 - 从类型化会话模型生成安全回合大纲，支持键盘聚焦、Enter 激活和稳定锚点跳转；
@@ -35,6 +42,8 @@ ThreadPath for Codex 是一个独立的桌面客户端项目，目标是让 Code
 - 使用游标分页加载更早回合，并按稳定回合 ID 合并重复或乱序页面；
 - 使用 `react-virtuoso` 仅渲染可见附近的回合，支持稳定 ID 跳转和分页时的位置保持；
 - 使用 fake app-server 自动验证桌面端 ready、线程读取、导航、搜索、流式回合和失败/中断路径；
+- 通过异步、缓存化的工作区身份解析避免在 Electron 主进程同步探测文件系统或 Git；
+- 提供中英文界面切换、本地线程命名、工作目录历史分组、分页、搜索、问答目录和虚拟化；
 - 为未来的 Electron 桌面客户端积累协议事实。
 - 使用主进程历史同步服务从公开 `thread/list` API 构建本地镜像索引；同步会同时尝试未归档和已归档线程，并显示完整、部分或失败状态。同步失败时保留已有镜像，不读取 `CODEX_HOME` 内部数据库或会话文件。
 - 工作区分组优先使用本地显式绑定，其次使用 app-server 返回的 `cwd`；路径会规范化并在 Git 仓库中归一到仓库根目录，同时保留线程实际工作目录用于运行。无法确认的线程进入未分类历史。
@@ -63,6 +72,15 @@ npm run smoke
 ```powershell
 npm run typecheck
 npm test
+```
+
+桌面端的本地质量检查：
+
+```powershell
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm test:e2e
 ```
 
 GitHub Actions 使用 Windows、固定的 Node.js/pnpm 版本和 `pnpm install --frozen-lockfile`，运行 fake app-server fixture 的 typecheck、test、build 和桌面端 E2E，并上传日志、失败截图与构建产物。`npm run smoke` 或对应的真实协议冒烟测试仍需在本地运行，因为它依赖 Codex 登录状态和上游网络，不属于 CI 门禁。
@@ -117,6 +135,7 @@ npm run smoke
 - `M3-B`：支持滚动联动高亮、程序化跳转和大纲自动跟随；暂不支持搜索、分页和虚拟化；
 - `M3-C`：支持当前已加载回合搜索和结果跳转；不搜索跨线程或未加载页面；
 - `M4-C`：使用 fake app-server 验证桌面端关键路径，不依赖真实认证或网络；
+- `M4-D`：Windows x64 NSIS 安装程序配置，可本地生成安装包；当前未启用自动更新和代码签名；
 - `v0.0.1`：Codex app-server 协议验证、JSONL/JSON-RPC 传输与可重复故障测试；
 - `v0.0.2`：可复用的类型化协议客户端、版本化 fixture 和脱敏诊断事件日志；
 - `v0.1.0`：线性对话基础、线程/回合加载、导航和搜索；
@@ -128,13 +147,13 @@ npm run smoke
 
 ### 项目状态
 
-这是一个早期原型。协议行为、Codex CLI 版本兼容性和桌面应用架构仍在验证中，不应将当前原型视为稳定发布版本。
+这是一个可运行的早期桌面原型。协议行为、Codex CLI 版本兼容性、工作区权限边界和桌面应用架构仍在验证中；`pnpm package:win` 可生成本地安装包，但当前不应将其视为稳定发布版本。真实 `pnpm smoke` 仍依赖本机 Codex 安装、认证和上游网络。
 
 ## English
 
-ThreadPath for Codex is an independent desktop client project designed to make Codex CLI conversations easier to browse, search, and navigate. It also lays the foundation for future thread forking, tree views, DAG visualization, and branch comparison.
+ThreadPath for Codex is an independent desktop client prototype designed to make Codex CLI conversations easier to browse, search, navigate, and organize by working directory. It also lays the foundation for future thread forking, tree views, DAG visualization, and branch comparison. The currently runnable code lives in `threadpath-protocol/` and `apps/desktop/`; future architecture described in `SPEC.md` is not automatically implemented.
 
-The project has completed `v0.0.1` protocol validation, the `M0` desktop shell, `M1-A` lifecycle integration, `M1-B` thread loading, `M2-A` read-only linear conversation rendering, `M2-B` minimal turn sending and streaming updates, `M3-A` turn outline navigation, `M3-B` scroll-linked active-turn highlighting, `M3-C` loaded-turn search, `M4-A` paginated turn loading, `M4-B` conversation virtualization, and `M4-C` desktop critical-path E2E coverage. The Electron main process owns the app-server and conversation service; cross-thread and unloaded-page search, Tree View, and DAG are not included.
+The project has completed `v0.0.1` protocol validation and the `M0` through `M4-C` desktop milestones, with `M4-D` Windows x64 NSIS packaging configured. The current main branch is a runnable pre-release desktop prototype, not a stable GitHub Release. The Electron main process owns the app-server and conversation service.
 
 ### Current capabilities
 
@@ -145,12 +164,19 @@ The project has completed `v0.0.1` protocol validation, the `M0` desktop shell, 
 - Receives and handles streaming notifications;
 - Handles request timeouts, process exits, malformed stdout, server errors, and protocol errors;
 - Uses a fake app-server to cover existing/empty thread lists, three terminal turn outcomes, and key failure paths;
+- Discovers Codex CLI from `CODEX_EXECUTABLE`, saved choices, PATH, known Windows install locations, or a manual picker, validating each candidate with `codex --version`;
 - Provides an `apps/desktop/` M0 secure desktop shell with context isolation and renderer Node integration disabled;
 - Lets the Electron main process own app-server connection, initialization, shutdown, and reconnection;
+- Uses an isolated `history-runtime` for read-only history mode when no confirmed working directory exists; sending, creating, and continuing turns require a confirmed directory;
+- Synchronizes archived and unarchived threads into a ThreadPath-local history mirror and groups them by explicit local binding or the `cwd` returned by Codex, with unclassified history as the safe fallback;
+- Creates persistent threads from the selected working directory and stores workspace bindings, expansion state, and local display names in ThreadPath preferences without changing Codex thread data;
 - Loads threads and reads selected-thread metadata through typed main-process services;
+- Resumes existing threads through the verified `thread/resume` flow before sending; unavailable, non-writable, or externally active threads are blocked with a friendly prompt while preserving the draft;
+- Tracks local and external write locks per workspace and thread, allowing multiple locks to coexist and release independently;
 - Exposes only restricted thread-list and thread-read APIs through preload;
 - Renders user, assistant, system, and tool-status text in turn order with stable turn anchors;
 - Normalizes historical and streaming content into phase-tagged blocks; safely renders Markdown for stable history and completed turns while keeping streaming and failed/interrupted text in plain-text fallback;
+- Safely renders Markdown for final assistant/system text; user input, streaming text, failed/interrupted content, and tool status remain untrusted plain text or separate status blocks;
 - Sends one plain-text turn at a time and applies allowlisted assistant deltas and terminal states;
 - Exposes a removable, restricted conversation-update subscription through preload with duplicate and stale-thread filtering;
 - Generates a safe turn outline from typed conversation data and supports keyboard/click navigation to stable anchors;
@@ -158,6 +184,8 @@ The project has completed `v0.0.1` protocol validation, the `M0` desktop shell, 
 - Searches the current loaded thread with debounced, case-insensitive substring matching and stable result navigation;
 - Loads earlier turns with cursor pagination and stable-ID merging, and virtualizes the conversation list with `react-virtuoso`;
 - Runs desktop critical-path E2E coverage against the fake app-server for ready state, thread reading, navigation, search, streaming turns, and failure/interruption paths;
+- Resolves workspace identity asynchronously with caching so filesystem and Git probing does not block the Electron main process;
+- Provides bilingual UI, local thread names, workspace history grouping, pagination, search, question outline navigation, and conversation virtualization;
 - Builds protocol knowledge for the future Electron desktop client.
 
 GitHub Actions runs the same authentication- and network-independent fixture typecheck, test, and build on Windows after a frozen pnpm install. The real `smoke` command remains a local check because it requires Codex authentication and upstream network access.
@@ -229,6 +257,7 @@ npm run smoke
 - `M3-B`: scroll-linked active-turn highlighting, programmatic navigation, and outline auto-follow; no search, pagination, or virtualization;
 - `M3-C`: loaded-turn search with stable result navigation; no cross-thread or unloaded-page search, pagination, or virtualization;
 - `M4-C`: fake app-server desktop critical-path coverage without real authentication or network;
+- `M4-D`: Windows x64 NSIS installer configuration; automatic updates and code signing are not enabled;
 - `v0.0.1`: Codex app-server protocol validation, JSONL/JSON-RPC transport, and repeatable failure tests;
 - `v0.0.2`: reusable typed protocol client APIs, versioned fixtures, and redacted diagnostic event logging;
 - `v0.1.0`: linear conversation foundation, thread/turn loading, navigation, and search;
@@ -240,7 +269,7 @@ npm run smoke
 
 ### Project status
 
-This is an early prototype. Protocol behavior, Codex CLI version compatibility, and the desktop application architecture are still being validated. The current prototype should not be treated as a stable release.
+This is a runnable early desktop prototype. Protocol behavior, Codex CLI compatibility, workspace permission boundaries, and desktop architecture are still being validated. `pnpm package:win` produces a local installer, but the current build should not be treated as a stable release. Real `pnpm smoke` still requires a local Codex installation, authentication, and upstream network access.
 
 ## License
 
