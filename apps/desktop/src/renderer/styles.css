@@ -9,7 +9,7 @@
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 760px; min-height: 100vh; overflow: hidden; }
 .shell { display: flex; height: 100vh; min-height: 0; flex-direction: column; overflow: hidden; background: #101318; }
-.topbar { display: flex; height: 32px; min-height: 32px; align-items: center; justify-content: space-between; padding: 0 calc(12px + env(titlebar-area-width, 0px)) 0 12px; border-bottom: 1px solid #293342; -webkit-app-region: drag; }
+.topbar { display: flex; height: 32px; min-height: 32px; align-items: center; justify-content: space-between; padding: 0 144px 0 12px; border-bottom: 1px solid #293342; -webkit-app-region: drag; }
 .topbar > div:first-child { min-width: 0; flex: 1; }
 .topbar-actions { display: flex; align-items: center; gap: 8px; -webkit-app-region: no-drag; }
 .eyebrow, .empty-kicker { margin: 0 0 6px; color: #89a9d3; font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
@@ -29,6 +29,11 @@ h1 { margin-bottom: 0; overflow: hidden; font-size: 13px; line-height: 1; letter
 .thread-panel { display: flex; width: 100%; height: 100%; min-width: 0; max-width: 300px; min-height: 0; flex-direction: column; padding: 8px; border-right: 1px solid #292f39; background: #15191f; overflow: hidden; }
 .workspace-history { display: flex; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; }
 .workspace-history > .panel-heading { flex: none; }
+.workspace-history-heading { min-width: 0; flex-wrap: nowrap; }
+.workspace-history-heading h2 { min-width: 0; overflow: hidden; font-size: 14px; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-history-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; }
+.workspace-history-action { display: grid; width: 24px; min-width: 24px; height: 24px; padding: 0; place-items: center; border-radius: 6px; color: #cbd8ea; background: #263242; font-size: 15px; line-height: 1; }
+.workspace-history-action:hover { background: #33455c; }
 .workspace-history > .panel-note { flex: none; margin: 6px 4px; font-size: 11px; }
 .workspace-group { min-width: 0; flex: none; }
 .workspace-group-row { display: flex; min-width: 0; align-items: center; gap: 2px; }
