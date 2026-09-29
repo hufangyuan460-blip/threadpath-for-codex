@@ -1,16 +1,16 @@
 # ThreadPath for Codex
 
-> 面向 Codex CLI 的可视化对话导航与工作区管理。
-> A visual conversation navigation and workspace client for Codex CLI.
+> 与 Codex 官方客户端并行使用的会话历史查询与工作区管理桌面工具。
+> A desktop companion for browsing Codex conversation history and workspaces alongside the official client.
 
-[![Status: Prototype](https://img.shields.io/badge/status-prototype-orange.svg)](https://github.com/hufangyuan460-blip/threadpath-for-codex)
+[![Status: Beta](https://img.shields.io/badge/status-beta-blue.svg)](https://github.com/hufangyuan460-blip/threadpath-for-codex)
 [![License: TBD](https://img.shields.io/badge/license-TBD-lightgrey.svg)](https://github.com/hufangyuan460-blip/threadpath-for-codex)
 
 ## 中文
 
-ThreadPath for Codex 是一个独立的桌面客户端原型，目标是让 Codex CLI 对话更容易浏览、搜索、导航和按工作目录整理，并为未来的线程 Fork、树视图、DAG 可视化与分支比较提供基础。当前实际可运行代码位于 `threadpath-protocol/` 和 `apps/desktop/`；`SPEC.md` 中尚未实现的未来架构不应视为当前功能。
+ThreadPath for Codex 是与 Codex 官方客户端并行使用的独立桌面工具，主要用于查询、搜索、浏览和整理 Codex 会话历史与工作目录。它不替代官方客户端：建议仍在官方客户端完成日常编码、审批和关键交互，ThreadPath 侧重跨会话历史检索、回合目录和本地工作区视图。当前实际可运行代码位于 `threadpath-protocol/` 和 `apps/desktop/`；`SPEC.md` 中尚未实现的未来架构不应视为当前功能。
 
-项目已完成 `v0.0.1` 协议验证、`M0` 至 `M4-C` 桌面端能力，并包含 `M4-D` Windows x64 NSIS 安装配置。当前主分支是可运行的预发布桌面原型，尚未宣称为稳定的 GitHub Release；协议代码集中在 `threadpath-protocol/`，Electron 主进程管理 app-server 和会话应用服务。
+`v0.1.0-beta.1` 是首个可安装的 Beta 版本。它支持并行读取官方客户端会话历史，并在服务端确认线程可写时提供谨慎的续聊能力；同一工作区的并发写入会被严格阻止。协议代码集中在 `threadpath-protocol/`，Electron 主进程管理 app-server 和会话应用服务。
 
 ### 当前能力
 
@@ -101,7 +101,7 @@ pnpm test:e2e
 pnpm package:win
 ```
 
-安装程序输出为 `release/ThreadPath for Codex Setup 0.1.0.exe`。安装包只包含 ThreadPath 桌面应用，不包含 Codex CLI；应用启动后仍会查找 PATH 中的 `codex`，或使用 `CODEX_EXECUTABLE` 指定的本地可执行文件。当前安装包未启用自动更新和代码签名。
+安装程序输出为 `release/ThreadPath for Codex Setup 0.1.0-beta.1.exe`。安装包只包含 ThreadPath 桌面应用，不包含 Codex CLI；应用启动后仍会查找 PATH 中的 `codex`，或使用 `CODEX_EXECUTABLE` 指定的本地可执行文件。当前安装包未启用自动更新和代码签名。
 
 首次启动时，应用会按以下顺序发现 Codex CLI：`CODEX_EXECUTABLE`、已保存的用户选择、系统 PATH 中的 `codex`、`%LOCALAPPDATA%\OpenAI\Codex\bin\*\codex.exe`，最后提供手动选择。每个候选都会通过短超时的 `codex --version` 验证。工作目录由 `CODEX_CWD`、已保存选择或首次启动引导确定；只保存可执行文件路径和工作目录，不保存认证信息或对话内容。高级用户和开发测试仍可使用 `CODEX_EXECUTABLE` 与 `CODEX_CWD` 覆盖自动发现结果。
 
@@ -140,7 +140,7 @@ npm run smoke
 - `M4-D`：Windows x64 NSIS 安装程序配置，可本地生成安装包；当前未启用自动更新和代码签名；
 - `v0.0.1`：Codex app-server 协议验证、JSONL/JSON-RPC 传输与可重复故障测试；
 - `v0.0.2`：可复用的类型化协议客户端、版本化 fixture 和脱敏诊断事件日志；
-- `v0.1.0`：线性对话基础、线程/回合加载、导航和搜索；
+- `v0.1.0-beta.1`：首个可安装 Beta；与官方客户端并行进行会话历史查询、工作区整理和谨慎续聊；
 - `v0.2.0`：稳定性强化、诊断、性能和无障碍优化；
 - `v0.3.0`：Fork 与分支领域模型基础；
 - `v0.4.0`：树视图；
@@ -149,13 +149,13 @@ npm run smoke
 
 ### 项目状态
 
-这是一个可运行的早期桌面原型。协议行为、Codex CLI 版本兼容性、工作区权限边界和桌面应用架构仍在验证中；`pnpm package:win` 可生成本地安装包，但当前不应将其视为稳定发布版本。真实 `pnpm smoke` 仍依赖本机 Codex 安装、认证和上游网络。
+这是一个可运行的 Beta 版本，适合与官方 Codex 客户端并行使用，主要用于会话历史查询与工作区整理。协议行为、Codex CLI 版本兼容性和工作区权限边界仍在持续验证；它不是稳定版，也不替代官方客户端。真实 `pnpm smoke` 仍依赖本机 Codex 安装、认证和上游网络。
 
 ## English
 
-ThreadPath for Codex is an independent desktop client prototype designed to make Codex CLI conversations easier to browse, search, navigate, and organize by working directory. It also lays the foundation for future thread forking, tree views, DAG visualization, and branch comparison. The currently runnable code lives in `threadpath-protocol/` and `apps/desktop/`; future architecture described in `SPEC.md` is not automatically implemented.
+ThreadPath for Codex is an independent desktop companion intended to run alongside the official Codex client. Its primary job is to browse, search, navigate, and organize Codex conversation history and working directories. It does not replace the official client: use the official client for everyday coding, approvals, and critical interactions, while using ThreadPath for cross-conversation history and local workspace views. The currently runnable code lives in `threadpath-protocol/` and `apps/desktop/`; future architecture described in `SPEC.md` is not automatically implemented.
 
-The project has completed `v0.0.1` protocol validation and the `M0` through `M4-C` desktop milestones, with `M4-D` Windows x64 NSIS packaging configured. The current main branch is a runnable pre-release desktop prototype, not a stable GitHub Release. The Electron main process owns the app-server and conversation service.
+`v0.1.0-beta.1` is the first installable Beta release. It supports parallel reading of official-client history and cautious continuation only after the server confirms that a thread is writable; concurrent writes in one workspace are strictly blocked. The Electron main process owns the app-server and conversation service.
 
 ### Current capabilities
 
@@ -196,7 +196,7 @@ GitHub Actions runs the same authentication- and network-independent fixture typ
 
 For the desktop critical-path check, run `pnpm test:e2e`. It builds the desktop app and launches it against the repository's fake app-server through `CODEX_EXECUTABLE`; it does not use Codex authentication, real desktop configuration, or network model calls. The Windows quality workflow runs the same E2E suite and uploads failure logs, screenshots, and build artifacts.
 
-To build the Windows x64 NSIS installer, run `pnpm package:win`. The installer is written to `release/ThreadPath for Codex Setup 0.1.0.exe`. It contains the ThreadPath desktop app only, not the Codex CLI; the installed app still finds `codex` on PATH or uses the executable specified by `CODEX_EXECUTABLE`. Automatic updates and code signing are not enabled yet.
+To build the Windows x64 NSIS installer, run `pnpm package:win`. The installer is written to `release/ThreadPath for Codex Setup 0.1.0-beta.1.exe`. It contains the ThreadPath desktop app only, not the Codex CLI; the installed app still finds `codex` on PATH or uses the executable specified by `CODEX_EXECUTABLE`. Automatic updates and code signing are not enabled yet.
 
 On first launch, the app discovers Codex CLI in this order: `CODEX_EXECUTABLE`, the saved user choice, `codex` on PATH, `%LOCALAPPDATA%\OpenAI\Codex\bin\*\codex.exe`, and finally a manual file picker. Each candidate is checked with a short-timeout `codex --version` call. The working directory comes from `CODEX_CWD`, the saved choice, or the first-launch guide. Only the executable path and working directory are stored; authentication data and conversation content are never copied into the app configuration. Advanced users and development tests can override discovery with `CODEX_EXECUTABLE` and `CODEX_CWD`.
 
@@ -264,7 +264,7 @@ npm run smoke
 - `M4-D`: Windows x64 NSIS installer configuration; automatic updates and code signing are not enabled;
 - `v0.0.1`: Codex app-server protocol validation, JSONL/JSON-RPC transport, and repeatable failure tests;
 - `v0.0.2`: reusable typed protocol client APIs, versioned fixtures, and redacted diagnostic event logging;
-- `v0.1.0`: linear conversation foundation, thread/turn loading, navigation, and search;
+- `v0.1.0-beta.1`: first installable Beta for parallel official-client history browsing, workspace organization, and cautious continuation;
 - `v0.2.0`: hardening, diagnostics, performance, and accessibility improvements;
 - `v0.3.0`: fork and branch domain-model groundwork;
 - `v0.4.0`: tree view;
@@ -273,7 +273,7 @@ npm run smoke
 
 ### Project status
 
-This is a runnable early desktop prototype. Protocol behavior, Codex CLI compatibility, workspace permission boundaries, and desktop architecture are still being validated. `pnpm package:win` produces a local installer, but the current build should not be treated as a stable release. Real `pnpm smoke` still requires a local Codex installation, authentication, and upstream network access.
+This is a runnable Beta release for use alongside the official Codex client, primarily for conversation-history browsing and workspace organization. Protocol behavior, Codex CLI compatibility, and workspace permission boundaries remain under active validation; it is not a stable release and does not replace the official client. Real `pnpm smoke` still requires a local Codex installation, authentication, and upstream network access.
 
 ## License
 
