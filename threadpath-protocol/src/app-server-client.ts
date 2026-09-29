@@ -4,7 +4,7 @@ import { type AppServerCapabilities, type JsonObject, type JsonValue, type Diagn
 
 type RequestId = number;
 type JsonRpcId = number | string;
-const FALLBACK_SUPPORTED_CAPABILITIES = ["thread/list", "thread/read", "thread/turns/list", "thread/start", "thread/resume", "turn/start", "turn/completed", "turn/failed", "turn/interrupted"] as const;
+const FALLBACK_SUPPORTED_CAPABILITIES = ["thread/list", "thread/read", "thread/turns/list", "thread/start", "thread/resume", "turn/start", "turn/interrupt", "turn/completed", "turn/failed", "turn/interrupted"] as const;
 const REQUIRED_METHODS = ["thread/list", "thread/start", "turn/start"] as const;
 type NotificationListener = (event: { method: string; params: JsonObject }) => void;
 interface PendingRequest { method: string; resolve: (value: JsonValue) => void; reject: (error: Error) => void; timeout: NodeJS.Timeout; startedAt: number; }
@@ -191,6 +191,11 @@ export class AppServerClient {
     return { id: turnId };
   }
 
+  async interruptTurn(threadId: string, turnId: string): Promise<void> {
+    this.requireCapability("turn/interrupt");
+    await this.request("turn/interrupt", { threadId, turnId });
+  }
+
   notify(method: string, params: JsonObject = {}): void { this.write({ jsonrpc: "2.0", method, params }); }
 
   waitForTurnTerminal(turnId: string, timeoutMs = this.requestTimeoutMs): Promise<TerminalTurnEvent> {
@@ -260,17 +265,9 @@ export class AppServerClient {
     this.onDiagnostic({ event: "notification", method, status: "received" });
     const event = terminalTurnEvent(method, params);
     if (event !== undefined) {
-      if (this.capabilitiesState.known && !this.supports(event.method)) {
-        const error = new CompatibilityError(`app-server does not support terminal event ${event.method}`);
-        const pending = this.pendingTurns.get(event.turnId);
-        if (pending === undefined) this.warn(new ProtocolError(error.message));
-        else {
-          this.pendingTurns.delete(event.turnId);
-          clearTimeout(pending.timeout);
-          pending.reject(error);
-        }
-        return;
-      }
+      // A capability list is a compatibility hint, not permission to discard
+      // an event the server has actually emitted. Older servers can expose an
+      // incomplete event list while still sending valid terminal notifications.
       const pending = this.pendingTurns.get(event.turnId);
       if (pending === undefined) this.terminalTurns.set(event.turnId, event);
       else {

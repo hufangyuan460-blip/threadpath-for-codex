@@ -186,7 +186,7 @@ export function getThreads(value: JsonValue): ThreadSummary[] {
     const title = readString(item, "title");
     const preview = readString(item, "preview");
     const name = readString(item, "name");
-    const status = readString(item, "status");
+    const status = readStatus(item);
     const archived = typeof item.archived === "boolean" ? item.archived : undefined;
     const cwd = readString(item, "cwd");
     return id === undefined ? [] : [{ id, ...(title === undefined ? {} : { title }), ...(preview === undefined ? {} : { preview }), ...(name === undefined ? {} : { name }), ...(status === undefined ? {} : { status }), ...(turnCount === undefined ? {} : { turnCount }), ...(createdAt === undefined ? {} : { createdAt }), ...(updatedAt === undefined ? {} : { updatedAt }), ...(archived === undefined ? {} : { archived }), ...(cwd === undefined ? {} : { cwd }) }];
@@ -206,7 +206,7 @@ export function getThread(value: JsonValue): Thread | undefined {
     ...(readString(source, "title") === undefined ? {} : { title: readString(source, "title") }),
     ...(readString(source, "preview") === undefined ? {} : { preview: readString(source, "preview") }),
     ...(readString(source, "name") === undefined ? {} : { name: readString(source, "name") }),
-    ...(readString(source, "status") === undefined ? {} : { status: readString(source, "status") }),
+    ...(readStatus(source) === undefined ? {} : { status: readStatus(source) }),
     ...(typeof source.canAcceptDirectInput === "boolean" ? { canAcceptDirectInput: source.canAcceptDirectInput } : {}),
     ...(readString(source, "cwd") === undefined ? {} : { cwd: readString(source, "cwd") }),
     ...(updatedAt === undefined ? {} : { updatedAt }),
@@ -220,7 +220,7 @@ export function getThread(value: JsonValue): Thread | undefined {
 function parseTurn(value: JsonObject): Turn | undefined {
   const id = readString(value, "id");
   if (id === undefined) return undefined;
-  const status = readString(value, "status");
+  const status = readStatus(value);
   const createdAt = readString(value, "createdAt") ?? readString(value, "timestamp");
   const items = Array.isArray(value.items) ? value.items.flatMap((item) => isJsonObject(item) ? [parseTurnItem(item)] : []) : undefined;
   return {
@@ -297,10 +297,22 @@ export function errorFromServer(value: JsonValue): AppServerError {
 }
 
 export function terminalTurnEvent(method: string, params: JsonObject): TerminalTurnEvent | undefined {
-  const outcome = method === "turn/completed" ? "completed" : method === "turn/failed" ? "failed" : method === "turn/interrupted" ? "interrupted" : undefined;
+  const turn = isJsonObject(params.turn) ? params.turn : undefined;
+  const turnStatus = turn === undefined ? undefined : readStatus(turn)?.trim().toLowerCase();
+  const outcome = method === "turn/failed" || method === "turn/completed" && turnStatus === "failed"
+    ? "failed"
+    : method === "turn/interrupted" || method === "turn/completed" && turnStatus === "interrupted"
+      ? "interrupted"
+      : method === "turn/completed" ? "completed" : undefined;
   if (outcome === undefined || !isJsonObject(params.turn)) return undefined;
   const turnId = readString(params.turn, "id");
   if (turnId === undefined) return undefined;
   const rawError = isJsonObject(params.error) ? params.error : isJsonObject(params.turn.error) ? params.turn.error : undefined;
   return { method, params, turnId, outcome, ...(rawError === undefined ? {} : { error: errorFromServer(rawError) }) };
+}
+
+function readStatus(value: JsonObject): string | undefined {
+  const status = value.status;
+  if (typeof status === "string") return status;
+  return isJsonObject(status) ? readString(status, "type") ?? readString(status, "status") : undefined;
 }

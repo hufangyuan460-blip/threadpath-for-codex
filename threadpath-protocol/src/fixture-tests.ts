@@ -66,6 +66,7 @@ async function main(): Promise<void> {
   const activeWriter = await readJsonLines("thread-active-writer.jsonl");
   assert.equal(getThread(asObject(activeWriter[1]).result)?.status, "active");
   assert.equal(errorFromServer(asObject(activeWriter[2]).error).code, "active_writer");
+  assert.equal(getThread({ thread: { id: "object-status-thread", status: { type: "active" }, turns: [{ id: "in-progress-turn", status: "inProgress" }] } })?.status, "active");
   const turnsList = await readJsonLines("turns-list.jsonl");
   assert.equal(turnsList.length, 2);
   assert.deepEqual(getTurnPage(asObject(turnsList[1]).result), { turns: [{ id: "turn-1", status: "completed" }] });
@@ -92,6 +93,7 @@ async function main(): Promise<void> {
     const message = asObject(messages[0]);
     assert.equal(terminalTurnEvent(String(message.method), asObject(message.params))?.outcome, outcome);
   }
+  assert.equal(terminalTurnEvent("turn/completed", { turn: { id: "interrupted-via-completed", status: "interrupted" } })?.outcome, "interrupted");
 
   const serverError = await readJsonLines("server-error.jsonl");
   assert.equal(serverError.length, 2);

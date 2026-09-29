@@ -195,6 +195,7 @@ export interface DesktopApi {
   readonly loadMoreTurns: (threadId: string) => Promise<ThreadDetails>;
   readonly searchTurns: (threadId: string, query: string) => Promise<SearchResult[]>;
   readonly startTurn: (threadId: string, text: string) => Promise<StartTurnResult>;
+  readonly interruptTurn: (threadId: string) => Promise<void>;
   readonly startNewConversation: (workspacePath: string, text: string) => Promise<StartNewConversationResult>;
   readonly onConversationUpdate: (listener: (update: ConversationUpdate) => void) => () => void;
 }

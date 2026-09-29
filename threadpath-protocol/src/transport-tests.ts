@@ -128,6 +128,16 @@ async function verifyCapabilities(): Promise<void> {
   } finally {
     await legacyClient.close();
   }
+
+  const incompleteEventsClient = createFakeClient("completed", false, undefined, "terminal-events-omitted");
+  try {
+    await incompleteEventsClient.initialize();
+    const thread = await incompleteEventsClient.startThread({ cwd, ephemeral: true });
+    const turn = await incompleteEventsClient.startTurn(thread.id, []);
+    assert.equal((await incompleteEventsClient.waitForTurnTerminal(turn.id)).outcome, "completed");
+  } finally {
+    await incompleteEventsClient.close();
+  }
 }
 async function verifyDiagnostics(): Promise<void> {
   const diagnostics: DiagnosticRecord[] = [];

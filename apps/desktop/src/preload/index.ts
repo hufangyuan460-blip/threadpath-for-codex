@@ -31,6 +31,7 @@ const desktopApi: DesktopApi = {
   loadMoreTurns: (threadId) => ipcRenderer.invoke("conversation:load-more", threadId),
   searchTurns: (threadId, query) => ipcRenderer.invoke("search:turns", threadId, query),
   startTurn: (threadId, text) => ipcRenderer.invoke("conversation:start-turn", threadId, text),
+  interruptTurn: (threadId) => ipcRenderer.invoke("conversation:interrupt", threadId),
   startNewConversation: (workspacePath, text) => ipcRenderer.invoke("conversation:start-new", workspacePath, text),
   onConversationUpdate: (listener) => {
     const handler = (_event: unknown, update: Parameters<typeof listener>[0]): void => listener(update);

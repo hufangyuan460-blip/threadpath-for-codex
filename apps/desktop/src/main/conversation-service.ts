@@ -1,4 +1,4 @@
-import { ActiveTurnError, AppServerError, ConfigurationError, ProtocolError, ThreadUnavailableError, type JsonObject, type JsonValue, type Thread, type Turn, type TurnInput, type TurnItem, type TurnPage, isJsonObject, readString } from "../../../../threadpath-protocol/src/protocol.ts";
+import { ActiveTurnError, AppServerError, ConfigurationError, ProtocolError, ThreadUnavailableError, type JsonObject, type JsonValue, type TerminalTurnEvent, type Thread, type Turn, type TurnInput, type TurnItem, type TurnPage, isJsonObject, readString } from "../../../../threadpath-protocol/src/protocol.ts";
 import type { ConversationItemView, ConversationPagingState, ConversationThreadView, ConversationTurnView, ConversationUpdate, SearchResult, StartTurnResult } from "../shared/api";
 import { type ThreadClient, type ThreadClientProvider, validateThreadId } from "./thread-service.ts";
 import { buildTurnOutline } from "../shared/outline.ts";
@@ -22,6 +22,8 @@ export interface ConversationClient extends ThreadClient {
   listTurns(threadId: string, options?: { limit?: number; cursor?: string }): Promise<TurnPage>;
   resumeThread(threadId: string): Promise<Thread>;
   startTurn(threadId: string, input: readonly TurnInput[]): Promise<Turn>;
+  interruptTurn(threadId: string, turnId: string): Promise<void>;
+  waitForTurnTerminal?(turnId: string): Promise<TerminalTurnEvent>;
   onNotification(listener: (event: { method: string; params: JsonObject }) => void): () => void;
 }
 
@@ -30,6 +32,11 @@ export interface ConversationClientProvider {
 }
 
 export type ConversationUpdateListener = (update: ConversationUpdate) => void;
+
+export interface ConversationReconciliation {
+  readonly thread: ConversationThreadView;
+  readonly activity: "active" | "idle";
+}
 
 export class ConversationService {
   private readonly clientProvider: ConversationClientProvider;
@@ -40,7 +47,14 @@ export class ConversationService {
   private readonly olderCachedTurnIds = new Map<string, Set<string>>();
   private readonly remoteActiveThreads = new Set<string>();
   private readonly remoteActiveTurnIds = new Map<string, string>();
+  /**
+   * Current app-server versions do not guarantee that turn/item notifications
+   * include a threadId. Keep only the turn ownership learned from thread data
+   * and turns started through this client so those notifications stay scoped.
+   */
+  private readonly threadIdByTurnId = new Map<string, string>();
   private readonly recentUpdates = new Map<string, ConversationUpdate[]>();
+  private readonly settledTurnIds = new Set<string>();
   private activeTurn: { threadId: string; turnId: string } | undefined;
   private startingTurn = false;
 
@@ -74,6 +88,7 @@ export class ConversationService {
       ? undefined
       : cachedLocalTurn ?? { id: localTurnId, index: freshTurns.length + 1, status: "running", items: [] };
     const freshWithLocalTurn = localTurn === undefined ? freshTurns : [...freshTurns, localTurn];
+    for (const turn of freshWithLocalTurn) this.rememberTurn(validThreadId, turn.id);
     const freshIds = new Set(freshWithLocalTurn.map((turn) => turn.id));
     const cachedOlderIds = this.olderCachedTurnIds.get(validThreadId) ?? new Set<string>();
     const readSnapshotIds = new Set(readTurns.map((turn) => turn.id));
@@ -82,8 +97,7 @@ export class ConversationService {
     const mergedInitialTurns = mergeConversationTurns(cachedOlderTurns, freshWithLocalTurn, "append");
     const firstItemIndex = cachedOlderTurns.length > 0 && previouslyLoaded !== undefined ? previouslyLoaded.paging.firstItemIndex : view.paging.firstItemIndex;
     const initialView = { ...view, turns: mergedInitialTurns, outline: buildTurnOutline(mergedInitialTurns), paging: { ...view.paging, firstItemIndex, orderedTurnIds: mergedInitialTurns.map((turn) => turn.id) } };
-    if (this.remoteActiveThreads.has(validThreadId) && !initialView.remoteActive && !page.turns.some(isActiveTurn)) this.clearRemoteActive(validThreadId);
-    let nextView = this.applyObservedActivity(validThreadId, initialView, [...(thread.turns ?? []), ...page.turns]);
+    let nextView = this.applyObservedActivity(validThreadId, initialView, [...(thread.turns ?? []), ...page.turns], thread.status);
     if (localTurn !== undefined && cachedLocalTurn === undefined) {
       for (const update of bufferedUpdates.filter((update) => update.turnId === localTurn.id)) nextView = applyConversationUpdate(nextView, update);
     }
@@ -106,6 +120,7 @@ export class ConversationService {
     try {
       const page = await client.listTurns(validThreadId, { limit: 20, cursor: current.paging.nextCursor });
       const incomingTurns = normalizeTurnCollection(page.turns, client.turnPageOrder ?? DEFAULT_TURN_PAGE_ORDER).map((turn, index) => toConversationTurnView(turn, index));
+      for (const turn of incomingTurns) this.rememberTurn(validThreadId, turn.id);
       const turns = mergeConversationTurns(current.turns, incomingTurns, "prepend");
       const existingIds = new Set(current.turns.map((turn) => turn.id));
       const addedTurnCount = incomingTurns.filter((turn) => !existingIds.has(turn.id)).length;
@@ -136,12 +151,34 @@ export class ConversationService {
     return thread === undefined ? [] : searchLoadedTurns(thread, query);
   }
 
+  async reconcileThread(threadId: unknown): Promise<ConversationReconciliation> {
+    const validThreadId = validateThreadId(threadId);
+    // Reconciliation is deliberately read-only. Calling thread/resume here and
+    // again immediately before turn/start made one send perform two resumes;
+    // some app-server versions can report the second call as an active writer.
+    const thread = await this.readThread(validThreadId);
+    const localTurnId = this.activeTurn?.threadId === validThreadId ? this.activeTurn.turnId : undefined;
+    const activeTurn = thread.turns.find((turn) => turn.id !== localTurnId && isActiveStatus(turn.status));
+    const serverActive = activeTurn !== undefined || isActiveThreadStatus(thread.status);
+    if (serverActive) {
+      this.markRemoteActive(validThreadId, activeTurn?.id);
+      return { thread: this.withKnownActivity(validThreadId, thread), activity: "active" };
+    }
+    // A successful idle snapshot is authoritative. It also recovers a local
+    // running flag when a terminal notification was missed.
+    if (this.activeTurn?.threadId === validThreadId) this.activeTurn = undefined;
+    this.clearRemoteActive(validThreadId);
+    const idleThread = withoutRemoteActivity(thread);
+    this.loadedThreads.set(validThreadId, idleThread);
+    return { thread: idleThread, activity: "idle" };
+  }
+
   async startTurn(threadId: unknown, text: unknown): Promise<StartTurnResult> {
     const validThreadId = validateThreadId(threadId);
     if (typeof text !== "string" || text.trim() === "" || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)) {
       throw new ConfigurationError("turn text must be non-empty plain text");
     }
-    if (this.remoteActiveThreads.has(validThreadId)) throw new ActiveTurnError();
+    if (this.remoteActiveThreads.has(validThreadId)) throw new ActiveTurnError("This conversation has a confirmed active turn. Refresh its status before sending another message.");
     if (this.startingTurn || this.activeTurn !== undefined) throw new ProtocolError("only one turn may run at a time");
     this.startingTurn = true;
     try {
@@ -157,13 +194,12 @@ export class ConversationService {
         const activeTurn = (resumedThread.turns ?? []).find(isActiveTurn);
         if (activeTurn !== undefined) {
           this.markRemoteActive(validThreadId, activeTurn?.id);
-          throw new ActiveTurnError();
+          throw new ActiveTurnError("This conversation has a confirmed active turn. Refresh its status before sending another message.");
         }
       } catch (error: unknown) {
         if (error instanceof ActiveTurnError) throw error;
         if (isActiveWriterError(error)) {
-          this.markRemoteActive(validThreadId);
-          throw new ActiveTurnError();
+          throw new ActiveTurnError("Codex reported an active writer, but no active turn was confirmed. Refresh status and try again.");
         }
         if (isThreadUnavailable(error)) throw new ThreadUnavailableError(undefined, error.code);
         throw error;
@@ -173,16 +209,26 @@ export class ConversationService {
         turn = await client.startTurn(validThreadId, [{ type: "text", text: text.trim() }]);
       } catch (error: unknown) {
         if (isActiveWriterError(error)) {
-          this.markRemoteActive(validThreadId);
-          throw new ActiveTurnError();
+          throw new ActiveTurnError("Codex reported an active writer, but no active turn was confirmed. Refresh status and try again.");
         }
         throw error;
       }
       this.activeTurn = { threadId: validThreadId, turnId: turn.id };
+      this.rememberTurn(validThreadId, turn.id);
+      this.watchTurnTerminal(client, validThreadId, turn.id);
       return { threadId: validThreadId, turnId: turn.id };
     } finally {
       this.startingTurn = false;
     }
+  }
+
+  async interruptTurn(threadId: unknown): Promise<void> {
+    const validThreadId = validateThreadId(threadId);
+    const active = this.activeTurn;
+    if (active === undefined || active.threadId !== validThreadId) throw new ActiveTurnError("Only a turn started by ThreadPath can be stopped here.");
+    const client = this.clientProvider.getReadyClient();
+    this.bindNotifications(client);
+    await client.interruptTurn(validThreadId, active.turnId);
   }
 
   async startNewConversation(cwd: unknown, text: unknown): Promise<StartTurnResult> {
@@ -206,6 +252,8 @@ export class ConversationService {
         throw error;
       }
       this.activeTurn = { threadId: thread.id, turnId: turn.id };
+      this.rememberTurn(thread.id, turn.id);
+      this.watchTurnTerminal(client, thread.id, turn.id);
       const current = this.loadedThreads.get(thread.id) ?? toConversationThreadView(thread);
       const createdTurn: ConversationTurnView = { id: turn.id, index: current.turns.length + 1, status: "running", items: [{ kind: "text", id: `${turn.id}:user`, role: "user", text: validText, phase: "historical" }] };
       const turns = mergeConversationTurns(current.turns, [createdTurn], "append");
@@ -232,6 +280,8 @@ export class ConversationService {
     this.activeTurn = undefined;
     this.remoteActiveThreads.clear();
     this.remoteActiveTurnIds.clear();
+    this.threadIdByTurnId.clear();
+    this.settledTurnIds.clear();
     this.recentUpdates.clear();
     this.olderCachedTurnIds.clear();
     this.loadedThreads.clear();
@@ -242,25 +292,48 @@ export class ConversationService {
     this.unsubscribeNotifications?.();
     this.boundClient = client;
     this.unsubscribeNotifications = client.onNotification(({ method, params }) => {
-      const update = toConversationUpdate(method, params);
+      const update = toConversationUpdate(method, params, this.threadIdForNotification(params));
       if (update === undefined) return;
-      const updates = this.recentUpdates.get(update.threadId) ?? [];
-      updates.push(update);
-      this.recentUpdates.set(update.threadId, updates.slice(-32));
-      if (update.type === "turn/started") this.markRemoteActive(update.threadId, update.turnId);
-      if (update.type === "turn/completed" || update.type === "turn/failed" || update.type === "turn/interrupted") {
-        if (this.activeTurn?.threadId === update.threadId && this.activeTurn.turnId === update.turnId) this.activeTurn = undefined;
-        this.clearRemoteActive(update.threadId, update.turnId);
-      }
-      const loadedThread = this.loadedThreads.get(update.threadId);
-      if (loadedThread !== undefined) this.loadedThreads.set(update.threadId, applyConversationUpdate(loadedThread, update));
-      for (const listener of this.updateListeners) listener(update);
+      this.receiveUpdate(update);
     });
   }
 
-  private applyObservedActivity(threadId: string, view: ConversationThreadView, observedTurns: readonly Turn[]): ConversationThreadView {
+  private watchTurnTerminal(client: ConversationClient, threadId: string, turnId: string): void {
+    if (client.waitForTurnTerminal === undefined) return;
+    void client.waitForTurnTerminal(turnId).then((terminal) => {
+      const type = terminal.outcome === "failed" ? "turn/failed" : terminal.outcome === "interrupted" ? "turn/interrupted" : "turn/completed";
+      this.receiveUpdate({ type, threadId, turnId, ...(terminal.error === undefined ? {} : { message: terminal.error.message }) });
+    }).catch(() => undefined);
+  }
+
+  private receiveUpdate(update: ConversationUpdate): void {
+    const terminal = update.type === "turn/completed" || update.type === "turn/failed" || update.type === "turn/interrupted";
+    if (terminal && this.settledTurnIds.has(update.turnId)) return;
+    if (terminal) {
+      this.settledTurnIds.add(update.turnId);
+      while (this.settledTurnIds.size > 512) {
+        const oldestTurnId = this.settledTurnIds.values().next().value;
+        if (oldestTurnId === undefined) break;
+        this.settledTurnIds.delete(oldestTurnId);
+      }
+    }
+    const updates = this.recentUpdates.get(update.threadId) ?? [];
+    updates.push(update);
+    this.recentUpdates.set(update.threadId, updates.slice(-32));
+    if (update.type === "turn/started") this.markRemoteActive(update.threadId, update.turnId);
+    if (terminal) {
+      if (this.activeTurn?.threadId === update.threadId && this.activeTurn.turnId === update.turnId) this.activeTurn = undefined;
+      this.clearRemoteActive(update.threadId, update.turnId);
+      this.threadIdByTurnId.delete(update.turnId);
+    }
+    const loadedThread = this.loadedThreads.get(update.threadId);
+    if (loadedThread !== undefined) this.loadedThreads.set(update.threadId, applyConversationUpdate(loadedThread, update));
+    for (const listener of this.updateListeners) listener(update);
+  }
+
+  private applyObservedActivity(threadId: string, view: ConversationThreadView, observedTurns: readonly Turn[], threadStatus?: string): ConversationThreadView {
     const activeTurn = observedTurns.find(isActiveTurn);
-    if (activeTurn !== undefined) this.markRemoteActive(threadId, activeTurn.id);
+    if (activeTurn !== undefined || isActiveThreadStatus(threadStatus)) this.markRemoteActive(threadId, activeTurn?.id);
     return this.withKnownActivity(threadId, view);
   }
 
@@ -285,6 +358,25 @@ export class ConversationService {
     const loaded = this.loadedThreads.get(threadId);
     if (loaded !== undefined) this.loadedThreads.set(threadId, withoutRemoteActivity(loaded));
   }
+
+  private rememberTurn(threadId: string, turnId: string): void {
+    this.threadIdByTurnId.set(turnId, threadId);
+    // The mapping is only a notification bridge, not persistent history. A
+    // bounded cache prevents a long loaded history from retaining every turn.
+    while (this.threadIdByTurnId.size > 512) {
+      const oldestTurnId = this.threadIdByTurnId.keys().next().value;
+      if (oldestTurnId === undefined) return;
+      this.threadIdByTurnId.delete(oldestTurnId);
+    }
+  }
+
+  private threadIdForNotification(params: JsonObject): string | undefined {
+    const turn = isJsonObject(params.turn) ? params.turn : undefined;
+    const explicitThreadId = readString(params, "threadId") ?? (turn === undefined ? undefined : readString(turn, "threadId"));
+    if (explicitThreadId !== undefined) return explicitThreadId;
+    const turnId = readString(params, "turnId") ?? (turn === undefined ? undefined : readString(turn, "id"));
+    return turnId === undefined ? undefined : this.threadIdByTurnId.get(turnId);
+  }
 }
 
 function isThreadUnavailable(error: unknown): error is AppServerError {
@@ -302,7 +394,11 @@ function validateTurnText(text: unknown): string {
 }
 
 function isActiveStatus(status: string | undefined): boolean {
-  return status !== undefined && /^(running|in_progress|started|pending|queued)$/i.test(status.trim());
+  return status !== undefined && /^(running|in_progress|inprogress|started|pending|queued)$/i.test(status.trim());
+}
+
+function isActiveThreadStatus(status: string | undefined): boolean {
+  return status !== undefined && (status.trim().toLowerCase() === "active" || isActiveStatus(status));
 }
 
 function isActiveTurn(turn: Turn): boolean { return isActiveStatus(turn.status); }
@@ -429,17 +525,19 @@ function textPhaseRank(phase: Extract<ConversationItemView, { kind: "text" }>["p
   return 0;
 }
 
-export function toConversationUpdate(method: string, params: JsonObject): ConversationUpdate | undefined {
+export function toConversationUpdate(method: string, params: JsonObject, knownThreadId?: string): ConversationUpdate | undefined {
   const turn = isJsonObject(params.turn) ? params.turn : undefined;
   const item = isJsonObject(params.item) ? params.item : undefined;
-  const threadId = readString(params, "threadId") ?? (turn === undefined ? undefined : readString(turn, "threadId"));
+  const threadId = readString(params, "threadId") ?? (turn === undefined ? undefined : readString(turn, "threadId")) ?? knownThreadId;
   const turnId = readString(params, "turnId") ?? (turn === undefined ? undefined : readString(turn, "id"));
   if (threadId === undefined || turnId === undefined) return undefined;
 
   if (method === "turn/started") return { type: method, threadId, turnId };
   if (method === "turn/completed" || method === "turn/failed" || method === "turn/interrupted") {
     const message = errorMessage(params.error) ?? (turn === undefined ? undefined : errorMessage(turn.error));
-    return { type: method, threadId, turnId, ...(message === undefined ? {} : { message }) };
+    const status = turn === undefined ? undefined : terminalStatus(readString(turn, "status"));
+    const type = method === "turn/completed" && status === "failed" ? "turn/failed" : method === "turn/completed" && status === "interrupted" ? "turn/interrupted" : method;
+    return { type, threadId, turnId, ...(message === undefined ? {} : { message }) };
   }
 
   const itemId = readString(params, "itemId") ?? (item === undefined ? undefined : readString(item, "id")) ?? `${turnId}:item`;
@@ -510,6 +608,11 @@ function toolStatus(value: string | undefined): "running" | "completed" | "faile
   if (normalized === "completed" || normalized === "complete" || normalized === "succeeded") return "completed";
   if (normalized === "failed" || normalized === "error") return "failed";
   return "unknown";
+}
+
+function terminalStatus(value: string | undefined): "failed" | "interrupted" | undefined {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === "failed" ? "failed" : normalized === "interrupted" ? "interrupted" : undefined;
 }
 
 function errorMessage(value: JsonValue | undefined): string | undefined {

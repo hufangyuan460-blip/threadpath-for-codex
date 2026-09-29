@@ -163,6 +163,15 @@ async function getWriteState(thread: { id: string; remoteActive?: boolean; canAc
   return workspaceLockService.state(thread.id, key);
 }
 
+async function reconcileThread(threadId: string) {
+  const reconciled = await conversationService.reconcileThread(threadId);
+  const workspacePath = preferencesService.getThreadWorkingDirectory(threadId) ?? reconciled.thread.workspacePath;
+  const workspaceKey = workspacePath === undefined ? undefined : (await workspaceService.identityResolver.resolve(workspacePath))?.key;
+  if (reconciled.activity === "idle") workspaceLockService.release(threadId);
+  else workspaceLockService.markExternal(threadId, workspaceKey);
+  return localizeThreadView(reconciled.thread);
+}
+
 async function getSyncedThreads() {
   let result;
   try { result = await historySyncService.sync(); }
@@ -256,16 +265,16 @@ function registerApi(): void {
     return { threadId: validThreadId, title: preferencesService.getThreadDisplayName(validThreadId, serverThread?.title, firstReadableUserText(loaded?.turns)) };
   });
   ipcMain.handle("threads:read", async (_event, threadId: unknown) => withReadyConnection(async () => localizeThreadView(await conversationService.readThread(threadId))));
-  ipcMain.handle("threads:refresh", async (_event, threadId: unknown) => withReadyConnection(async () => localizeThreadView(await conversationService.readThread(threadId))));
+  ipcMain.handle("threads:refresh", async (_event, threadId: unknown) => withReadyConnection(async () => reconcileThread(validateThreadId(threadId))));
   ipcMain.handle("conversation:load-more", async (_event, threadId: unknown) => withReadyConnection(async () => localizeThreadView(await conversationService.loadMoreTurns(threadId))));
   ipcMain.handle("search:turns", async (_event, threadId: unknown, query: unknown) => withReadyConnection(() => conversationService.searchTurns(threadId, query)));
   ipcMain.handle("conversation:start-turn", async (_event, threadId: unknown, text: unknown) => withReadyConnection(async () => {
     if (appRunMode !== "workspace") throw new ProcessError("Confirm a working directory before sending.");
     const validThreadId = validateThreadId(threadId);
-    const refreshed = await conversationService.readThread(validThreadId);
+    const refreshed = await reconcileThread(validThreadId);
     if (refreshed.remoteActive) {
       workspaceLockService.markExternal(validThreadId);
-      throw new AppServerError("This conversation is already responding. Refresh its status before sending another message.", "server", "active_writer");
+      throw new AppServerError("This conversation has a confirmed active turn. Refresh its status before sending another message.", "server", "active_writer");
     }
     const workspacePath = preferencesService.getThreadWorkingDirectory(validThreadId) ?? refreshed.workspacePath;
     const workspaceKey = workspacePath === undefined ? undefined : (await workspaceService.identityResolver.resolve(workspacePath))?.key;
@@ -281,6 +290,9 @@ function registerApi(): void {
     const validText = typeof text === "string" ? text : undefined;
     const loaded = conversationService.getLoadedThread(result.threadId);
     return { ...result, displayName: preferencesService.getThreadDisplayName(result.threadId, loaded?.title, firstReadableUserText(loaded?.turns) ?? validText) };
+  }));
+  ipcMain.handle("conversation:interrupt", async (_event, threadId: unknown) => withReadyConnection(async () => {
+    await conversationService.interruptTurn(threadId);
   }));
   ipcMain.handle("conversation:start-new", async (_event, workspacePath: unknown, text: unknown) => withReadyConnection(async () => {
     if (appRunMode !== "workspace") throw new ProcessError("Confirm a working directory before sending.");
@@ -301,12 +313,16 @@ function registerApi(): void {
   conversationService.onConversationUpdate((update) => {
     const loaded = conversationService.getLoadedThread(update.threadId);
     const activityPath = preferencesService.getThreadWorkingDirectory(update.threadId) ?? loaded?.workspacePath;
-    void (async () => {
-      const activityKey = activityPath === undefined ? undefined : (await workspaceService.identityResolver.resolve(activityPath))?.key;
-      if (update.type === "turn/started") workspaceLockService.markExternal(update.threadId, activityKey);
-      if (update.type === "turn/completed" || update.type === "turn/failed" || update.type === "turn/interrupted") workspaceLockService.release(update.threadId);
-      for (const window of BrowserWindow.getAllWindows()) window.webContents.send("conversation:update", update);
-    })();
+    const terminal = update.type === "turn/completed" || update.type === "turn/failed" || update.type === "turn/interrupted";
+    // A terminal event must release the lock and reach the renderer even if a
+    // filesystem or Git lookup for the visual workspace later fails.
+    if (terminal) workspaceLockService.release(update.threadId);
+    for (const window of BrowserWindow.getAllWindows()) window.webContents.send("conversation:update", update);
+    if (update.type === "turn/started" && activityPath !== undefined) {
+      void workspaceService.identityResolver.resolve(activityPath)
+        .then((identity) => workspaceLockService.markExternal(update.threadId, identity?.key))
+        .catch(() => undefined);
+    }
   });
 }
 

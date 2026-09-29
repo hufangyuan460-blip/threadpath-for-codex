@@ -215,6 +215,18 @@ async function runTerminalPath(mode: "e2e-failed" | "e2e-interrupted", expected:
   });
 }
 
+async function runImplicitThreadIdTerminalPath(): Promise<void> {
+  await runScenario("implicit-thread-id-terminal", "e2e-implicit-thread", async (page) => {
+    await openThread(page);
+    await scrollListToBottom(page);
+    await page.locator("#turn-input").fill("finish without an event thread id");
+    await page.locator(".turn-composer button[type=submit]").click();
+    const liveTurn = page.locator('[data-turn-id="e2e-live-turn"]');
+    await liveTurn.getByText("completed", { exact: true }).waitFor({ state: "visible" });
+    await page.waitForFunction(() => !document.querySelector<HTMLTextAreaElement>("#turn-input")?.disabled);
+  });
+}
+
 async function runUnavailableExistingThreadPath(): Promise<void> {
   await runScenario("existing-thread-unavailable", "e2e-deleted", async (page) => {
     await openThread(page);
@@ -249,6 +261,42 @@ async function runActiveWriterPath(): Promise<void> {
   });
 }
 
+async function runUnconfirmedActiveWriterErrorPath(): Promise<void> {
+  await runScenario("unconfirmed-active-writer-error", "e2e-active-writer-error", async (page) => {
+    await openThread(page);
+    await page.locator("#turn-input").fill("preserve active writer error input");
+    await page.locator(".turn-composer button[type=submit]").click();
+    await page.locator(".error-summary").filter({ hasText: "reported an active writer" }).waitFor({ state: "visible" });
+    assert.equal(await page.locator("#turn-input").inputValue(), "preserve active writer error input");
+    assert.equal(await page.locator("#turn-input").isDisabled(), false);
+    assert.equal(await page.locator(".composer-send").isDisabled(), false);
+  });
+}
+
+async function runLostTerminalRecoveryPath(): Promise<void> {
+  await runScenario("lost-terminal-recovery", "e2e-timeout", async (page) => {
+    await openThread(page);
+    await page.locator("#turn-input").fill("recover a missed terminal event");
+    await page.locator(".turn-composer button[type=submit]").click();
+    await page.locator(".composer-status").getByText("This conversation is responding.", { exact: true }).waitFor({ state: "visible" });
+    await page.locator(".refresh-status").click();
+    await page.waitForFunction(() => {
+      const input = document.querySelector<HTMLTextAreaElement>("#turn-input");
+      return input?.disabled === false;
+    });
+  });
+}
+
+async function runLocalInterruptPath(): Promise<void> {
+  await runScenario("local-turn-interrupt", "e2e-timeout", async (page) => {
+    await openThread(page);
+    await page.locator("#turn-input").fill("stop this local turn");
+    await page.locator(".turn-composer button[type=submit]").click();
+    await page.getByRole("button", { name: "Stop this turn" }).click();
+    await page.locator('[data-turn-id="e2e-live-turn"]').getByText("interrupted", { exact: true }).waitFor({ state: "visible" });
+  });
+}
+
 async function runStartupFailurePath(): Promise<void> {
   await runScenario("startup-failure", "e2e-completed", async (page) => {
     await waitForText(page, '[aria-label="Connection status"]', "error");
@@ -265,9 +313,13 @@ async function main(): Promise<void> {
   await runCompletedPath();
   await runTerminalPath("e2e-failed", "failed");
   await runTerminalPath("e2e-interrupted", "interrupted");
+  await runImplicitThreadIdTerminalPath();
   await runUnavailableExistingThreadPath();
   await runReadOnlyExistingThreadPath();
   await runActiveWriterPath();
+  await runUnconfirmedActiveWriterErrorPath();
+  await runLostTerminalRecoveryPath();
+  await runLocalInterruptPath();
   await runStartupFailurePath();
   console.log("[e2e] desktop critical paths passed");
 }

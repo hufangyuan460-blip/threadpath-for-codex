@@ -39,6 +39,7 @@ function providerFor(pages: TurnPage[], failOnce = false, turnPageOrder: TurnCol
       return pages[Math.min(pageIndex++, pages.length - 1)] ?? { turns: [] };
     },
     startTurn: async () => ({ id: "turn-live" }),
+    interruptTurn: async () => undefined,
     onNotification: () => () => undefined,
   };
   return { getReadyClient: () => client };
@@ -107,6 +108,7 @@ async function main(): Promise<void> {
     resumeThread: async () => ({ id: "thread-overlap" }),
     listTurns: async () => ({ turns: [{ id: "turn-new", items: [{ id: "new-item", role: "assistant", text: "Newest page" }] }, { id: "turn-middle", items: [{ id: "middle-item", role: "user", text: "From thread/turns/list with newer context" }] }] }),
     startTurn: async () => ({ id: "turn-live" }),
+    interruptTurn: async () => undefined,
     onNotification: () => () => undefined,
   };
   const overlap = await new ConversationService({ getReadyClient: () => overlapClient }).readThread("thread-overlap");
@@ -126,6 +128,7 @@ async function main(): Promise<void> {
       return { turns: [{ id: "turn-new", items: [{ id: "new-item", role: "assistant", text: "Newest refreshed" }] }, { id: "turn-middle", items: [{ id: "middle-item", role: "user", text: "Middle refreshed" }] }], nextCursor: "cursor-refresh-older" };
     },
     startTurn: async () => ({ id: "turn-live" }),
+    interruptTurn: async () => undefined,
     onNotification: () => () => undefined,
   };
   const refreshConversation = new ConversationService({ getReadyClient: () => refreshClient });

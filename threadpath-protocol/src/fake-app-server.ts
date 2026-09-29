@@ -5,13 +5,14 @@ const mode = process.env.FAKE_APP_SERVER_MODE ?? "completed";
 const hasExistingThread = process.env.FAKE_APP_SERVER_HAS_THREAD === "true";
 const capabilityMode = process.env.FAKE_APP_SERVER_CAPABILITIES ?? "absent";
 const e2eMode = mode.startsWith("e2e-");
-const e2eOutcome = (mode === "e2e-new" ? "completed" : mode.slice("e2e-".length)) as "completed" | "failed" | "interrupted";
+const e2eImplicitThreadId = mode === "e2e-implicit-thread";
+const e2eOutcome = (mode === "e2e-new" || e2eImplicitThreadId ? "completed" : mode.slice("e2e-".length)) as "completed" | "failed" | "interrupted";
 let probeRequestId: number | undefined;
 let serverRequestId: number | string | undefined;
 function send(message: JsonObject): void { process.stdout.write(`${JSON.stringify(message)}\n`); }
 function initializeResult(): JsonObject {
   const result: JsonObject = { serverInfo: { name: "fake-app-server", version: "fixture-1.0" } };
-  if (capabilityMode === "complete" || capabilityMode === "optional-missing" || capabilityMode === "required-missing") {
+  if (capabilityMode === "complete" || capabilityMode === "optional-missing" || capabilityMode === "required-missing" || capabilityMode === "terminal-events-omitted") {
     const methods = capabilityMode === "required-missing"
       ? ["thread/list", "thread/start"]
       : capabilityMode === "optional-missing"
@@ -19,7 +20,7 @@ function initializeResult(): JsonObject {
         : ["thread/list", "thread/read", "thread/turns/list", "thread/start", "thread/resume", "turn/start"];
     result.capabilities = {
       methods,
-      events: ["turn/completed", "turn/failed", "turn/interrupted"],
+      events: capabilityMode === "terminal-events-omitted" ? [] : ["turn/completed", "turn/failed", "turn/interrupted"],
       futureCapabilityField: true,
     };
     result.compatibility = { status: "compatible", futureField: "ignored" };
@@ -78,24 +79,32 @@ lines.on("line", (line: string) => {
     case "thread/turns/list": send({ jsonrpc: "2.0", id, result: { data: e2eMode ? e2eTurns() : [] } }); break;
     case "thread/start": send({ jsonrpc: "2.0", id, result: { thread: { id: e2eMode ? e2eThreadId() : "new-thread", title: e2eMode ? "E2E conversation" : "New thread", cwd: process.cwd() } } }); break;
     case "turn/start":
+      if (mode === "e2e-active-writer-error") {
+        send({ jsonrpc: "2.0", id, error: { code: "active_writer", message: "thread already has an active writer" } });
+        break;
+      }
       send({ jsonrpc: "2.0", id, result: { turn: { id: e2eMode ? "e2e-live-turn" : "turn-1" } } });
       if (mode === "timeout") break;
       setTimeout(() => {
         const turnId = e2eMode ? "e2e-live-turn" : "turn-1";
-        const threadId = e2eMode ? e2eThreadId() : undefined;
+        const threadId = e2eMode && !e2eImplicitThreadId ? e2eThreadId() : undefined;
         if (e2eMode) {
-          send({ jsonrpc: "2.0", method: "turn/started", params: { threadId: e2eThreadId(), turnId, turn: { id: turnId } } });
+          send({ jsonrpc: "2.0", method: "turn/started", params: { ...(e2eImplicitThreadId ? {} : { threadId: e2eThreadId(), turnId }), turn: { id: turnId, status: "inProgress" } } });
           send({ jsonrpc: "2.0", method: "item/started", params: { threadId: e2eThreadId(), turnId, item: { id: "e2e-live-item", type: "agentMessage", role: "assistant" } } });
           send({ jsonrpc: "2.0", method: "item/agentMessage/delta", params: { threadId: e2eThreadId(), turnId, itemId: "e2e-live-item", delta: "**streamed fake reply**" } });
           send({ jsonrpc: "2.0", method: "item/completed", params: { threadId: e2eThreadId(), turnId, item: { id: "e2e-live-item", type: "agentMessage", role: "assistant", status: "completed" } } });
         }
-        const params: JsonObject = { ...(threadId === undefined ? {} : { threadId }), turn: { id: turnId } };
+        const params: JsonObject = { ...(threadId === undefined ? {} : { threadId }), turn: { id: turnId, ...(e2eMode ? { status: e2eOutcome } : {}) } };
         if (e2eMode && e2eOutcome === "failed") params.error = { code: "fake_failure", message: "Fake turn failed" };
         if (e2eMode && e2eOutcome === "interrupted") params.error = { code: "interrupted", message: "Fake turn interrupted" };
         if (!e2eMode && mode === "failed") params.error = { code: "network_timeout", message: "Responses connection timed out" };
         if (!e2eMode && mode === "interrupted") params.error = { code: "interrupted", message: "Turn was interrupted" };
         send({ jsonrpc: "2.0", method: `turn/${e2eMode ? e2eOutcome : mode}`, params });
       }, 10);
+      break;
+    case "turn/interrupt":
+      send({ jsonrpc: "2.0", id, result: {} });
+      setTimeout(() => send({ jsonrpc: "2.0", method: "turn/completed", params: { threadId: e2eMode ? e2eThreadId() : "existing-thread", turn: { id: e2eMode ? "e2e-live-turn" : "turn-1", status: "interrupted" } } }), 10);
       break;
     case "probe/server-request":
       probeRequestId = id;

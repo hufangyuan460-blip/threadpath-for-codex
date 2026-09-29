@@ -29,6 +29,8 @@ ThreadPath for Codex 是一个独立的桌面客户端原型，目标是让 Code
 - 未选中线程时可选择工作目录并创建持久线程；线程工作区绑定、展开状态和本地展示名称保存在 ThreadPath 配置中，不修改 Codex 原始线程数据；
 - 在主进程通过类型化服务加载线程列表，并读取选中线程的安全元数据视图；
 - 既有线程发送前使用已验证的 `thread/resume` 流程；线程不可用、不可写或存在远端 active writer 时阻止发送、保留草稿并显示可操作提示；
+- 刷新会重新确认线程可写状态；若流式终止通知遗漏，只有服务端确认空闲后才释放本地运行标记和写入锁；
+- 仅允许停止由 ThreadPath 发起的本地回合，绝不停止外部客户端正在运行的回合；
 - 以工作区和线程为粒度维护本地/外部写入锁，支持多个并发锁安全共存和分别释放；
 - renderer 仅通过 preload 使用受限的线程列表和读取 API；
 - 按回合顺序显示用户、助手、系统和工具状态的纯文本视图，并为回合保留稳定锚点；
@@ -172,6 +174,8 @@ The project has completed `v0.0.1` protocol validation and the `M0` through `M4-
 - Creates persistent threads from the selected working directory and stores workspace bindings, expansion state, and local display names in ThreadPath preferences without changing Codex thread data;
 - Loads threads and reads selected-thread metadata through typed main-process services;
 - Resumes existing threads through the verified `thread/resume` flow before sending; unavailable, non-writable, or externally active threads are blocked with a friendly prompt while preserving the draft;
+- Reconciles write state through `thread/resume` on refresh; a missed terminal notification releases a local running marker and lock only after the server confirms the thread is idle;
+- Lets users interrupt only turns started by ThreadPath, never a turn known to be running in another client;
 - Tracks local and external write locks per workspace and thread, allowing multiple locks to coexist and release independently;
 - Exposes only restricted thread-list and thread-read APIs through preload;
 - Renders user, assistant, system, and tool-status text in turn order with stable turn anchors;

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { ActiveTurnError, AppServerError, getThread, isJsonObject, ProtocolError, type JsonObject, type Thread } from "../../../../threadpath-protocol/src/protocol.ts";
-import { ConversationService, toConversationThreadView, type ConversationClient, type ConversationClientProvider } from "./conversation-service.ts";
+import { ActiveTurnError, AppServerError, getThread, isJsonObject, ProtocolError, type JsonObject, type TerminalTurnEvent, type Thread } from "../../../../threadpath-protocol/src/protocol.ts";
+import { ConversationService, toConversationThreadView, toConversationUpdate, type ConversationClient, type ConversationClientProvider } from "./conversation-service.ts";
 
 const fixturePath = fileURLToPath(new URL("../../../../threadpath-protocol/fixtures/conversation-thread.jsonl", import.meta.url));
 
@@ -29,6 +29,7 @@ async function main(): Promise<void> {
     startThread: async () => ({ id: "thread-new" }),
     resumeThread: async () => ({ id: fixtureThread.id, title: fixtureThread.title, canAcceptDirectInput: true }),
     startTurn: async () => ({ id: "turn-live" }),
+    interruptTurn: async () => undefined,
     onNotification: (listener) => { notificationListener = listener; return () => { notificationListener = undefined; }; },
   };
   const provider: ConversationClientProvider = { getReadyClient: () => client };
@@ -81,10 +82,29 @@ async function main(): Promise<void> {
   assert.deepEqual(started, { threadId: "thread-conversation", turnId: "turn-live" });
   await assert.rejects(startService.startTurn("thread-conversation", "second input"), ProtocolError);
   assert.ok(notificationListener);
-  notificationListener?.({ method: "turn/started", params: { threadId: "thread-conversation", turnId: "turn-live" } });
-  notificationListener?.({ method: "turn/completed", params: { threadId: "thread-conversation", turnId: "turn-live", turn: { id: "turn-live" } } });
+  // App-server turn notifications are allowed to contain only { turn }.
+  // The service must use the ownership recorded when turn/start succeeded.
+  notificationListener?.({ method: "turn/started", params: { turn: { id: "turn-live", status: "inProgress" } } });
+  notificationListener?.({ method: "turn/completed", params: { turn: { id: "turn-live", status: "completed" } } });
   assert.deepEqual(updates, ["turn/started", "turn/completed"]);
+  await startService.startTurn("thread-conversation", "input after an implicit terminal event");
   unsubscribe();
+
+  let resolveTerminal: ((event: TerminalTurnEvent) => void) | undefined;
+  const terminalWaitClient: ConversationClient = {
+    ...client,
+    waitForTurnTerminal: async () => new Promise<TerminalTurnEvent>((resolve) => { resolveTerminal = resolve; }),
+  };
+  const terminalWaitService = new ConversationService({ getReadyClient: () => terminalWaitClient });
+  const terminalWaitUpdates: string[] = [];
+  terminalWaitService.onConversationUpdate((update) => terminalWaitUpdates.push(update.type));
+  await terminalWaitService.startTurn("thread-conversation", "settle from the transport terminal waiter");
+  assert.ok(resolveTerminal);
+  resolveTerminal({ method: "turn/completed", params: { turn: { id: "turn-live", status: "completed" } }, turnId: "turn-live", outcome: "completed" });
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(terminalWaitUpdates, ["turn/completed"]);
+  await terminalWaitService.startTurn("thread-conversation", "input after transport settlement");
+
   await assert.rejects(service.startTurn("thread-conversation", ""), (error: unknown) => error instanceof Error && error.name === "ConfigurationError");
   let startCalled = false;
   const unavailableClient: ConversationClient = {
@@ -120,9 +140,9 @@ async function main(): Promise<void> {
   };
   const activeOnlyService = new ConversationService({ getReadyClient: () => activeOnlyClient });
   const activeOnlyView = await activeOnlyService.readThread("thread-conversation");
-  assert.equal(activeOnlyView.remoteActive, undefined);
-  assert.deepEqual(await activeOnlyService.startTurn("thread-conversation", "available input"), { threadId: "thread-conversation", turnId: "turn-active-only" });
-  assert.equal(activeOnlyStartCalled, true);
+  assert.equal(activeOnlyView.remoteActive, true);
+  await assert.rejects(activeOnlyService.startTurn("thread-conversation", "available input"), ActiveTurnError);
+  assert.equal(activeOnlyStartCalled, false);
   let newThreadOptions: { cwd: string; ephemeral?: boolean } | undefined;
   const newConversationClient: ConversationClient = {
     ...client,
@@ -142,7 +162,8 @@ async function main(): Promise<void> {
   const activeWriterResponseService = new ConversationService({ getReadyClient: () => activeWriterResponseClient });
   await activeWriterResponseService.readThread("thread-conversation");
   await assert.rejects(activeWriterResponseService.startTurn("thread-conversation", "preserve busy input"), ActiveTurnError);
-  assert.equal(activeWriterResponseService.getLoadedThread("thread-conversation")?.remoteActive, true);
+  assert.equal(activeWriterResponseService.getLoadedThread("thread-conversation")?.remoteActive, undefined);
+  assert.equal((await activeWriterResponseService.reconcileThread("thread-conversation")).activity, "idle", "an unconfirmed active-writer error must not create an active state");
   const refreshStates = [
     { id: fixtureThread.id, title: "Refresh fixture", status: "completed" },
     { id: fixtureThread.id, title: "Refresh fixture", status: "active" },
@@ -158,10 +179,30 @@ async function main(): Promise<void> {
   const refreshService = new ConversationService({ getReadyClient: () => refreshClient });
   await refreshService.readThread("thread-conversation");
   await assert.rejects(refreshService.startTurn("thread-conversation", "preserve through refresh"), ActiveTurnError);
-  assert.equal(refreshService.getLoadedThread("thread-conversation")?.remoteActive, true);
+  assert.equal(refreshService.getLoadedThread("thread-conversation")?.remoteActive, undefined);
   const refreshedView = await refreshService.readThread("thread-conversation");
   assert.equal(refreshedView.status, "active");
-  assert.equal(refreshedView.remoteActive, undefined);
+  assert.equal(refreshedView.remoteActive, true);
+
+  let interrupted: { threadId: string; turnId: string } | undefined;
+  let recoveryTurn = 0;
+  const recoveryClient: ConversationClient = {
+    ...client,
+    readThread: async () => ({ id: fixtureThread.id, title: "Recovery fixture", status: "idle", turns: [] }),
+    listTurns: async () => ({ turns: [] }),
+    resumeThread: async () => ({ id: fixtureThread.id, title: "Recovery fixture", status: "idle", canAcceptDirectInput: true }),
+    startTurn: async () => ({ id: `turn-recovery-${++recoveryTurn}` }),
+    interruptTurn: async (threadId, turnId) => { interrupted = { threadId, turnId }; },
+  };
+  const recoveryService = new ConversationService({ getReadyClient: () => recoveryClient });
+  await recoveryService.startTurn("thread-conversation", "recover after a missed event");
+  assert.equal((await recoveryService.reconcileThread("thread-conversation")).activity, "idle", "an idle server snapshot must recover a missed terminal event");
+  await recoveryService.startTurn("thread-conversation", "send after recovery");
+  await recoveryService.interruptTurn("thread-conversation");
+  assert.deepEqual(interrupted, { threadId: "thread-conversation", turnId: "turn-recovery-2" });
+
+  assert.deepEqual(toConversationUpdate("turn/completed", { threadId: "thread-conversation", turn: { id: "turn-interrupted", status: "interrupted" } }), { type: "turn/interrupted", threadId: "thread-conversation", turnId: "turn-interrupted" });
+  assert.deepEqual(toConversationUpdate("turn/completed", { turn: { id: "turn-completed", status: "completed" } }, "thread-conversation"), { type: "turn/completed", threadId: "thread-conversation", turnId: "turn-completed" });
   const failingProvider: ConversationClientProvider = { getReadyClient: () => ({ ...client, readThread: async () => { throw new ProtocolError("fixture read failed"); } }) };
   await assert.rejects(new ConversationService(failingProvider).readThread("thread-conversation"), ProtocolError);
   console.log("[desktop-test] conversation service checks passed");

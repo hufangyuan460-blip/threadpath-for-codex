@@ -18,8 +18,8 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function isActiveWriterMessage(error: unknown): boolean {
-  return /active writer|already responding|active_writer/i.test(errorMessage(error));
+function isConfirmedActiveTurnMessage(error: unknown): boolean {
+  return /confirmed active turn/i.test(errorMessage(error));
 }
 
 function isWorkspaceLockMessage(error: unknown): boolean {
@@ -231,6 +231,7 @@ function App(): React.JSX.Element {
   const [draftByThreadId, setDraftByThreadId] = useState<Record<string, string>>({});
   const [sendErrorByThreadId, setSendErrorByThreadId] = useState<Record<string, string | undefined>>({});
   const [startingTurn, setStartingTurn] = useState(false);
+  const [interruptingThreadId, setInterruptingThreadId] = useState<string | undefined>();
   const [runningTurnByThreadId, setRunningTurnByThreadId] = useState<Record<string, string | undefined>>({});
   const [remoteActiveByThreadId, setRemoteActiveByThreadId] = useState<Record<string, boolean>>({});
   const [newDraft, setNewDraft] = useState("");
@@ -255,6 +256,7 @@ function App(): React.JSX.Element {
   const inputText = selectedThreadId === undefined ? newDraft : draftByThreadId[selectedThreadId] ?? "";
   const sendError = selectedThreadId === undefined ? newSendError : sendErrorByThreadId[selectedThreadId];
   const localRunningTurnId = selectedThreadId === undefined ? undefined : runningTurnByThreadId[selectedThreadId];
+  const canInterruptLocalTurn = localRunningTurnId !== undefined && interruptingThreadId !== selectedThreadId;
   const writeState = selectedThread?.writeState;
   const remoteActive = selectedThreadId !== undefined && (remoteActiveByThreadId[selectedThreadId] === true || selectedThread?.remoteActive === true || writeState === "externalThreadWriter");
   const inputUnavailable = historyMode || selectedThread?.canAcceptDirectInput === false || writeState === "inputUnavailable" || writeState === "stateUnknown" || writeState === "workspaceLocked";
@@ -587,7 +589,7 @@ function App(): React.JSX.Element {
       setDraftByThreadId((current) => { const next = { ...current }; delete next[threadId]; return next; });
     } catch (error: unknown) {
       const currentThreadId = selectedThreadId;
-      if (currentThreadId !== undefined && isActiveWriterMessage(error)) {
+      if (currentThreadId !== undefined && isConfirmedActiveTurnMessage(error)) {
         setRemoteActiveByThreadId((current) => ({ ...current, [currentThreadId]: true }));
         setSelectedThread((current) => current?.id === currentThreadId ? { ...current, remoteActive: true } : current);
         setSendErrorByThreadId((current) => ({ ...current, [currentThreadId]: m.remoteTurnRunning }));
@@ -665,6 +667,19 @@ function App(): React.JSX.Element {
     finally { setReconnecting(false); }
   };
 
+  const handleInterruptTurn = async (): Promise<void> => {
+    if (selectedThreadId === undefined || localRunningTurnId === undefined || interruptingThreadId !== undefined) return;
+    const threadId = selectedThreadId;
+    setInterruptingThreadId(threadId);
+    try {
+      await window.threadPath.interruptTurn(threadId);
+    } catch (error: unknown) {
+      setSendErrorByThreadId((current) => ({ ...current, [threadId]: errorMessage(error) }));
+    } finally {
+      setInterruptingThreadId((current) => current === threadId ? undefined : current);
+    }
+  };
+
   const handleRefreshStatus = async (): Promise<void> => {
     if (selectedThreadId === undefined) return;
     try {
@@ -674,6 +689,14 @@ function App(): React.JSX.Element {
       setScrollToLatest(false);
       setNewContentAvailable(previousLatestTurnId !== undefined && refreshed.turns.at(-1)?.id !== previousLatestTurnId);
       setRemoteActiveByThreadId((current) => ({ ...current, [refreshed.id]: refreshed.remoteActive === true }));
+      if (refreshed.remoteActive !== true && refreshed.writeState !== "localTurnRunning") {
+        setRunningTurnByThreadId((current) => {
+          if (current[refreshed.id] === undefined) return current;
+          const next = { ...current };
+          delete next[refreshed.id];
+          return next;
+        });
+      }
       setSendErrorByThreadId((current) => { const next = { ...current }; delete next[selectedThreadId]; return next; });
     } catch (error: unknown) {
       setSendErrorByThreadId((current) => ({ ...current, [selectedThreadId]: errorMessage(error) }));
@@ -708,8 +731,8 @@ function App(): React.JSX.Element {
                   <label title={m.reasoningUnavailable}><span className="sr-only">{m.reasoning}</span><select id="composer-reasoning" value={reasoningSelection} onChange={(event) => setReasoningSelection(event.target.value)} disabled aria-label={m.reasoning}><option value="default">{m.codexDefault}</option></select></label>
                 </div>
                 <textarea ref={inputElement} id="turn-input" aria-label={m.sendMessage} value={inputText} onChange={(event) => setInputText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void handleStartTurn(); } }} placeholder={m.inputPlaceholder} rows={1} disabled={connectionState.state !== "ready" || turnIsRunning || inputUnavailable} />
-                <span className="composer-status" aria-live="polite">{startingTurn ? m.starting : historyMode ? m.confirmWorkspaceToSend : selectedThreadId === undefined && currentWorkspacePath === undefined ? m.chooseWorkspace : remoteActive ? m.remoteTurnRunning : inputUnavailable ? m.inputUnavailable : localRunningTurnId === undefined ? null : m.turnRunning}</span>
-                <button className="composer-send" type="submit" aria-label={turnIsRunning ? m.pauseUnavailable : historyMode ? m.confirmWorkspaceToSend : inputUnavailable ? m.inputUnavailable : selectedThreadId === undefined && currentWorkspacePath === undefined ? m.chooseWorkspace : m.send} title={turnIsRunning ? m.pauseUnavailable : historyMode ? m.confirmWorkspaceToSend : inputUnavailable ? m.inputUnavailable : selectedThreadId === undefined && currentWorkspacePath === undefined ? m.chooseWorkspace : m.send} disabled={connectionState.state !== "ready" || inputText.trim() === "" || turnIsRunning || inputUnavailable || (selectedThreadId === undefined && currentWorkspacePath === undefined)}><span aria-hidden="true">{turnIsRunning ? "Ⅱ" : "➤"}</span><span className="sr-only">{turnIsRunning ? m.pauseUnavailable : historyMode ? m.confirmWorkspaceToSend : inputUnavailable ? m.inputUnavailable : m.send}</span></button>
+                <span className="composer-status" aria-live="polite">{interruptingThreadId !== undefined && interruptingThreadId === selectedThreadId ? m.stopping : startingTurn ? m.starting : historyMode ? m.confirmWorkspaceToSend : selectedThreadId === undefined && currentWorkspacePath === undefined ? m.chooseWorkspace : remoteActive ? m.remoteTurnRunning : inputUnavailable ? m.inputUnavailable : localRunningTurnId === undefined ? null : m.turnRunning}</span>
+                <button className="composer-send" type={canInterruptLocalTurn ? "button" : "submit"} onClick={canInterruptLocalTurn ? () => void handleInterruptTurn() : undefined} aria-label={canInterruptLocalTurn ? m.stopTurn : turnIsRunning ? m.pauseUnavailable : historyMode ? m.confirmWorkspaceToSend : inputUnavailable ? m.inputUnavailable : selectedThreadId === undefined && currentWorkspacePath === undefined ? m.chooseWorkspace : m.send} title={canInterruptLocalTurn ? m.stopTurn : turnIsRunning ? m.pauseUnavailable : historyMode ? m.confirmWorkspaceToSend : inputUnavailable ? m.inputUnavailable : selectedThreadId === undefined && currentWorkspacePath === undefined ? m.chooseWorkspace : m.send} disabled={canInterruptLocalTurn ? interruptingThreadId !== undefined : connectionState.state !== "ready" || inputText.trim() === "" || turnIsRunning || inputUnavailable || (selectedThreadId === undefined && currentWorkspacePath === undefined)}><span aria-hidden="true">{turnIsRunning ? "Ⅱ" : "➤"}</span><span className="sr-only">{canInterruptLocalTurn ? m.stopTurn : turnIsRunning ? m.pauseUnavailable : historyMode ? m.confirmWorkspaceToSend : inputUnavailable ? m.inputUnavailable : m.send}</span></button>
               </div>
               {sendError === undefined ? null : <p className="error-summary">{sendError}</p>}
           </form>
