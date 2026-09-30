@@ -44,6 +44,15 @@ function compareThreads(left: ThreadListItem, right: ThreadListItem, sort: Histo
   const updated = timestamp(right.updatedAt) - timestamp(left.updatedAt);
   return updated !== 0 ? updated : left.title.localeCompare(right.title, undefined, { sensitivity: "base" });
 }
+function compareDirectories(left: WorkspaceState["directories"][number], right: WorkspaceState["directories"][number], sort: HistorySort): number {
+  if ((left.favorite === true) !== (right.favorite === true)) return left.favorite === true ? -1 : 1;
+  if (sort === "updated") {
+    const latestLeft = Math.max(0, ...left.threads.map((thread) => timestamp(thread.updatedAt)));
+    const latestRight = Math.max(0, ...right.threads.map((thread) => timestamp(thread.updatedAt)));
+    if (latestLeft !== latestRight) return latestRight - latestLeft;
+  }
+  return left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
+}
 function formatHistoryTime(value: string | undefined, language: Language): string | undefined {
   if (value === undefined || !Number.isFinite(Date.parse(value))) return undefined;
   return new Intl.DateTimeFormat(language, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
@@ -208,7 +217,7 @@ function WorkspaceSidebar({ state, loading, listElement, onScroll, onChoose, onS
     {loading ? <p className="panel-note">{m.loading}</p> : null}
     <div ref={listElement} className="thread-list workspace-history-list" role="listbox" aria-label={m.workspaceHistory} onScroll={(event) => onScroll(event.currentTarget.scrollTop)}>
       {showingSearch ? <ol className="history-search-results">{searchResults.map((result) => <li key={`${result.kind}:${result.id}`}><button type="button" className="history-search-result" onClick={() => { void activateSearchResult(result); }}><span className="history-search-copy"><strong>{result.title}</strong><small>{result.detail}</small></span><span className="history-search-status">{result.hidden ? <em>{m.hidden}</em> : null}{result.archived ? <em>{m.officialArchived}</em> : null}<b>{result.kind === "thread" ? result.hidden ? m.showAndOpen : m.openConversation : result.hidden ? m.showWorkspace : m.locateWorkspace}</b></span></button></li>)}</ol> : <>
-        {showHidden ? visibleDirectories.sort((left, right) => left.favorite === right.favorite ? left.name.localeCompare(right.name) : left.favorite ? -1 : 1).map((directory) => renderGroup(directory.path, directory.name, directory.expanded, [], false)) : visibleDirectories.sort((left, right) => left.favorite === right.favorite ? left.name.localeCompare(right.name) : left.favorite ? -1 : 1).map((directory) => renderGroup(directory.path, directory.name, directory.expanded, threadsForDirectory(directory)))}
+        {showHidden ? [...visibleDirectories].sort((left, right) => compareDirectories(left, right, historySort)).map((directory) => renderGroup(directory.path, directory.name, directory.expanded, [], false)) : [...visibleDirectories].sort((left, right) => compareDirectories(left, right, historySort)).map((directory) => renderGroup(directory.path, directory.name, directory.expanded, threadsForDirectory(directory)))}
         {showHidden ? (hiddenThreads.length > 0 ? renderGroup("__hidden_threads__", m.hiddenConversations, true, hiddenThreads) : null) : (visibleUnclassified.length > 0 ? renderGroup("__unclassified__", m.unclassified, true, [...visibleUnclassified].sort((left, right) => compareThreads(left, right, historySort))) : null)}
         {state !== undefined && !hasItems && !loading ? <p className="panel-note">{showHidden ? m.noHiddenItems : m.noThreads}</p> : null}
       </>}
