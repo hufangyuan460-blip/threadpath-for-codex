@@ -12,7 +12,7 @@ import { WorkspaceService, validateWorkspacePath } from "./workspace-service";
 import { CodexHistorySyncService } from "./history-sync-service";
 import { WorkspaceLockService } from "./workspace-lock-service";
 import { AppServerError, ProcessError, ThreadUnavailableError } from "../../../../threadpath-protocol/src/protocol.ts";
-import type { AppInfo, AppRunMode, ConnectionStateSnapshot, ConversationThreadView, Language, ModelOption, OnboardingSnapshot, ThreadDisplayNameUpdate, ThreadWriteState } from "../shared/api";
+import type { AppInfo, AppRunMode, ConnectionStateSnapshot, ConversationThreadView, Language, ModelOption, OnboardingSnapshot, Theme, ThreadDisplayNameUpdate, ThreadWriteState } from "../shared/api";
 
 if (process.env.THREADPATH_E2E === "1") app.disableHardwareAcceleration();
 
@@ -206,7 +206,9 @@ function registerApi(): void {
   });
   ipcMain.handle("app:set-theme", async (_event, theme: unknown) => {
     if (theme !== "graphite" && theme !== "black" && theme !== "light") throw new ProcessError("theme must be graphite, black, or light");
-    return preferencesService.setTheme(theme);
+    const saved = await preferencesService.setTheme(theme);
+    for (const window of BrowserWindow.getAllWindows()) applyWindowTheme(window, saved);
+    return saved;
   });
   ipcMain.handle("onboarding:get-state", (): OnboardingSnapshot => onboardingSnapshot);
   ipcMain.handle("onboarding:rediscover", async (): Promise<OnboardingSnapshot> => discoverCodex());
@@ -388,18 +390,32 @@ async function withReadyConnection<T>(action: () => Promise<T>): Promise<T> {
   return action();
 }
 
+function nativeThemeColors(theme: Theme): { backgroundColor: string; symbolColor: string } {
+  if (theme === "black") return { backgroundColor: "#000000", symbolColor: "#f0f2f4" };
+  if (theme === "light") return { backgroundColor: "#f7f8fa", symbolColor: "#1d2937" };
+  return { backgroundColor: "#101318", symbolColor: "#e8edf5" };
+}
+
+function applyWindowTheme(window: BrowserWindow, theme: Theme): void {
+  const colors = nativeThemeColors(theme);
+  window.setBackgroundColor(colors.backgroundColor);
+  if (process.platform !== "darwin") window.setTitleBarOverlay({ color: colors.backgroundColor, symbolColor: colors.symbolColor, height: 32 });
+}
+
 function createWindow(): void {
+  const theme = preferencesService.getTheme();
+  const nativeColors = nativeThemeColors(theme);
   const window = new BrowserWindow({
     width: 1100,
     height: 720,
     minWidth: 760,
     minHeight: 480,
-    backgroundColor: "#101318",
+    backgroundColor: nativeColors.backgroundColor,
     titleBarStyle: "hidden",
     ...(process.platform === "darwin" ? {} : {
       titleBarOverlay: {
-        color: "#101318",
-        symbolColor: "#e8edf5",
+        color: nativeColors.backgroundColor,
+        symbolColor: nativeColors.symbolColor,
         height: 32,
       },
     }),
