@@ -9,13 +9,13 @@ import { chooseActiveTurnIdFromRange } from "./scroll-state";
 import { moveSearchSelection, searchNavigationTarget } from "./search-navigation";
 import { messages, type Messages } from "./i18n";
 import { MarkdownMessage } from "./markdown.tsx";
-import { replaceThreadTitle } from "../shared/workspace-state";
+import { filterWorkspaceHistory, replaceThreadTitle, type HistoryViewFilter } from "../shared/workspace-state";
 import { formatElapsedTime, type TurnTiming } from "./turn-timing.ts";
 import { searchHistory, type HistorySearchResult } from "../shared/history-search";
 
 type LoadState = "idle" | "loading" | "ready" | "empty" | "error";
 type NavigateTurn = (turnId: string) => void;
-type HistoryFilter = "all" | "favorites" | "hidden" | "archived" | "unclassified" | "updated";
+type HistoryFilter = HistoryViewFilter;
 type HistorySort = "updated" | "name";
 
 function errorMessage(error: unknown): string {
@@ -168,35 +168,17 @@ function WorkspaceSidebar({ state, loading, listElement, onScroll, onChoose, onS
       <div className="workspace-group-row">
         {!isWorkspace ? <div className="workspace-toggle"><span aria-hidden="true">•</span><span aria-hidden="true">📁</span><span className="workspace-name" title={name}>{name}</span></div> : <button className="workspace-toggle" type="button" onClick={() => onToggle(path)} aria-expanded={expanded} aria-label={expanded ? m.collapseWorkspace : m.expandWorkspace}><span aria-hidden="true">{expanded ? "⌄" : "›"}</span><span aria-hidden="true">📁</span><span className="workspace-name" title={path}>{state?.directories.find((directory) => directory.path === path)?.favorite ? "★ " : ""}{name}</span></button>}
         {!isWorkspace ? null : <button className={`workspace-select${state?.currentPath === path ? " selected" : ""}`} type="button" onClick={() => onSetCurrent(path)} aria-label={`${m.workingDirectory}: ${name}`}>•</button>}
-        {!isWorkspace ? null : <div className="workspace-actions"><button className="workspace-actions-button" type="button" onClick={() => { setOpenMenuThreadId(undefined); setMovingThreadId(undefined); setOpenWorkspaceMenuPath((current) => current === path ? undefined : path); }} aria-label={`${m.workspaceActions}: ${name}`} aria-expanded={openWorkspaceMenuPath === path} aria-haspopup="menu">···</button>{openWorkspaceMenuPath === path ? <div className="thread-actions-menu workspace-actions-menu" role="menu"><button type="button" role="menuitem" onClick={() => { closeMenus(); onSetWorkspaceFavorite(path, !(state?.directories.find((directory) => directory.path === path)?.favorite)); }}>{state?.directories.find((directory) => directory.path === path)?.favorite ? m.unfavoriteWorkspace : m.favoriteWorkspace}</button><button type="button" role="menuitem" onClick={() => { closeMenus(); onSetWorkspaceHidden(path, !showHidden); }}>{showHidden ? m.showWorkspace : m.hideWorkspace}</button></div> : null}</div>}
+        {!isWorkspace ? null : <div className="workspace-actions"><button className="workspace-actions-button" type="button" onClick={() => { setOpenMenuThreadId(undefined); setMovingThreadId(undefined); setOpenWorkspaceMenuPath((current) => current === path ? undefined : path); }} aria-label={`${m.workspaceActions}: ${name}`} aria-expanded={openWorkspaceMenuPath === path} aria-haspopup="menu">···</button>{openWorkspaceMenuPath === path ? <div className="thread-actions-menu workspace-actions-menu" role="menu"><button type="button" role="menuitem" onClick={() => { closeMenus(); onSetWorkspaceFavorite(path, !(state?.directories.find((directory) => directory.path === path)?.favorite)); }}>{state?.directories.find((directory) => directory.path === path)?.favorite ? m.unfavoriteWorkspace : m.favoriteWorkspace}</button><button type="button" role="menuitem" onClick={() => { const hidden = state?.directories.find((directory) => directory.path === path)?.hidden === true; closeMenus(); onSetWorkspaceHidden(path, !hidden); }}>{state?.directories.find((directory) => directory.path === path)?.hidden === true ? m.showWorkspace : m.hideWorkspace}</button></div> : null}</div>}
       </div>
       {showThreads && expanded ? <div className="workspace-thread-list">{[...groupThreads].sort((left, right) => compareThreads(left, right, historySort)).map((thread) => renderThread(thread, name))}</div> : null}
     </section>;
   };
   const sync = state?.sync;
   const syncLabel = sync?.state === "syncing" ? m.syncing : sync?.state === "partial" ? m.partialHistory : sync?.state === "failed" ? m.syncFailed : sync?.syncedAt === undefined ? undefined : m.syncedAt(new Date(sync.syncedAt).toLocaleTimeString());
-  const visibleDirectories = state?.directories.filter((directory) => {
-    if (showHidden) return directory.hidden;
-    if (historyFilter === "favorites") return !directory.hidden && (directory.favorite === true || directory.threads.some((thread) => thread.favorite === true && !thread.hidden));
-    if (historyFilter === "archived") return directory.threads.some((thread) => thread.archived === true && !thread.hidden);
-    if (historyFilter === "updated") return directory.threads.some((thread) => !thread.hidden);
-    return historyFilter !== "unclassified" && !directory.hidden;
-  }) ?? [];
-  const visibleUnclassified = state?.unclassifiedThreads.filter((thread) => {
-    if (showHidden) return thread.hidden;
-    if (historyFilter === "favorites") return thread.favorite === true && !thread.hidden;
-    if (historyFilter === "archived") return thread.archived === true && !thread.hidden;
-    if (historyFilter === "updated") return !thread.hidden;
-    return historyFilter === "all" || historyFilter === "unclassified" ? !thread.hidden : false;
-  }) ?? [];
-  const hiddenThreads = state === undefined ? [] : [...state.directories.flatMap((directory) => directory.threads), ...state.unclassifiedThreads].filter((thread) => thread.hidden);
-  const threadsForDirectory = (directory: WorkspaceState["directories"][number]): readonly ThreadListItem[] => {
-    if (showHidden) return [];
-    if (historyFilter === "favorites") return directory.threads.filter((thread) => thread.favorite === true && !thread.hidden);
-    if (historyFilter === "archived") return directory.threads.filter((thread) => thread.archived === true && !thread.hidden);
-    return directory.threads.filter((thread) => !thread.hidden);
-  };
-  const hasItems = showHidden ? visibleDirectories.length + hiddenThreads.length > 0 : visibleDirectories.length + visibleUnclassified.length > 0;
+  const historyView = state === undefined ? undefined : filterWorkspaceHistory(state, historyFilter);
+  const visibleDirectories = historyView?.directories ?? [];
+  const visibleUnclassified = historyView?.unclassifiedThreads ?? [];
+  const hasItems = visibleDirectories.length + visibleUnclassified.length > 0;
   const changeFilter = (filter: HistoryFilter): void => { closeMenus(); setHistoryFilter(filter); setSelectionMode(false); setSelectedThreadIds([]); };
   const applySelection = async (): Promise<void> => {
     if (selectedThreadIds.length === 0) return;
@@ -213,8 +195,8 @@ function WorkspaceSidebar({ state, loading, listElement, onScroll, onChoose, onS
     {loading ? <p className="panel-note">{m.loading}</p> : null}
     <div ref={listElement} className="thread-list workspace-history-list" role="listbox" aria-label={m.workspaceHistory} onScroll={(event) => onScroll(event.currentTarget.scrollTop)}>
       {showingSearch ? <ol className="history-search-results">{searchResults.map((result) => <li key={`${result.kind}:${result.id}`}><button type="button" className="history-search-result" onClick={() => { void activateSearchResult(result); }}><span className="history-search-copy"><strong>{result.title}</strong><small>{result.detail}</small></span><span className="history-search-status">{result.hidden ? <em>{m.hidden}</em> : null}{result.archived ? <em>{m.officialArchived}</em> : null}<b>{result.kind === "thread" ? result.hidden ? m.showAndOpen : m.openConversation : result.hidden ? m.showWorkspace : m.locateWorkspace}</b></span></button></li>)}</ol> : <>
-        {showHidden ? [...visibleDirectories].sort((left, right) => compareDirectories(left, right, historySort)).map((directory) => renderGroup(directory.path, directory.name, directory.expanded, [], false)) : [...visibleDirectories].sort((left, right) => compareDirectories(left, right, historySort)).map((directory) => renderGroup(directory.path, directory.name, directory.expanded, threadsForDirectory(directory)))}
-        {showHidden ? (hiddenThreads.length > 0 ? renderGroup("__hidden_threads__", m.hiddenConversations, true, hiddenThreads) : null) : (visibleUnclassified.length > 0 ? renderGroup("__unclassified__", m.unclassified, true, [...visibleUnclassified].sort((left, right) => compareThreads(left, right, historySort))) : null)}
+        {[...visibleDirectories].sort((left, right) => compareDirectories(left, right, historySort)).map((directory) => renderGroup(directory.path, directory.name, directory.expanded, directory.threads))}
+        {visibleUnclassified.length > 0 ? renderGroup("__unclassified__", m.unclassified, true, [...visibleUnclassified].sort((left, right) => compareThreads(left, right, historySort))) : null}
         {state !== undefined && !hasItems && !loading ? <p className="panel-note">{showHidden ? m.noHiddenItems : m.noThreads}</p> : null}
       </>}
       {showingSearch && searchResults.length === 0 && !loading ? <p className="panel-note">{m.noHistorySearchResults}</p> : null}
