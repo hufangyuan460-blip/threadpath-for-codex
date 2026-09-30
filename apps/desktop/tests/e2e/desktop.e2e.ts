@@ -226,6 +226,7 @@ async function runFirstLaunchDiscoveryPath(): Promise<void> {
     await waitForText(page, '[aria-label="Connection status"]', "ready");
     await page.locator(".onboarding-card").waitFor({ state: "hidden" });
     await page.locator("#turn-input").waitFor({ state: "visible" });
+    assert.equal(await page.locator("#turn-input").isDisabled(), true, "new conversation input must require a working directory");
     assert.equal(await page.locator(".composer-send").isDisabled(), true);
     await page.locator(".composer-status").getByText("Confirm a working directory before sending.", { exact: true }).waitFor({ state: "visible" });
   }, fakeExecutable, null);
