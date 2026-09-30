@@ -2,7 +2,7 @@ import { Fragment, StrictMode, useCallback, useEffect, useRef, useState } from "
 import { createRoot } from "react-dom/client";
 import { Virtuoso, type VirtuosoHandle, type ListRange } from "react-virtuoso";
 import "./styles.css";
-import type { AppInfo, ComposerOptions, ConnectionStateSnapshot, ConversationItemView, ConversationThreadView, ConversationUpdate, ModelOption, OnboardingSnapshot, SearchResult, ThreadListItem, Language, WorkspaceState } from "../shared/api";
+import type { AppInfo, ComposerOptions, ConnectionStateSnapshot, ConversationItemView, ConversationThreadView, ConversationUpdate, ModelOption, OnboardingSnapshot, SearchResult, ThreadListItem, Language, Theme, WorkspaceState } from "../shared/api";
 import { applyConversationUpdate, conversationUpdateKey } from "./conversation-state";
 import { buildTurnOutline } from "../shared/outline";
 import { chooseActiveTurnIdFromRange } from "./scroll-state";
@@ -16,7 +16,7 @@ import { searchHistory, type HistorySearchResult } from "../shared/history-searc
 type LoadState = "idle" | "loading" | "ready" | "empty" | "error";
 type NavigateTurn = (turnId: string) => void;
 type HistoryFilter = "all" | "favorites" | "hidden" | "archived" | "unclassified" | "updated";
-type HistorySort = "updated" | "name" | "workspace";
+type HistorySort = "updated" | "name";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -36,10 +36,6 @@ function preferredReasoningEffort(model: ModelOption | undefined): string {
 function timestamp(value: string | undefined): number { const parsed = Date.parse(value ?? ""); return Number.isFinite(parsed) ? parsed : 0; }
 function compareThreads(left: ThreadListItem, right: ThreadListItem, sort: HistorySort): number {
   if ((left.favorite === true) !== (right.favorite === true)) return left.favorite === true ? -1 : 1;
-  if (sort === "workspace") {
-    const workspace = (left.workspacePath ?? "").localeCompare(right.workspacePath ?? "", undefined, { sensitivity: "base" });
-    if (workspace !== 0) return workspace;
-  }
   if (sort === "name") return left.title.localeCompare(right.title, undefined, { sensitivity: "base" });
   const updated = timestamp(right.updatedAt) - timestamp(left.updatedAt);
   return updated !== 0 ? updated : left.title.localeCompare(right.title, undefined, { sensitivity: "base" });
@@ -211,7 +207,7 @@ function WorkspaceSidebar({ state, loading, listElement, onScroll, onChoose, onS
   return <div className="workspace-history">
     <div className="panel-heading workspace-history-heading"><h2>{m.workspaceHistory}</h2><div className="workspace-history-actions"><button className="workspace-history-action" type="button" onClick={() => { setSelectionMode((current) => !current); setSelectedThreadIds([]); }} aria-label={selectionMode ? m.cancelSelection : m.selectConversations} title={selectionMode ? m.cancelSelection : m.selectConversations}>✓</button><button className="workspace-history-action" type="button" onClick={onSync} aria-label={m.syncNow} title={m.syncNow}>↻</button><button className="workspace-history-action" type="button" onClick={onChoose} aria-label={m.addWorkspace} title={m.addWorkspace}>＋</button></div></div>
     <div className="history-search"><input id="history-search" type="search" value={historyQuery} onChange={(event) => { closeMenus(); setHistoryQuery(event.target.value); }} placeholder={m.searchHistoryPlaceholder} aria-label={m.searchHistory} /></div>
-    <div className="history-controls"><select id="history-filter" className="history-filter" value={historyFilter} onChange={(event) => changeFilter(event.target.value as HistoryFilter)} aria-label={m.filterHistory}><option value="all">{m.filterAll}</option><option value="favorites">{m.filterFavorites}</option><option value="hidden">{m.filterHidden}</option><option value="archived">{m.filterArchived}</option><option value="unclassified">{m.filterUnclassified}</option><option value="updated">{m.filterRecentlyUpdated}</option></select><select id="history-sort" className="history-filter history-sort" value={historySort} onChange={(event) => setHistorySort(event.target.value as HistorySort)} aria-label={m.sortHistory}><option value="updated">{m.sortUpdated}</option><option value="name">{m.sortName}</option><option value="workspace">{m.sortWorkspace}</option></select></div>
+    <div className="history-controls"><select id="history-filter" className="history-filter" value={historyFilter} onChange={(event) => changeFilter(event.target.value as HistoryFilter)} aria-label={m.filterHistory}><option value="all">{m.filterAll}</option><option value="favorites">{m.filterFavorites}</option><option value="hidden">{m.filterHidden}</option><option value="archived">{m.filterArchived}</option><option value="unclassified">{m.filterUnclassified}</option><option value="updated">{m.filterRecentlyUpdated}</option></select><select id="history-sort" className="history-filter history-sort" value={historySort} onChange={(event) => setHistorySort(event.target.value as HistorySort)} aria-label={m.sortHistory}><option value="updated">{m.sortUpdated}</option><option value="name">{m.sortName}</option></select></div>
     {selectionMode ? <div className="history-selection-actions"><span>{selectedThreadIds.length}</span><button type="button" disabled={selectedThreadIds.length === 0} onClick={() => { void applySelection(); }}>{showHidden ? m.showSelected(selectedThreadIds.length) : m.hideSelected(selectedThreadIds.length)}</button></div> : null}
     {syncLabel === undefined ? null : <p className={`sync-note sync-${sync?.state ?? "idle"}`} role="status">{syncLabel}</p>}
     {loading ? <p className="panel-note">{m.loading}</p> : null}
@@ -335,6 +331,7 @@ function RenameModal({ name, onChange, onCancel, onSave, m }: { name: string; on
 function App(): React.JSX.Element {
   const [appInfo, setAppInfo] = useState<AppInfo | undefined>();
   const [language, setLanguage] = useState<Language>("en-US");
+  const [theme, setTheme] = useState<Theme>("graphite");
   const [onboardingState, setOnboardingState] = useState<OnboardingSnapshot>({ state: "detecting" });
   const [connectionState, setConnectionState] = useState<ConnectionStateSnapshot>({ state: "idle" });
   const [reconnecting, setReconnecting] = useState(false);
@@ -473,7 +470,7 @@ function App(): React.JSX.Element {
         const [info, onboarding, state] = await Promise.all([window.threadPath.getAppInfo(), window.threadPath.getOnboardingState(), window.threadPath.getConnectionState()]);
         if (!active) return;
         setAppInfo(info);
-        setLanguage(info.language);
+        setLanguage(info.language); setTheme(info.theme); document.documentElement.dataset.theme = info.theme;
         setOnboardingState(onboarding);
         setConnectionState(state);
       } catch (error: unknown) {
@@ -491,6 +488,10 @@ function App(): React.JSX.Element {
     catch (error: unknown) {
       if (selectedThreadId !== undefined) setSendErrorByThreadId((current) => ({ ...current, [selectedThreadId]: errorMessage(error) }));
     }
+  };
+  const handleThemeChange = async (nextTheme: Theme): Promise<void> => {
+    try { const saved = await window.threadPath.setTheme(nextTheme); setTheme(saved); document.documentElement.dataset.theme = saved; }
+    catch (error: unknown) { setThreadError(errorMessage(error)); }
   };
 
   const beginRename = (thread: ThreadListItem): void => {
@@ -960,7 +961,7 @@ function App(): React.JSX.Element {
     <main className="shell">
       <header className="topbar">
         <div><h1>ThreadPath for Codex</h1></div>
-        <div className="topbar-actions"><div className="status" aria-label={m.connectionStatus}><span className={`status-dot status-${connectionState.state}`} />{m.connectionState(connectionState.state)}{connectionState.serverVersion === undefined ? null : <span className="status-meta">{m.server} {connectionState.serverVersion}</span>}</div><button className="language-switch" type="button" onClick={() => void handleLanguageChange()} aria-label={m.language}>{language === "zh-CN" ? "EN" : "中文"}</button></div>
+        <div className="topbar-actions"><div className="status" aria-label={m.connectionStatus}><span className={`status-dot status-${connectionState.state}`} />{m.connectionState(connectionState.state)}{connectionState.serverVersion === undefined ? null : <span className="status-meta">{m.server} {connectionState.serverVersion}</span>}</div><select className="theme-switch" value={theme} onChange={(event) => void handleThemeChange(event.target.value as Theme)} aria-label={m.theme}><option value="graphite">{m.themeGraphite}</option><option value="black">{m.themeBlack}</option><option value="light">{m.themeLight}</option></select><button className="language-switch" type="button" onClick={() => void handleLanguageChange()} aria-label={m.language}>{language === "zh-CN" ? "EN" : "中文"}</button></div>
       </header>
       <Onboarding snapshot={onboardingState} onRediscover={() => void handleRediscover()} onChooseExecutable={() => void handleChooseExecutable()} onChooseDirectory={() => void handleChooseDirectory()} onConnect={() => void handleOnboardingConnect()} m={m} />
       <section className="workspace" aria-label={m.workspace}>

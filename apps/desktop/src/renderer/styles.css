@@ -1,6 +1,27 @@
 :root {
-  color: #e8edf5;
-  background: #101318;
+  --tp-bg: #101318;
+  --tp-panel: #15191f;
+  --tp-surface: #171e28;
+  --tp-surface-raised: #202a38;
+  --tp-surface-hover: #202b3a;
+  --tp-surface-selected: #263b56;
+  --tp-input: #101620;
+  --tp-code: #0b0f14;
+  --tp-border: #293342;
+  --tp-border-strong: #3a485c;
+  --tp-text: #e8edf5;
+  --tp-text-muted: #aebbd0;
+  --tp-text-subtle: #8290a1;
+  --tp-accent: #a9c8f2;
+  --tp-accent-text: #11151c;
+  --tp-accent-soft: #263f5f;
+  --tp-focus: #7fa9dc;
+  --tp-scroll-track: #14181e;
+  --tp-scroll-thumb: #465366;
+  --tp-scroll-thumb-hover: #596a80;
+  color: var(--tp-text);
+  background: var(--tp-bg);
+  color-scheme: dark;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -198,7 +219,7 @@ h1 { margin-bottom: 0; overflow: hidden; font-size: 13px; line-height: 1; letter
 .history-search-copy strong { color: #e3ebf7; font-size: 11px; }
 .history-search-copy small { color: #8290a1; font-size: 10px; }
 .history-search-status { display: grid; flex: 0 0 auto; justify-items: end; gap: 3px; font-size: 9px; }
-.history-search-status em { padding: 2px 5px; border-radius: 999px; color: #e2c189; background: #51411f; font-style: normal; white-space: nowrap; }
+.history-search-status em { padding: 2px 5px; border: 1px solid #45698f; border-radius: 999px; color: #b9cfea; background: #263b56; font-style: normal; white-space: nowrap; }
 .history-search-status b { color: #9fb9df; font-size: 10px; font-weight: 700; white-space: nowrap; }
 .thread-row-wrap { position: relative; display: grid; gap: 6px; }
 .thread-selection { position: absolute; z-index: 1; top: 50%; left: 8px; display: grid; width: 14px; height: 14px; place-items: center; transform: translateY(-50%); }
@@ -217,6 +238,7 @@ h1 { margin-bottom: 0; overflow: hidden; font-size: 13px; line-height: 1; letter
 .thread-name-editor input { min-width: 0; padding: 7px; border: 1px solid #3a485c; border-radius: 6px; color: #e8edf5; background: #171e28; font: inherit; }
 .thread-name-editor button { padding: 7px 9px; font-size: 11px; }
 .language-switch { padding: 3px 7px; color: #dce7f5; background: #263242; font-size: 10px; }
+.theme-switch { height: 22px; padding: 0 4px; border: 1px solid #3a485c; border-radius: 5px; color: #cbd8ea; background: #202a38; font-size: 10px; }
 .thread-title { overflow: hidden; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .thread-meta { display: block; overflow: hidden; margin-top: 2px; color: #8e9daf; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .details-empty { display: grid; min-height: 300px; place-content: center; max-width: 460px; }
@@ -231,6 +253,53 @@ dd { margin: 0; color: #e5edf7; }
 .details-note { margin: 26px 0 0; color: #718095; font-size: 13px; line-height: 1.6; }
 .footer { display: none; align-items: center; gap: 8px; min-height: 24px; padding: 4px 12px; border-top: 1px solid #293342; color: #77869a; font-size: 10px; }
 .footer.visible { display: flex; }
+
+/* Themes use one token palette so every application surface changes together. */
+:root[data-theme="black"] {
+  --tp-bg: #000;
+  --tp-panel: #090909;
+  --tp-surface: #101010;
+  --tp-surface-raised: #191919;
+  --tp-surface-hover: #22272d;
+  --tp-surface-selected: #1f3650;
+  --tp-input: #0b0b0b;
+  --tp-code: #050505;
+  --tp-border: #292929;
+  --tp-border-strong: #414141;
+  --tp-text: #f0f2f4;
+  --tp-text-muted: #c3c8ce;
+  --tp-text-subtle: #9099a3;
+  --tp-accent: #b4d1f5;
+  --tp-accent-text: #0b1016;
+  --tp-accent-soft: #203d5d;
+  --tp-focus: #8db9eb;
+  --tp-scroll-track: #080808;
+  --tp-scroll-thumb: #4a4f57;
+  --tp-scroll-thumb-hover: #646b75;
+}
+:root[data-theme="light"] {
+  --tp-bg: #f7f8fa;
+  --tp-panel: #eef1f5;
+  --tp-surface: #ffffff;
+  --tp-surface-raised: #e8edf3;
+  --tp-surface-hover: #e2eaf4;
+  --tp-surface-selected: #d8e6f7;
+  --tp-input: #ffffff;
+  --tp-code: #f1f4f7;
+  --tp-border: #cbd3dd;
+  --tp-border-strong: #9babbc;
+  --tp-text: #1d2937;
+  --tp-text-muted: #405267;
+  --tp-text-subtle: #687a8e;
+  --tp-accent: #2f6eae;
+  --tp-accent-text: #ffffff;
+  --tp-accent-soft: #dceafa;
+  --tp-focus: #3978b8;
+  --tp-scroll-track: #e4e8ed;
+  --tp-scroll-thumb: #aab6c3;
+  --tp-scroll-thumb-hover: #8394a7;
+  color-scheme: light;
+}
 .footer-error { overflow: hidden; color: #de9296; text-overflow: ellipsis; white-space: nowrap; }
 .empty-card { width: min(520px, 100%); padding: 42px; border: 1px solid #303c4d; border-radius: 18px; background: #171e28cc; box-shadow: 0 24px 80px #00000033; }
 h2 { margin-bottom: 12px; font-size: 28px; }
@@ -239,7 +308,7 @@ small { color: #6f7e91; }
 .error-summary { padding: 12px 14px; border: 1px solid #6c363d; border-radius: 10px; color: #f3a4a7 !important; background: #3b1e25; }
 button { padding: 10px 16px; border: 0; border-radius: 9px; color: #11151c; background: #a9c8f2; cursor: pointer; font: inherit; font-weight: 700; }
 button:disabled { cursor: wait; opacity: .6; }
-button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid #9fc7f6; outline-offset: 2px; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--tp-focus); outline-offset: 2px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .modal-backdrop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 24px; background: #05070baa; }
 .rename-modal { position: relative; width: min(380px, 100%); padding: 22px; border: 1px solid #3a485c; border-radius: 10px; background: #171d26; box-shadow: 0 18px 60px #0009; }
@@ -255,13 +324,38 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px
 
 .thread-list, .directory-list, .search-results, .turn-virtual-list {
   scrollbar-gutter: stable;
-  scrollbar-color: #465366 #14181e;
+  scrollbar-color: var(--tp-scroll-thumb) var(--tp-scroll-track);
   scrollbar-width: thin;
 }
 
 .thread-list, .directory-list, .turn-virtual-list { overflow-y: scroll; }
 
 *::-webkit-scrollbar { width: 10px; height: 10px; }
-*::-webkit-scrollbar-track { background: #14181e; }
-*::-webkit-scrollbar-thumb { border: 2px solid #14181e; border-radius: 999px; background: #465366; }
-*::-webkit-scrollbar-thumb:hover { background: #596a80; }
+*::-webkit-scrollbar-track { background: var(--tp-scroll-track); }
+*::-webkit-scrollbar-thumb { border: 2px solid var(--tp-scroll-track); border-radius: 999px; background: var(--tp-scroll-thumb); }
+*::-webkit-scrollbar-thumb:hover { background: var(--tp-scroll-thumb-hover); }
+
+/* Tokenized global surfaces. These declarations deliberately come last so themes
+   affect existing compact components without changing their layout. */
+body, .shell, .details-panel, .turn-composer { background: var(--tp-bg); color: var(--tp-text); }
+.topbar, .thread-panel, .footer, .search-panel, .turn-card, dl div { border-color: var(--tp-border); }
+.thread-panel { background: var(--tp-panel); }
+.onboarding-card, .empty-card, .details-card, .rename-modal, .workspace-menu, .thread-actions-menu { border-color: var(--tp-border-strong); background: var(--tp-surface); }
+.history-search input, .search-panel input, .turn-composer textarea, .thread-name-editor, .thread-name-editor input, .rename-modal input { border-color: var(--tp-border-strong); color: var(--tp-text); background: var(--tp-input); }
+.history-filter, .theme-switch, .language-switch, .workspace-history-action, .pagination-controls button, .composer-options select, .thread-status, .turn-status, .tool-status { border-color: var(--tp-border-strong); color: var(--tp-text-muted); background: var(--tp-surface-raised); }
+.history-selection-actions, .history-search-status em, .outline-index { border-color: var(--tp-border-strong); color: var(--tp-text-muted); background: var(--tp-surface-selected); }
+.workspace-toggle, .thread-row, .search-result, .history-search-result, .workspace-menu button, .thread-actions-menu button, .outline-entry { color: var(--tp-text-muted); }
+.workspace-toggle:hover, .thread-row:hover, .search-result:hover, .search-result.selected, .history-search-result:hover, .history-search-result:focus-visible, .workspace-menu button:hover, .workspace-menu button.selected, .thread-actions-menu button:hover, .thread-actions-menu button:focus-visible, .thread-actions-menu button.selected, .outline-entry:hover, .outline-entry:focus-visible { border-color: var(--tp-border-strong); background: var(--tp-surface-hover); }
+.thread-row.selected, .outline-entry.active, .workspace-group.located { border-color: var(--tp-focus); background: var(--tp-surface-selected); box-shadow: inset 3px 0 var(--tp-focus); }
+.conversation-heading h2, .directory-title, .thread-title, .item-heading strong, .markdown-message h1, .markdown-message h2, .markdown-message h3, dd { color: var(--tp-text); }
+.conversation-item, .role-system, .status-item, .tool-item, .markdown-inline-code { background: var(--tp-surface-raised); }
+.conversation-item p, .markdown-message, .markdown-message td, .markdown-message th, .markdown-code-block pre { color: var(--tp-text-muted); }
+.role-user { border-color: var(--tp-focus); background: var(--tp-accent-soft); }
+.markdown-message blockquote, .markdown-message th, .markdown-code-toolbar { border-color: var(--tp-border-strong); color: var(--tp-text-muted); background: var(--tp-surface-raised); }
+.markdown-code-block { border-color: var(--tp-border-strong); background: var(--tp-code); }
+.markdown-message td { border-color: var(--tp-border); background: var(--tp-surface); }
+.turn-composer textarea:focus, .history-search input:focus, .search-panel input:focus, .rename-modal input:focus { outline-color: var(--tp-focus); border-color: var(--tp-focus); }
+.composer-send, button { color: var(--tp-accent-text); background: var(--tp-accent); }
+.composer-send:disabled, button:disabled { color: var(--tp-text-subtle); background: var(--tp-surface-raised); }
+.history-search-status em, .workspace-select.selected, .history-search-status b, .back-history, .directory-rename, .workspace-menu strong { color: var(--tp-focus); }
+.theme-switch { min-width: 64px; cursor: pointer; }

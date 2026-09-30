@@ -199,10 +199,14 @@ async function getWorkspaceState() {
 }
 
 function registerApi(): void {
-  ipcMain.handle("app:get-info", (): AppInfo => ({ version: app.getVersion(), language: preferencesService.getLanguage() }));
+  ipcMain.handle("app:get-info", (): AppInfo => ({ version: app.getVersion(), language: preferencesService.getLanguage(), theme: preferencesService.getTheme() }));
   ipcMain.handle("app:set-language", async (_event, language: unknown): Promise<Language> => {
     if (language !== "zh-CN" && language !== "en-US") throw new ProcessError("language must be zh-CN or en-US");
     return preferencesService.setLanguage(language);
+  });
+  ipcMain.handle("app:set-theme", async (_event, theme: unknown) => {
+    if (theme !== "graphite" && theme !== "black" && theme !== "light") throw new ProcessError("theme must be graphite, black, or light");
+    return preferencesService.setTheme(theme);
   });
   ipcMain.handle("onboarding:get-state", (): OnboardingSnapshot => onboardingSnapshot);
   ipcMain.handle("onboarding:rediscover", async (): Promise<OnboardingSnapshot> => discoverCodex());

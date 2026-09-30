@@ -1,10 +1,12 @@
 export type ConnectionState = "idle" | "connecting" | "ready" | "error" | "stopped";
 export type AppRunMode = "setup" | "history" | "workspace";
 export type Language = "zh-CN" | "en-US";
+export type Theme = "graphite" | "black" | "light";
 
 export interface AppInfo {
   readonly version: string;
   readonly language: Language;
+  readonly theme: Theme;
 }
 
 export type OnboardingState = "detecting" | "found" | "connecting" | "ready" | "error";
@@ -203,6 +205,7 @@ export interface ThreadDisplayNameUpdate {
 export interface DesktopApi {
   readonly getAppInfo: () => Promise<AppInfo>;
   readonly setLanguage: (language: Language) => Promise<Language>;
+  readonly setTheme: (theme: Theme) => Promise<Theme>;
   readonly getOnboardingState: () => Promise<OnboardingSnapshot>;
   readonly rediscoverCodex: () => Promise<OnboardingSnapshot>;
   readonly chooseCodexExecutable: () => Promise<OnboardingSnapshot>;

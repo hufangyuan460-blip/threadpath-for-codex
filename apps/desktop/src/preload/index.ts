@@ -1,9 +1,10 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { DesktopApi, Language, WorkspaceState } from "../shared/api";
+import type { DesktopApi, Language, Theme, WorkspaceState } from "../shared/api";
 
 const desktopApi: DesktopApi = {
   getAppInfo: () => ipcRenderer.invoke("app:get-info"),
   setLanguage: (language: Language) => ipcRenderer.invoke("app:set-language", language),
+  setTheme: (theme: Theme) => ipcRenderer.invoke("app:set-theme", theme),
   getOnboardingState: () => ipcRenderer.invoke("onboarding:get-state"),
   rediscoverCodex: () => ipcRenderer.invoke("onboarding:rediscover"),
   chooseCodexExecutable: () => ipcRenderer.invoke("onboarding:choose-executable"),

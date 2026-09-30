@@ -1,12 +1,13 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { ConfiguredWorkspace, Language } from "../shared/api";
+import type { ConfiguredWorkspace, Language, Theme } from "../shared/api";
 import type { ThreadSummary } from "../../../../threadpath-protocol/src/protocol.ts";
 
 const MAX_THREAD_NAME_LENGTH = 72;
 
 export interface UserPreferencesFile {
   readonly language?: Language;
+  readonly theme?: Theme;
   readonly threadNames?: Readonly<Record<string, string>>;
   readonly workingDirectories?: readonly string[];
   readonly currentWorkingDirectory?: string;
@@ -74,12 +75,14 @@ export class UserPreferencesService {
   }
 
   getLanguage(): Language { return this.data.language ?? this.defaultLanguage; }
+  getTheme(): Theme { return this.data.theme ?? "graphite"; }
 
   async setLanguage(language: Language): Promise<Language> {
     this.data = { ...this.data, language };
     await this.persist();
     return language;
   }
+  async setTheme(theme: Theme): Promise<Theme> { this.data = { ...this.data, theme }; await this.persist(); return theme; }
 
   getThreadDisplayName(threadId: string, serverTitle?: string, firstUserText?: string): string {
     return threadDisplayName({ customName: this.data.threadNames?.[threadId], firstUserText, serverTitle, language: this.getLanguage() });
@@ -202,6 +205,7 @@ function isPreferencesFile(value: unknown): value is UserPreferencesFile {
   const object = value as Record<string, unknown>;
   const language = object.language;
   if (language !== undefined && language !== "zh-CN" && language !== "en-US") return false;
+  if (object.theme !== undefined && object.theme !== "graphite" && object.theme !== "black" && object.theme !== "light") return false;
   const names = object.threadNames;
   if (names !== undefined && (names === null || typeof names !== "object" || Array.isArray(names) || Object.values(names).some((name) => typeof name !== "string"))) return false;
   const directories = object.workingDirectories;
