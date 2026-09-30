@@ -178,6 +178,37 @@ async function runCompletedPath(): Promise<void> {
   });
 }
 
+async function runLocalHidePath(): Promise<void> {
+  await runScenario("local-hide", "e2e-completed", async (page) => {
+    await waitForText(page, '[aria-label="Connection status"]', "ready");
+    const thread = page.locator(".thread-row").first();
+    await thread.waitFor({ state: "visible" });
+    const title = await thread.textContent();
+    const threadActions = page.getByRole("button", { name: /Thread actions:/ }).first();
+    await threadActions.click();
+    await page.getByRole("menuitem", { name: "Hide conversation", exact: true }).click();
+    await page.waitForFunction((hiddenTitle) => ![...document.querySelectorAll(".thread-row")].some((element) => element.textContent?.includes(hiddenTitle)), title ?? "");
+
+    await page.getByRole("button", { name: "Show hidden items", exact: true }).click();
+    await page.getByText("Hidden conversations", { exact: true }).waitFor({ state: "visible" });
+    await page.locator(".thread-row").filter({ hasText: title ?? "" }).waitFor({ state: "visible" });
+    await page.getByRole("button", { name: /Thread actions:/ }).first().click();
+    await page.getByRole("menuitem", { name: "Show conversation", exact: true }).click();
+    await page.getByRole("button", { name: "Show workspace history", exact: true }).click();
+    await page.locator(".thread-row").filter({ hasText: title ?? "" }).waitFor({ state: "visible" });
+
+    const workspaceActions = page.getByRole("button", { name: /Workspace actions:/ }).first();
+    await workspaceActions.click();
+    await page.getByRole("menuitem", { name: "Hide workspace", exact: true }).click();
+    await page.waitForFunction(() => document.querySelectorAll(".workspace-group").length === 0);
+    await page.getByRole("button", { name: "Show hidden items", exact: true }).click();
+    await page.getByRole("button", { name: /Workspace actions:/ }).first().click();
+    await page.getByRole("menuitem", { name: "Show workspace", exact: true }).click();
+    await page.getByRole("button", { name: "Show workspace history", exact: true }).click();
+    await page.locator(".thread-row").filter({ hasText: title ?? "" }).waitFor({ state: "visible" });
+  });
+}
+
 async function runModelSelectorPath(): Promise<void> {
   await runScenario("model-selector", "e2e-models", async (page) => {
     await openThread(page);
@@ -340,6 +371,7 @@ async function main(): Promise<void> {
   await runFirstLaunchDiscoveryPath();
   await runNewConversationPath();
   await runCompletedPath();
+  await runLocalHidePath();
   await runModelSelectorPath();
   await runTerminalPath("e2e-failed", "failed");
   await runTerminalPath("e2e-interrupted", "interrupted");

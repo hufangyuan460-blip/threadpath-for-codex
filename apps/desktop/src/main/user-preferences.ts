@@ -11,7 +11,9 @@ export interface UserPreferencesFile {
   readonly workingDirectories?: readonly string[];
   readonly currentWorkingDirectory?: string;
   readonly expandedWorkingDirectories?: Readonly<Record<string, boolean>>;
+  readonly hiddenWorkingDirectories?: Readonly<Record<string, boolean>>;
   readonly threadWorkingDirectories?: Readonly<Record<string, string>>;
+  readonly hiddenThreads?: Readonly<Record<string, boolean>>;
   readonly historyMirror?: Readonly<Record<string, ThreadSummary>>;
   readonly configuredWorkspaces?: Readonly<Record<string, ConfiguredWorkspace>>;
 }
@@ -95,15 +97,18 @@ export class UserPreferencesService {
     const active = new Set(activeThreadIds);
     const names = Object.fromEntries(Object.entries(this.data.threadNames ?? {}).filter(([id]) => active.has(id)));
     const directories = Object.fromEntries(Object.entries(this.data.threadWorkingDirectories ?? {}).filter(([id]) => active.has(id)));
-    if (Object.keys(names).length === Object.keys(this.data.threadNames ?? {}).length && Object.keys(directories).length === Object.keys(this.data.threadWorkingDirectories ?? {}).length) return;
-    this.data = { ...this.data, threadNames: names, threadWorkingDirectories: directories };
+    const hiddenThreads = Object.fromEntries(Object.entries(this.data.hiddenThreads ?? {}).filter(([id]) => active.has(id)));
+    if (Object.keys(names).length === Object.keys(this.data.threadNames ?? {}).length && Object.keys(directories).length === Object.keys(this.data.threadWorkingDirectories ?? {}).length && Object.keys(hiddenThreads).length === Object.keys(this.data.hiddenThreads ?? {}).length) return;
+    this.data = { ...this.data, threadNames: names, threadWorkingDirectories: directories, hiddenThreads };
     await this.persist();
   }
 
   getWorkingDirectories(): string[] { return [...(this.data.workingDirectories ?? [])]; }
   getCurrentWorkingDirectory(): string | undefined { return this.data.currentWorkingDirectory; }
   getWorkspaceExpanded(path: string): boolean { return this.data.expandedWorkingDirectories?.[path] ?? true; }
+  isWorkspaceHidden(path: string): boolean { return this.data.hiddenWorkingDirectories?.[path] === true; }
   getThreadWorkingDirectory(threadId: string): string | undefined { return this.data.threadWorkingDirectories?.[threadId]; }
+  isThreadHidden(threadId: string): boolean { return this.data.hiddenThreads?.[threadId] === true; }
   getHistoryMirror(): ThreadSummary[] { return Object.values(this.data.historyMirror ?? {}); }
   getConfiguredWorkspaces(): ConfiguredWorkspace[] { return Object.values(this.data.configuredWorkspaces ?? {}); }
 
@@ -131,11 +136,27 @@ export class UserPreferencesService {
     await this.persist();
   }
 
+  async setWorkspaceHidden(path: string, hidden: boolean): Promise<void> {
+    const directories = { ...(this.data.hiddenWorkingDirectories ?? {}) };
+    if (hidden) directories[path] = true;
+    else delete directories[path];
+    this.data = { ...this.data, hiddenWorkingDirectories: directories };
+    await this.persist();
+  }
+
   async setThreadWorkingDirectory(threadId: string, path: string | undefined): Promise<void> {
     const directories = { ...(this.data.threadWorkingDirectories ?? {}) };
     if (path === undefined) delete directories[threadId];
     else directories[threadId] = path;
     this.data = { ...this.data, threadWorkingDirectories: directories };
+    await this.persist();
+  }
+
+  async setThreadHidden(threadId: string, hidden: boolean): Promise<void> {
+    const threads = { ...(this.data.hiddenThreads ?? {}) };
+    if (hidden) threads[threadId] = true;
+    else delete threads[threadId];
+    this.data = { ...this.data, hiddenThreads: threads };
     await this.persist();
   }
 
@@ -157,8 +178,12 @@ function isPreferencesFile(value: unknown): value is UserPreferencesFile {
   if (object.currentWorkingDirectory !== undefined && typeof object.currentWorkingDirectory !== "string") return false;
   const expanded = object.expandedWorkingDirectories;
   if (expanded !== undefined && (expanded === null || typeof expanded !== "object" || Array.isArray(expanded) || Object.values(expanded).some((value) => typeof value !== "boolean"))) return false;
+  const hiddenDirectories = object.hiddenWorkingDirectories;
+  if (hiddenDirectories !== undefined && (hiddenDirectories === null || typeof hiddenDirectories !== "object" || Array.isArray(hiddenDirectories) || Object.values(hiddenDirectories).some((value) => typeof value !== "boolean"))) return false;
   const associations = object.threadWorkingDirectories;
   if (associations !== undefined && (associations === null || typeof associations !== "object" || Array.isArray(associations) || Object.values(associations).some((path) => typeof path !== "string"))) return false;
+  const hiddenThreads = object.hiddenThreads;
+  if (hiddenThreads !== undefined && (hiddenThreads === null || typeof hiddenThreads !== "object" || Array.isArray(hiddenThreads) || Object.values(hiddenThreads).some((value) => typeof value !== "boolean"))) return false;
   const mirror = object.historyMirror;
   if (mirror !== undefined && (mirror === null || typeof mirror !== "object" || Array.isArray(mirror) || Object.values(mirror).some((item) => !isThreadMirror(item)))) return false;
   const configured = object.configuredWorkspaces;

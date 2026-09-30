@@ -19,6 +19,8 @@ async function main(): Promise<void> {
   await service.addDirectory(first);
   await service.addDirectory(second);
   await service.associateThread("thread-a", first);
+  await preferences.setThreadHidden("thread-a", true);
+  await preferences.setWorkspaceHidden(first, true);
   const threads: ThreadListItem[] = [
     { id: "thread-a", title: "A", status: "active", turnCount: 1 },
     { id: "thread-b", title: "B", status: "active", turnCount: 2 },
@@ -27,10 +29,14 @@ async function main(): Promise<void> {
   assert.equal(state.currentPath, second);
   assert.deepEqual(state.directories.map((directory) => directory.name), ["threadPath", "another-project"]);
   assert.deepEqual(state.directories[0]?.threads.map((thread) => thread.id), ["thread-a"]);
+  assert.equal(state.directories[0]?.hidden, true);
+  assert.equal(state.directories[0]?.threads[0]?.hidden, true);
   assert.deepEqual(state.unclassifiedThreads.map((thread) => thread.id), ["thread-b"]);
   await service.associateThread("thread-a", null);
   assert.deepEqual((await service.getState(threads)).unclassifiedThreads.map((thread) => thread.id), ["thread-a", "thread-b"]);
   await service.associateThread("thread-a", first);
+  await service.setHidden(first, false);
+  assert.equal((await service.getState(threads)).directories[0]?.hidden, undefined);
   await service.toggle(first);
   assert.equal((await service.getState(threads)).directories[0]?.expanded, false);
   assert.equal(workspaceDisplayName(`${first}\\`), "threadPath");

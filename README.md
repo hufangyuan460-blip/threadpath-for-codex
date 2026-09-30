@@ -51,6 +51,7 @@ ThreadPath for Codex 是与 Codex 官方客户端并行使用的独立桌面工�
 - 为未来的 Electron 桌面客户端积累协议事实。
 - 使用主进程历史同步服务从公开 `thread/list` API 构建本地镜像索引；同步会同时尝试未归档和已归档线程，并显示完整、部分或失败状态。同步失败时保留已有镜像，不读取 `CODEX_HOME` 内部数据库或会话文件。
 - 工作区分组优先使用本地显式绑定，其次使用 app-server 返回的 `cwd`；路径会规范化并在 Git 仓库中归一到仓库根目录，同时保留线程实际工作目录用于运行。无法确认的线程进入未分类历史。
+- 会话和工作区可在 ThreadPath 本地隐藏，并可从“隐藏项目”视图恢复；此操作只改变 ThreadPath 的展示偏好，不会归档、删除或修改 Codex 原始会话数据。
 - 发送前刷新当前线程状态，并对同线程及同一规范化工作区建立本地写入锁；发现活动回合、状态未知或工作区被占用时安全阻止发送。不同客户端之间的并发仍以 app-server 的 active-writer 拒绝为最终边界。
 - 当 CLI 可用但尚未确认实际项目目录时，ThreadPath 会使用用户配置目录下的隔离 `history-runtime` 启动目录进入只读历史模式；该目录不会显示为工作区，也不会用于用户会话写入。确认工作目录后才切换到可写工作区模式。
 - 官方线程返回的 `cwd` 会在可视化侧栏中自动形成工作区分组；这只是 ThreadPath 的本地整理，只有用户明确确认并由 ThreadPath 以该目录重启 app-server 后，才视为当前可写目录。
@@ -206,7 +207,7 @@ On first launch, the app discovers Codex CLI in this order: `CODEX_EXECUTABLE`, 
 
 When no confirmed working directory is available, the app still connects automatically in read-only history mode using an isolated `history-runtime` directory under its own user data. It can synchronize, read, and search official history, but sending, creating, and continuing turns stay disabled until the user confirms a project directory. The runtime directory is not shown in the workspace list.
 
-The desktop app keeps ThreadPath-only preferences in its own user configuration: local thread display names and the selected UI language (`中文` / `English`). These values never call a Codex title-changing RPC and never alter conversation content. Existing threads are resumed with the verified `thread/resume` protocol operation before a new turn; if the thread disappeared, the input remains available while the app asks the user to refresh the list.
+The desktop app keeps ThreadPath-only preferences in its own user configuration: local thread display names, local hidden conversation/workspace flags, and the selected UI language (`中文` / `English`). Hidden items can be restored from the Hidden items view. These values never call a Codex title-changing RPC and never alter conversation content. Existing threads are resumed with the verified `thread/resume` protocol operation before a new turn; if the thread disappeared, the input remains available while the app asks the user to refresh the list.
 
 When a thread is selected, the compact left sidebar switches from conversation history to that thread's question outline. The history and outline are independently scrollable; returning to history restores its previous scroll position. The conversation pane keeps its title and composer fixed while only the virtualized turn list scrolls.
 

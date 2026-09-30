@@ -33,6 +33,16 @@ export interface Messages {
   readonly threadActions: string;
   readonly moveToWorkspace: string;
   readonly noWorkspace: string;
+  readonly hideConversation: string;
+  readonly showConversation: string;
+  readonly hideWorkspace: string;
+  readonly showWorkspace: string;
+  readonly workspaceActions: string;
+  readonly showHiddenItems: string;
+  readonly showWorkspaceHistory: string;
+  readonly hiddenItems: string;
+  readonly hiddenConversations: string;
+  readonly noHiddenItems: string;
   readonly renameChat: string;
   readonly renameHint: string;
   readonly cancel: string;
@@ -128,6 +138,16 @@ const englishWorkspaceMessages = {
   threadActions: "Thread actions",
   moveToWorkspace: "Move to workspace",
   noWorkspace: "No workspace (unclassified history)",
+  hideConversation: "Hide conversation",
+  showConversation: "Show conversation",
+  hideWorkspace: "Hide workspace",
+  showWorkspace: "Show workspace",
+  workspaceActions: "Workspace actions",
+  showHiddenItems: "Show hidden items",
+  showWorkspaceHistory: "Show workspace history",
+  hiddenItems: "Hidden items",
+  hiddenConversations: "Hidden conversations",
+  noHiddenItems: "No hidden conversations or workspaces.",
   renameChat: "Rename chat",
   renameHint: "Keep it short and easy to recognize",
   cancel: "Cancel",
@@ -162,6 +182,16 @@ const chineseWorkspaceMessages = {
   threadActions: "线程操作",
   moveToWorkspace: "移动到工作区",
   noWorkspace: "无工作区（未归类历史）",
+  hideConversation: "隐藏会话",
+  showConversation: "显示会话",
+  hideWorkspace: "隐藏工作区",
+  showWorkspace: "显示工作区",
+  workspaceActions: "工作区操作",
+  showHiddenItems: "显示隐藏项目",
+  showWorkspaceHistory: "显示工作区历史",
+  hiddenItems: "隐藏项目",
+  hiddenConversations: "隐藏会话",
+  noHiddenItems: "没有隐藏的会话或工作区。",
   renameChat: "重命名聊天",
   renameHint: "保持简短且易于识别",
   cancel: "取消",

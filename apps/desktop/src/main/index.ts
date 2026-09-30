@@ -249,6 +249,13 @@ function registerApi(): void {
     await workspaceService.toggle(path);
     return getWorkspaceState();
   });
+  ipcMain.handle("workspace:set-hidden", async (_event, path: unknown, hidden: unknown) => {
+    if (typeof path !== "string" || typeof hidden !== "boolean") throw new ProcessError("workspace hide request is invalid");
+    const state = await getWorkspaceState();
+    if (!state.directories.some((directory) => directory.path === path)) throw new ProcessError("workspace is not available in local history");
+    await workspaceService.setHidden(path, hidden);
+    return getWorkspaceState();
+  });
   ipcMain.handle("workspace:associate-thread", async (_event, threadId: unknown, path: unknown) => {
     const validThreadId = validateThreadId(threadId);
     if (path === null || path === undefined) await workspaceService.associateThread(validThreadId, path);
@@ -279,6 +286,13 @@ function registerApi(): void {
     await preferencesService.setThreadDisplayName(validThreadId, name);
     const loaded = conversationService.getLoadedThread(validThreadId);
     return { threadId: validThreadId, title: preferencesService.getThreadDisplayName(validThreadId, serverThread?.title, firstReadableUserText(loaded?.turns)) };
+  });
+  ipcMain.handle("threads:set-hidden", async (_event, threadId: unknown, hidden: unknown) => {
+    const validThreadId = validateThreadId(threadId);
+    if (typeof hidden !== "boolean") throw new ProcessError("thread hide request is invalid");
+    if (!historySyncService.getCurrentResult().threads.some((thread) => thread.id === validThreadId)) throw new ThreadUnavailableError();
+    await preferencesService.setThreadHidden(validThreadId, hidden);
+    return getWorkspaceState();
   });
   ipcMain.handle("threads:read", async (_event, threadId: unknown) => withReadyConnection(async () => localizeThreadView(await conversationService.readThread(threadId))));
   ipcMain.handle("threads:refresh", async (_event, threadId: unknown) => withReadyConnection(async () => reconcileThread(validateThreadId(threadId))));

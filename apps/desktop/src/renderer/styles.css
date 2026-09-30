@@ -42,6 +42,10 @@ h1 { margin-bottom: 0; overflow: hidden; font-size: 13px; line-height: 1; letter
 .workspace-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-select { width: 20px; padding: 2px; color: #64758b; background: transparent; font-size: 17px; line-height: 1; }
 .workspace-select.selected { color: #9fb9df; }
+.workspace-actions { position: relative; flex: none; }
+.workspace-actions-button { width: 20px; padding: 2px; color: #91a9c9; background: transparent; font-size: 12px; line-height: 1; opacity: 0; }
+.workspace-group-row:hover .workspace-actions-button, .workspace-group-row:focus-within .workspace-actions-button, .workspace-actions-button[aria-expanded="true"] { opacity: 1; }
+.workspace-actions-menu { top: 22px; right: 0; }
 .workspace-thread-list { display: grid; gap: 2px; margin: 0 0 5px 19px; overflow: visible; }
 .workspace-thread-list .thread-row { padding: 7px 6px; font-size: 12px; }
 .workspace-history > .workspace-group:last-child { overflow: visible; }

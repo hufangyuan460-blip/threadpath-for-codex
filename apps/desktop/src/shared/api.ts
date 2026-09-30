@@ -73,6 +73,8 @@ export interface ThreadListItem {
   readonly workspacePath?: string;
   readonly workingDirectory?: string;
   readonly missingFromLatestSnapshot?: boolean;
+  /** Local ThreadPath presentation state. It never changes Codex data. */
+  readonly hidden?: boolean;
 }
 
 export interface WorkingDirectoryView {
@@ -80,6 +82,8 @@ export interface WorkingDirectoryView {
   readonly name: string;
   readonly expanded: boolean;
   readonly threads: readonly ThreadListItem[];
+  /** Local ThreadPath presentation state. It never changes the directory. */
+  readonly hidden?: boolean;
 }
 
 export type WorkspaceDirectoryAccess = "read" | "write";
@@ -208,8 +212,10 @@ export interface DesktopApi {
   readonly chooseWorkspaceDirectory: () => Promise<WorkspaceState>;
   readonly setCurrentWorkspace: (path: string) => Promise<WorkspaceState>;
   readonly toggleWorkspace: (path: string) => Promise<WorkspaceState>;
+  readonly setWorkspaceHidden: (path: string, hidden: boolean) => Promise<WorkspaceState>;
   readonly associateThreadWorkspace: (threadId: string, path: string | null) => Promise<WorkspaceState>;
   readonly setThreadDisplayName: (threadId: string, name: string | null) => Promise<ThreadDisplayNameUpdate>;
+  readonly setThreadHidden: (threadId: string, hidden: boolean) => Promise<WorkspaceState>;
   readonly readThread: (threadId: string) => Promise<ThreadDetails>;
   readonly refreshThread: (threadId: string) => Promise<ThreadDetails>;
   readonly loadMoreTurns: (threadId: string) => Promise<ThreadDetails>;
