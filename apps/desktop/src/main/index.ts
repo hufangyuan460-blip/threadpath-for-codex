@@ -12,7 +12,7 @@ import { WorkspaceService, validateWorkspacePath } from "./workspace-service";
 import { CodexHistorySyncService } from "./history-sync-service";
 import { WorkspaceLockService } from "./workspace-lock-service";
 import { AppServerError, ProcessError, ThreadUnavailableError } from "../../../../threadpath-protocol/src/protocol.ts";
-import type { AppInfo, AppRunMode, ConnectionStateSnapshot, ConversationThreadView, Language, OnboardingSnapshot, ThreadDisplayNameUpdate, ThreadWriteState } from "../shared/api";
+import type { AppInfo, AppRunMode, ConnectionStateSnapshot, ConversationThreadView, Language, ModelOption, OnboardingSnapshot, ThreadDisplayNameUpdate, ThreadWriteState } from "../shared/api";
 
 if (process.env.THREADPATH_E2E === "1") app.disableHardwareAcceleration();
 
@@ -38,6 +38,16 @@ function publicConnectionState(snapshot: ManagerConnectionState): ConnectionStat
     ...(snapshot.serverVersion === undefined ? {} : { serverVersion: snapshot.serverVersion }),
     ...(snapshot.protocolVersion === undefined ? {} : { protocolVersion: snapshot.protocolVersion }),
     ...(snapshot.capabilities === undefined ? {} : { capabilitiesKnown: snapshot.capabilities.known }),
+  };
+}
+
+function toModelOption(model: { id: string; displayName: string; defaultReasoningEffort?: string; supportedReasoningEfforts: readonly { reasoningEffort: string; description?: string }[]; isDefault: boolean }): ModelOption {
+  return {
+    id: model.id,
+    displayName: model.displayName,
+    ...(model.defaultReasoningEffort === undefined ? {} : { defaultReasoningEffort: model.defaultReasoningEffort }),
+    supportedReasoningEfforts: model.supportedReasoningEfforts.map((effort) => ({ id: effort.reasoningEffort, ...(effort.description === undefined ? {} : { description: effort.description }) })),
+    isDefault: model.isDefault,
   };
 }
 
@@ -212,6 +222,12 @@ function registerApi(): void {
     else if (state.state !== "ready") setOnboardingSnapshot({ ...onboardingSnapshot, state: "error", error: state.error ?? "Codex app-server could not be started" });
     return publicConnectionState(state);
   });
+  ipcMain.handle("models:list", async (): Promise<readonly ModelOption[]> => withReadyConnection(async () => {
+    try { return (await processManager.getReadyClient().listModels()).map(toModelOption); }
+    // This optional request must never make the composer unusable. An empty
+    // catalog keeps the user on the safe Codex-default path.
+    catch { return []; }
+  }));
   ipcMain.handle("threads:list", async () => {
     const result = historySyncService.getCurrentResult();
     return threadService.mapThreads(result.threads);
@@ -268,7 +284,7 @@ function registerApi(): void {
   ipcMain.handle("threads:refresh", async (_event, threadId: unknown) => withReadyConnection(async () => reconcileThread(validateThreadId(threadId))));
   ipcMain.handle("conversation:load-more", async (_event, threadId: unknown) => withReadyConnection(async () => localizeThreadView(await conversationService.loadMoreTurns(threadId))));
   ipcMain.handle("search:turns", async (_event, threadId: unknown, query: unknown) => withReadyConnection(() => conversationService.searchTurns(threadId, query)));
-  ipcMain.handle("conversation:start-turn", async (_event, threadId: unknown, text: unknown) => withReadyConnection(async () => {
+  ipcMain.handle("conversation:start-turn", async (_event, threadId: unknown, text: unknown, options: unknown) => withReadyConnection(async () => {
     if (appRunMode !== "workspace") throw new ProcessError("Confirm a working directory before sending.");
     const validThreadId = validateThreadId(threadId);
     const refreshed = await reconcileThread(validThreadId);
@@ -281,7 +297,7 @@ function registerApi(): void {
     if (workspaceKey === undefined) throw new ProcessError("Workspace state is unknown; refresh before sending.");
     workspaceLockService.acquire(validThreadId, workspaceKey);
     let result;
-    try { result = await conversationService.startTurn(validThreadId, text); }
+    try { result = await conversationService.startTurn(validThreadId, text, options); }
     catch (error: unknown) {
       if (error instanceof AppServerError && error.code === "active_writer") workspaceLockService.markExternal(validThreadId, workspaceKey);
       else workspaceLockService.release(validThreadId);
@@ -294,7 +310,7 @@ function registerApi(): void {
   ipcMain.handle("conversation:interrupt", async (_event, threadId: unknown) => withReadyConnection(async () => {
     await conversationService.interruptTurn(threadId);
   }));
-  ipcMain.handle("conversation:start-new", async (_event, workspacePath: unknown, text: unknown) => withReadyConnection(async () => {
+  ipcMain.handle("conversation:start-new", async (_event, workspacePath: unknown, text: unknown, options: unknown) => withReadyConnection(async () => {
     if (appRunMode !== "workspace") throw new ProcessError("Confirm a working directory before sending.");
     const path = await validateWorkspacePath(workspacePath, workspaceService.identityResolver);
     await workspaceService.setCurrent(path);
@@ -303,7 +319,7 @@ function registerApi(): void {
     const reservationId = `new-conversation:${workspaceKey}`;
     workspaceLockService.reserveWorkspace(reservationId, workspaceKey);
     let result;
-    try { result = await conversationService.startNewConversation(path, text); }
+    try { result = await conversationService.startNewConversation(path, text, options); }
     catch (error: unknown) { workspaceLockService.release(reservationId); throw error; }
     workspaceLockService.transfer(reservationId, result.threadId);
     await workspaceService.associateThread(result.threadId, path);

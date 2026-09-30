@@ -6,7 +6,7 @@ const hasExistingThread = process.env.FAKE_APP_SERVER_HAS_THREAD === "true";
 const capabilityMode = process.env.FAKE_APP_SERVER_CAPABILITIES ?? "absent";
 const e2eMode = mode.startsWith("e2e-");
 const e2eImplicitThreadId = mode === "e2e-implicit-thread";
-const e2eOutcome = (mode === "e2e-new" || e2eImplicitThreadId ? "completed" : mode.slice("e2e-".length)) as "completed" | "failed" | "interrupted";
+const e2eOutcome = (mode === "e2e-new" || mode === "e2e-models" || e2eImplicitThreadId ? "completed" : mode.slice("e2e-".length)) as "completed" | "failed" | "interrupted";
 let probeRequestId: number | undefined;
 let serverRequestId: number | string | undefined;
 function send(message: JsonObject): void { process.stdout.write(`${JSON.stringify(message)}\n`); }
@@ -17,7 +17,7 @@ function initializeResult(): JsonObject {
       ? ["thread/list", "thread/start"]
       : capabilityMode === "optional-missing"
         ? ["thread/list", "thread/start", "turn/start"]
-        : ["thread/list", "thread/read", "thread/turns/list", "thread/start", "thread/resume", "turn/start"];
+        : ["thread/list", "thread/read", "thread/turns/list", "thread/start", "thread/resume", "turn/start", "model/list"];
     result.capabilities = {
       methods,
       events: capabilityMode === "terminal-events-omitted" ? [] : ["turn/completed", "turn/failed", "turn/interrupted"],
@@ -77,8 +77,16 @@ lines.on("line", (line: string) => {
       }
       break;
     case "thread/turns/list": send({ jsonrpc: "2.0", id, result: { data: e2eMode ? e2eTurns() : [] } }); break;
-    case "thread/start": send({ jsonrpc: "2.0", id, result: { thread: { id: e2eMode ? e2eThreadId() : "new-thread", title: e2eMode ? "E2E conversation" : "New thread", cwd: process.cwd() } } }); break;
+    case "model/list": send({ jsonrpc: "2.0", id, result: { data: [{ id: "fake-model", displayName: "Fake Model", defaultReasoningEffort: "medium", supportedReasoningEfforts: [{ reasoningEffort: "low", description: "Fast" }, { reasoningEffort: "medium", description: "Balanced" }], isDefault: true }], nextCursor: null } }); break;
+    case "thread/start":
+      if ((mode === "model-options" || mode === "e2e-models") && (!isJsonObject(message.params) || message.params.model !== "fake-model")) send({ jsonrpc: "2.0", id, error: { code: "invalid_model", message: "expected model override" } });
+      else send({ jsonrpc: "2.0", id, result: { thread: { id: e2eMode ? e2eThreadId() : "new-thread", title: e2eMode ? "E2E conversation" : "New thread", cwd: process.cwd() } } });
+      break;
     case "turn/start":
+      if ((mode === "model-options" || mode === "e2e-models") && (!isJsonObject(message.params) || message.params.model !== "fake-model" || message.params.effort !== "low")) {
+        send({ jsonrpc: "2.0", id, error: { code: "invalid_options", message: "expected model and effort overrides" } });
+        break;
+      }
       if (mode === "e2e-active-writer-error") {
         send({ jsonrpc: "2.0", id, error: { code: "active_writer", message: "thread already has an active writer" } });
         break;

@@ -55,8 +55,9 @@ listThreadPage(options) → { threads, nextCursor? }
 readThread(threadId)
 resumeThread(threadId) → re-activate an existing thread before a new turn
 listTurns(threadId, options?) → { turns, nextCursor? }
-startThread(options)
-startTurn(threadId, input)
+listModels() → account-visible model ids and supported reasoning efforts
+startThread(options) → supports an optional model override
+startTurn(threadId, input, options?) → supports optional model and effort overrides
 waitForTurnTerminal(turnId)
 close()
 ```

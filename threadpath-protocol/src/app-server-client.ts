@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams, type SpawnOptionsWithoutStdio } from "node:child_process";
 import { createInterface } from "node:readline";
-import { type AppServerCapabilities, type JsonObject, type JsonValue, type DiagnosticRecord, type InitializeResult, type StartThreadOptions, type TerminalTurnEvent, type Thread, type ThreadListOptions, type ThreadPage, type ThreadSummary, type Turn, type TurnInput, type TurnListOptions, type TurnPage, AppServerError, CompatibilityError, ConfigurationError, ProcessError, ProtocolError, TimeoutError, errorFromServer, getThread, getThreadPage, getTurnId, getTurnPage, isJsonObject, parseInitializeResult, terminalTurnEvent } from "./protocol.ts";
+import { type AppServerCapabilities, type AppServerModel, type JsonObject, type JsonValue, type DiagnosticRecord, type InitializeResult, type StartThreadOptions, type StartTurnOptions, type TerminalTurnEvent, type Thread, type ThreadListOptions, type ThreadPage, type ThreadSummary, type Turn, type TurnInput, type TurnListOptions, type TurnPage, AppServerError, CompatibilityError, ConfigurationError, ProcessError, ProtocolError, TimeoutError, errorFromServer, getModels, getThread, getThreadPage, getTurnId, getTurnPage, isJsonObject, parseInitializeResult, terminalTurnEvent } from "./protocol.ts";
 
 type RequestId = number;
 type JsonRpcId = number | string;
@@ -168,24 +168,48 @@ export class AppServerClient {
     return getTurnPage(object);
   }
 
+  async listModels(): Promise<AppServerModel[]> {
+    this.requireCapability("model/list");
+    const models: AppServerModel[] = [];
+    const seenCursors = new Set<string>();
+    let cursor: string | undefined;
+    do {
+      const params: JsonObject = { limit: 100, includeHidden: false };
+      if (cursor !== undefined) params.cursor = cursor;
+      const response = await this.request("model/list", params);
+      const object = this.requireObject(response, "model/list");
+      if (!Array.isArray(object.data)) throw new ProtocolError("model/list response is missing a model list");
+      models.push(...getModels(object));
+      const nextCursor = typeof object.nextCursor === "string" ? object.nextCursor : undefined;
+      if (nextCursor === undefined || seenCursors.has(nextCursor)) break;
+      seenCursors.add(nextCursor);
+      cursor = nextCursor;
+    } while (true);
+    return models;
+  }
+
   async startThread(options: StartThreadOptions): Promise<Thread> {
     this.requireCapability("thread/start");
     const params: JsonObject = { cwd: options.cwd };
     if (options.ephemeral !== undefined) params.ephemeral = options.ephemeral;
     if (options.approvalPolicy !== undefined) params.approvalPolicy = options.approvalPolicy;
     if (options.sandbox !== undefined) params.sandbox = options.sandbox;
+    if (options.model !== undefined) params.model = options.model;
     const response = await this.request("thread/start", params);
     const thread = getThread(this.requireObject(response, "thread/start"));
     if (thread === undefined) throw new ProtocolError("thread/start response did not contain a thread id");
     return thread;
   }
 
-  async startTurn(threadId: string, input: readonly TurnInput[]): Promise<Turn> {
+  async startTurn(threadId: string, input: readonly TurnInput[], options: StartTurnOptions = {}): Promise<Turn> {
     this.requireCapability("turn/start");
-    const response = await this.request("turn/start", {
+    const params: JsonObject = {
       threadId,
       input: input.map((item) => ({ type: item.type, text: item.text })),
-    });
+    };
+    if (options.model !== undefined) params.model = options.model;
+    if (options.effort !== undefined) params.effort = options.effort;
+    const response = await this.request("turn/start", params);
     const turnId = getTurnId(this.requireObject(response, "turn/start"));
     if (turnId === undefined) throw new ProtocolError("turn/start response did not contain a turn id");
     return { id: turnId };

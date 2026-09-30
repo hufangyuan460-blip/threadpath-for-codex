@@ -28,6 +28,25 @@ export interface ConnectionStateSnapshot {
   readonly capabilitiesKnown?: boolean;
 }
 
+export interface ModelReasoningEffortOption {
+  readonly id: string;
+  readonly description?: string;
+}
+
+/** Models are discovered from the connected Codex app-server, never hard-coded. */
+export interface ModelOption {
+  readonly id: string;
+  readonly displayName: string;
+  readonly defaultReasoningEffort?: string;
+  readonly supportedReasoningEfforts: readonly ModelReasoningEffortOption[];
+  readonly isDefault: boolean;
+}
+
+export interface ComposerOptions {
+  readonly model?: string;
+  readonly effort?: string;
+}
+
 export type HistorySyncState = "idle" | "syncing" | "complete" | "partial" | "failed";
 
 export interface HistorySyncSnapshot {
@@ -180,6 +199,7 @@ export interface DesktopApi {
   readonly connect: () => Promise<ConnectionStateSnapshot>;
   readonly disconnect: () => Promise<ConnectionStateSnapshot>;
   readonly reconnect: () => Promise<ConnectionStateSnapshot>;
+  readonly listModels: () => Promise<readonly ModelOption[]>;
   readonly listThreads: () => Promise<ThreadListItem[]>;
   readonly getHistorySyncState: () => Promise<HistorySyncSnapshot>;
   readonly syncHistory: () => Promise<HistorySyncWorkspaceResult>;
@@ -194,8 +214,8 @@ export interface DesktopApi {
   readonly refreshThread: (threadId: string) => Promise<ThreadDetails>;
   readonly loadMoreTurns: (threadId: string) => Promise<ThreadDetails>;
   readonly searchTurns: (threadId: string, query: string) => Promise<SearchResult[]>;
-  readonly startTurn: (threadId: string, text: string) => Promise<StartTurnResult>;
+  readonly startTurn: (threadId: string, text: string, options?: ComposerOptions) => Promise<StartTurnResult>;
   readonly interruptTurn: (threadId: string) => Promise<void>;
-  readonly startNewConversation: (workspacePath: string, text: string) => Promise<StartNewConversationResult>;
+  readonly startNewConversation: (workspacePath: string, text: string, options?: ComposerOptions) => Promise<StartNewConversationResult>;
   readonly onConversationUpdate: (listener: (update: ConversationUpdate) => void) => () => void;
 }

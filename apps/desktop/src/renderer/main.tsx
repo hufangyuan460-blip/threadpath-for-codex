@@ -2,7 +2,7 @@ import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Virtuoso, type VirtuosoHandle, type ListRange } from "react-virtuoso";
 import "./styles.css";
-import type { AppInfo, ConnectionStateSnapshot, ConversationItemView, ConversationThreadView, ConversationUpdate, OnboardingSnapshot, SearchResult, ThreadListItem, Language, WorkspaceState } from "../shared/api";
+import type { AppInfo, ComposerOptions, ConnectionStateSnapshot, ConversationItemView, ConversationThreadView, ConversationUpdate, ModelOption, OnboardingSnapshot, SearchResult, ThreadListItem, Language, WorkspaceState } from "../shared/api";
 import { applyConversationUpdate, conversationUpdateKey } from "./conversation-state";
 import { buildTurnOutline } from "../shared/outline";
 import { chooseActiveTurnIdFromRange } from "./scroll-state";
@@ -236,6 +236,7 @@ function App(): React.JSX.Element {
   const [remoteActiveByThreadId, setRemoteActiveByThreadId] = useState<Record<string, boolean>>({});
   const [newDraft, setNewDraft] = useState("");
   const [newSendError, setNewSendError] = useState<string | undefined>();
+  const [modelOptions, setModelOptions] = useState<readonly ModelOption[]>([]);
   const [modelSelection, setModelSelection] = useState("default");
   const [reasoningSelection, setReasoningSelection] = useState("default");
   const [editingThreadId, setEditingThreadId] = useState<string | undefined>();
@@ -248,6 +249,12 @@ function App(): React.JSX.Element {
   const threadListScrollTop = useRef(0);
   const inputElement = useRef<HTMLTextAreaElement | null>(null);
   const m = messages[language];
+  const selectedModel = modelOptions.find((model) => model.id === modelSelection);
+  const reasoningOptions = selectedModel?.supportedReasoningEfforts ?? [];
+  const composerOptions: ComposerOptions = {
+    ...(selectedModel === undefined ? {} : { model: selectedModel.id }),
+    ...(reasoningSelection === "default" ? {} : { effort: reasoningSelection }),
+  };
   const selectedListThread = selectedThreadId === undefined ? undefined : threads.find((thread) => thread.id === selectedThreadId);
   const currentWorkspacePath = selectedThreadId === undefined ? workspaceState?.currentPath : selectedListThread?.workspacePath;
   const selectedThreadWorkspacePath = selectedThreadId === undefined ? undefined : selectedListThread?.workspacePath;
@@ -281,6 +288,20 @@ function App(): React.JSX.Element {
     } catch (error: unknown) {
       setThreadLoadState("error");
       setThreadError(errorMessage(error));
+    }
+  }, []);
+
+  const loadModels = useCallback(async (): Promise<void> => {
+    try {
+      const nextModels = await window.threadPath.listModels();
+      setModelOptions(nextModels);
+      setModelSelection((current) => current === "default" || nextModels.some((model) => model.id === current) ? current : "default");
+    } catch {
+      // Model selection is optional. Keep the composer usable with Codex's
+      // defaults if this server or account cannot expose a model catalog.
+      setModelOptions([]);
+      setModelSelection("default");
+      setReasoningSelection("default");
     }
   }, []);
 
@@ -427,6 +448,15 @@ function App(): React.JSX.Element {
     }
   }, [connectionState.state, loadThreads]);
 
+  useEffect(() => {
+    if (connectionState.state === "ready") void loadModels();
+    else {
+      setModelOptions([]);
+      setModelSelection("default");
+      setReasoningSelection("default");
+    }
+  }, [connectionState.state, loadModels]);
+
   useEffect(() => window.threadPath.onWorkspaceStateChanged((state) => {
     setWorkspaceState(state);
     setThreads([...state.directories.flatMap((directory) => directory.threads), ...state.unclassifiedThreads]);
@@ -555,7 +585,7 @@ function App(): React.JSX.Element {
       setNewSendError(undefined);
       setStartingTurn(true);
       try {
-        const result = await window.threadPath.startNewConversation(currentWorkspacePath, text);
+        const result = await window.threadPath.startNewConversation(currentWorkspacePath, text, composerOptions);
         setNewDraft("");
         setNewSendError(undefined);
         setSelectedThreadId(result.threadId);
@@ -572,7 +602,7 @@ function App(): React.JSX.Element {
     setStartingTurn(true);
     setScrollToLatest(true);
     try {
-      const result = await window.threadPath.startTurn(threadId, text);
+      const result = await window.threadPath.startTurn(threadId, text, composerOptions);
       if (result.displayName !== undefined) {
         setThreads((current) => current.map((thread) => thread.id === result.threadId ? { ...thread, title: result.displayName ?? thread.title } : thread));
         setSelectedThread((current) => current?.id === result.threadId ? { ...current, title: result.displayName ?? current.title } : current);
@@ -727,8 +757,8 @@ function App(): React.JSX.Element {
                 {showWorkspacePicker ? <button className="composer-workspace-picker" type="button" onClick={() => setWorkspaceMenuOpen((open) => !open)} aria-label={m.addWorkspace} title={currentWorkspacePath ?? m.chooseWorkspace}>＋</button> : null}
                 {workspaceMenuOpen ? <div className="workspace-menu" role="menu"><strong>{m.workspace}</strong>{workspaceState?.directories.map((directory) => <button key={directory.path} type="button" role="menuitem" className={directory.path === currentWorkspacePath ? "selected" : ""} onClick={() => void handleSetCurrentWorkspace(directory.path)} title={directory.path}>📁 {directory.name}</button>)}<button type="button" role="menuitem" onClick={() => void handleChooseWorkspaceForComposer()}>＋ {m.addWorkspace}</button></div> : null}
                 <div className="composer-options" aria-label={m.codexDefault}>
-                  <label title={m.modelUnavailable}><span className="sr-only">{m.model}</span><select id="composer-model" value={modelSelection} onChange={(event) => setModelSelection(event.target.value)} disabled aria-label={m.model}><option value="default">{m.codexDefault}</option></select></label>
-                  <label title={m.reasoningUnavailable}><span className="sr-only">{m.reasoning}</span><select id="composer-reasoning" value={reasoningSelection} onChange={(event) => setReasoningSelection(event.target.value)} disabled aria-label={m.reasoning}><option value="default">{m.codexDefault}</option></select></label>
+                  <label title={modelOptions.length === 0 ? m.modelUnavailable : m.model}><span className="sr-only">{m.model}</span><select id="composer-model" value={modelSelection} onChange={(event) => { setModelSelection(event.target.value); setReasoningSelection("default"); }} disabled={modelOptions.length === 0 || turnIsRunning} aria-label={m.model}><option value="default">{m.codexDefault}</option>{modelOptions.map((model) => <option key={model.id} value={model.id}>{model.displayName}{model.isDefault ? ` · ${m.codexDefault}` : ""}</option>)}</select></label>
+                  <label title={selectedModel === undefined || reasoningOptions.length === 0 ? m.reasoningUnavailable : m.reasoning}><span className="sr-only">{m.reasoning}</span><select id="composer-reasoning" value={reasoningSelection} onChange={(event) => setReasoningSelection(event.target.value)} disabled={selectedModel === undefined || reasoningOptions.length === 0 || turnIsRunning} aria-label={m.reasoning}><option value="default">{m.codexDefault}</option>{reasoningOptions.map((effort) => <option key={effort.id} value={effort.id} title={effort.description}>{effort.id}</option>)}</select></label>
                 </div>
                 <textarea ref={inputElement} id="turn-input" aria-label={m.sendMessage} value={inputText} onChange={(event) => setInputText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void handleStartTurn(); } }} placeholder={m.inputPlaceholder} rows={1} disabled={connectionState.state !== "ready" || turnIsRunning || inputUnavailable} />
                 <span className="composer-status" aria-live="polite">{interruptingThreadId !== undefined && interruptingThreadId === selectedThreadId ? m.stopping : startingTurn ? m.starting : historyMode ? m.confirmWorkspaceToSend : selectedThreadId === undefined && currentWorkspacePath === undefined ? m.chooseWorkspace : remoteActive ? m.remoteTurnRunning : inputUnavailable ? m.inputUnavailable : localRunningTurnId === undefined ? null : m.turnRunning}</span>

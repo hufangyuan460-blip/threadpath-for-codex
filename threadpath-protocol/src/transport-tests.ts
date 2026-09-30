@@ -64,6 +64,7 @@ async function verifyHighLevelErrors(): Promise<void> {
     (client) => client.listThreads(),
     (client) => client.readThread("existing-thread"),
     (client) => client.listTurns("existing-thread"),
+    (client) => client.listModels(),
     (client) => client.resumeThread("existing-thread"),
     (client) => client.startThread({ cwd, ephemeral: true }),
     (client) => client.startTurn("existing-thread", []),
@@ -97,8 +98,21 @@ async function verifyCapabilities(): Promise<void> {
     assert.equal(completeClient.supports("thread/turns/list"), true);
     assert.equal(completeClient.supports("thread/resume"), true);
     assert.equal(completeClient.supports("turn/interrupted"), true);
+    assert.equal(completeClient.supports("model/list"), true);
+    const models = await completeClient.listModels();
+    assert.deepEqual(models, [{ id: "fake-model", displayName: "Fake Model", defaultReasoningEffort: "medium", supportedReasoningEfforts: [{ reasoningEffort: "low", description: "Fast" }, { reasoningEffort: "medium", description: "Balanced" }], isDefault: true }]);
   } finally {
     await completeClient.close();
+  }
+
+  const modelOptionsClient = createFakeClient("model-options", false, undefined, "complete");
+  try {
+    await modelOptionsClient.initialize();
+    const thread = await modelOptionsClient.startThread({ cwd, ephemeral: true, model: "fake-model" });
+    const turn = await modelOptionsClient.startTurn(thread.id, [], { model: "fake-model", effort: "low" });
+    assert.equal(turn.id, "turn-1");
+  } finally {
+    await modelOptionsClient.close();
   }
 
   const optionalClient = createFakeClient("completed", false, undefined, "optional-missing");

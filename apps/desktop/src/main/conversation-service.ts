@@ -1,4 +1,4 @@
-import { ActiveTurnError, AppServerError, ConfigurationError, ProtocolError, ThreadUnavailableError, type JsonObject, type JsonValue, type TerminalTurnEvent, type Thread, type Turn, type TurnInput, type TurnItem, type TurnPage, isJsonObject, readString } from "../../../../threadpath-protocol/src/protocol.ts";
+import { ActiveTurnError, AppServerError, ConfigurationError, ProtocolError, ThreadUnavailableError, type JsonObject, type JsonValue, type StartTurnOptions, type TerminalTurnEvent, type Thread, type Turn, type TurnInput, type TurnItem, type TurnPage, isJsonObject, readString } from "../../../../threadpath-protocol/src/protocol.ts";
 import type { ConversationItemView, ConversationPagingState, ConversationThreadView, ConversationTurnView, ConversationUpdate, SearchResult, StartTurnResult } from "../shared/api";
 import { type ThreadClient, type ThreadClientProvider, validateThreadId } from "./thread-service.ts";
 import { buildTurnOutline } from "../shared/outline.ts";
@@ -18,10 +18,10 @@ type ToolStatus = Extract<ConversationItemView, { kind: "tool" }>["status"];
 export interface ConversationClient extends ThreadClient {
   readonly threadReadOrder?: TurnCollectionOrder;
   readonly turnPageOrder?: TurnCollectionOrder;
-  startThread(options: { cwd: string; ephemeral?: boolean }): Promise<Thread>;
+  startThread(options: { cwd: string; ephemeral?: boolean; model?: string }): Promise<Thread>;
   listTurns(threadId: string, options?: { limit?: number; cursor?: string }): Promise<TurnPage>;
   resumeThread(threadId: string): Promise<Thread>;
-  startTurn(threadId: string, input: readonly TurnInput[]): Promise<Turn>;
+  startTurn(threadId: string, input: readonly TurnInput[], options?: StartTurnOptions): Promise<Turn>;
   interruptTurn(threadId: string, turnId: string): Promise<void>;
   waitForTurnTerminal?(turnId: string): Promise<TerminalTurnEvent>;
   onNotification(listener: (event: { method: string; params: JsonObject }) => void): () => void;
@@ -173,11 +173,12 @@ export class ConversationService {
     return { thread: idleThread, activity: "idle" };
   }
 
-  async startTurn(threadId: unknown, text: unknown): Promise<StartTurnResult> {
+  async startTurn(threadId: unknown, text: unknown, options: unknown = undefined): Promise<StartTurnResult> {
     const validThreadId = validateThreadId(threadId);
     if (typeof text !== "string" || text.trim() === "" || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)) {
       throw new ConfigurationError("turn text must be non-empty plain text");
     }
+    const startOptions = validateComposerOptions(options);
     if (this.remoteActiveThreads.has(validThreadId)) throw new ActiveTurnError("This conversation has a confirmed active turn. Refresh its status before sending another message.");
     if (this.startingTurn || this.activeTurn !== undefined) throw new ProtocolError("only one turn may run at a time");
     this.startingTurn = true;
@@ -206,7 +207,7 @@ export class ConversationService {
       }
       let turn: Turn;
       try {
-        turn = await client.startTurn(validThreadId, [{ type: "text", text: text.trim() }]);
+        turn = await client.startTurn(validThreadId, [{ type: "text", text: text.trim() }], startOptions);
       } catch (error: unknown) {
         if (isActiveWriterError(error)) {
           throw new ActiveTurnError("Codex reported an active writer, but no active turn was confirmed. Refresh status and try again.");
@@ -231,19 +232,20 @@ export class ConversationService {
     await client.interruptTurn(validThreadId, active.turnId);
   }
 
-  async startNewConversation(cwd: unknown, text: unknown): Promise<StartTurnResult> {
+  async startNewConversation(cwd: unknown, text: unknown, options: unknown = undefined): Promise<StartTurnResult> {
     if (typeof cwd !== "string" || cwd.trim() === "") throw new ConfigurationError("workspace path must be a non-empty directory path");
     const validText = validateTurnText(text);
+    const startOptions = validateComposerOptions(options);
     if (this.startingTurn || this.activeTurn !== undefined) throw new ProtocolError("only one turn may run at a time");
     this.startingTurn = true;
     try {
       const client = this.clientProvider.getReadyClient();
       this.bindNotifications(client);
-      const thread = await client.startThread({ cwd: cwd.trim(), ephemeral: false });
+      const thread = await client.startThread({ cwd: cwd.trim(), ephemeral: false, ...(startOptions.model === undefined ? {} : { model: startOptions.model }) });
       this.loadedThreads.set(thread.id, toConversationThreadView(thread));
       let turn: Turn;
       try {
-        turn = await client.startTurn(thread.id, [{ type: "text", text: validText }]);
+        turn = await client.startTurn(thread.id, [{ type: "text", text: validText }], startOptions);
       } catch (error: unknown) {
         if (isActiveWriterError(error)) {
           this.markRemoteActive(thread.id);
@@ -391,6 +393,20 @@ function isActiveWriterError(error: unknown): boolean {
 function validateTurnText(text: unknown): string {
   if (typeof text !== "string" || text.trim() === "" || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)) throw new ConfigurationError("turn text must be non-empty plain text");
   return text.trim();
+}
+
+function validateComposerOptions(options: unknown): StartTurnOptions {
+  if (options === undefined) return {};
+  if (!isJsonObject(options) || Object.keys(options).some((key) => key !== "model" && key !== "effort")) throw new ConfigurationError("composer options must contain only model and effort");
+  const validate = (key: "model" | "effort"): string | undefined => {
+    const value = options[key];
+    if (value === undefined) return undefined;
+    if (typeof value !== "string" || value.trim() === "" || value.length > 160 || /[\u0000-\u001f\u007f]/.test(value)) throw new ConfigurationError(`composer ${key} must be a short plain-text value`);
+    return value.trim();
+  };
+  const model = validate("model");
+  const effort = validate("effort");
+  return { ...(model === undefined ? {} : { model }), ...(effort === undefined ? {} : { effort }) };
 }
 
 function isActiveStatus(status: string | undefined): boolean {

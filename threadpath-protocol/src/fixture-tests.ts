@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { errorFromServer, getThread, getThreadPage, getThreads, getTurnPage, isJsonObject, parseInitializeResult, readString, terminalTurnEvent, type JsonObject } from "./protocol.ts";
+import { errorFromServer, getModels, getThread, getThreadPage, getThreads, getTurnPage, isJsonObject, parseInitializeResult, readString, terminalTurnEvent, type JsonObject } from "./protocol.ts";
 
 const fixtureDirectory = fileURLToPath(new URL("../fixtures/", import.meta.url));
 
@@ -45,6 +45,11 @@ async function main(): Promise<void> {
   const legacyInitialize = parseInitializeResult(asObject((await readJsonLines("initialize-no-capabilities.jsonl"))[1]).result);
   assert.equal(legacyInitialize.capabilities.known, false);
   assert.equal(legacyInitialize.serverVersion, "0.9.0");
+
+  assert.deepEqual(getModels({ data: [{ id: "model-1", displayName: "Model One", defaultReasoningEffort: "medium", supportedReasoningEfforts: [{ reasoningEffort: "low", description: "Fast" }], isDefault: true }, { model: "model-2", supportedReasoningEfforts: [], isDefault: false }, { displayName: "invalid" }] }), [
+    { id: "model-1", displayName: "Model One", defaultReasoningEffort: "medium", supportedReasoningEfforts: [{ reasoningEffort: "low", description: "Fast" }], isDefault: true },
+    { id: "model-2", displayName: "model-2", supportedReasoningEfforts: [], isDefault: false },
+  ]);
 
   const emptyThreads = await readJsonLines("thread-list-empty.jsonl");
   assert.equal(emptyThreads.length, 2);

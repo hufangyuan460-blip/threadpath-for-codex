@@ -31,6 +31,28 @@ export interface StartThreadOptions {
   ephemeral?: boolean;
   approvalPolicy?: string;
   sandbox?: string;
+  model?: string;
+}
+
+export interface StartTurnOptions {
+  /** A model id previously returned by model/list. */
+  model?: string;
+  /** A reasoning effort previously returned for the selected model. */
+  effort?: string;
+}
+
+export interface AppServerReasoningEffort {
+  readonly reasoningEffort: string;
+  readonly description?: string;
+}
+
+/** A safe, picker-oriented subset of the app-server model/list response. */
+export interface AppServerModel {
+  readonly id: string;
+  readonly displayName: string;
+  readonly defaultReasoningEffort?: string;
+  readonly supportedReasoningEfforts: readonly AppServerReasoningEffort[];
+  readonly isDefault: boolean;
 }
 
 export interface TurnInput {
@@ -257,6 +279,25 @@ function parseTurnItem(value: JsonObject): TurnItem {
 
 export function getTurns(value: JsonValue): Turn[] {
   return getTurnPage(value).turns;
+}
+
+export function getModels(value: JsonValue): AppServerModel[] {
+  if (!isJsonObject(value) || !Array.isArray(value.data)) return [];
+  return value.data.flatMap((item) => {
+    if (!isJsonObject(item)) return [];
+    const id = readString(item, "id") ?? readString(item, "model");
+    if (id === undefined) return [];
+    const displayName = readString(item, "displayName") ?? id;
+    const effortSource = Array.isArray(item.supportedReasoningEfforts) ? item.supportedReasoningEfforts : [];
+    const supportedReasoningEfforts = effortSource.flatMap((effort) => {
+      if (!isJsonObject(effort)) return [];
+      const reasoningEffort = readString(effort, "reasoningEffort");
+      return reasoningEffort === undefined ? [] : [{ reasoningEffort, ...(readString(effort, "description") === undefined ? {} : { description: readString(effort, "description") }) }];
+    });
+    const defaultReasoningEffort = readString(item, "defaultReasoningEffort");
+    const isDefault = item.isDefault === true;
+    return [{ id, displayName, supportedReasoningEfforts, isDefault, ...(defaultReasoningEffort === undefined ? {} : { defaultReasoningEffort }) }];
+  });
 }
 
 export function getThreadPage(value: JsonValue): ThreadPage {

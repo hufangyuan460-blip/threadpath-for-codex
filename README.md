@@ -18,6 +18,7 @@ ThreadPath for Codex 是与 Codex 官方客户端并行使用的独立桌面工�
 - 使用 JSONL 和 JSON-RPC 通信；
 - 验证 `initialize`、`thread/list`、`thread/read`、`thread/turns/list`；
 - 验证 `thread/start` 和 `turn/start`；
+- 通过 `model/list` 动态读取当前 Codex 账户可用模型与思考强度；仅在服务端实际返回可用选项时启用输入框选择器，新建会话和后续回合均使用所选覆盖项；
 - 接收并处理流式通知；
 - 处理请求超时、进程退出、格式错误输出、服务端错误和协议错误；
 - 以 fake app-server 覆盖已有/空线程、三种回合终态和关键故障路径；
@@ -163,6 +164,7 @@ ThreadPath for Codex is an independent desktop companion intended to run alongsi
 - Communicates using JSONL and JSON-RPC;
 - Verifies `initialize`, `thread/list`, `thread/read`, and `thread/turns/list`;
 - Verifies `thread/start` and `turn/start`;
+- Dynamically reads the connected Codex account's available models and reasoning efforts through `model/list`; composer selectors enable only after the server returns usable options, and selected overrides apply to both new conversations and later turns;
 - Receives and handles streaming notifications;
 - Handles request timeouts, process exits, malformed stdout, server errors, and protocol errors;
 - Uses a fake app-server to cover existing/empty thread lists, three terminal turn outcomes, and key failure paths;

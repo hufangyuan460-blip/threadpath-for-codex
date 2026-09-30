@@ -21,6 +21,7 @@ async function launch(mode: string, executable = fakeExecutable, cwd: string | n
       CODEX_EXECUTABLE: executable,
       ...(cwd === null ? {} : { CODEX_CWD: cwd }),
       FAKE_APP_SERVER_MODE: mode,
+      FAKE_APP_SERVER_CAPABILITIES: mode === "e2e-models" ? "complete" : "absent",
       FAKE_APP_SERVER_HAS_THREAD: "true",
       ELECTRON_DISABLE_GPU: "1",
       ELECTRON_IS_DEV: "0",
@@ -111,8 +112,8 @@ async function runCompletedPath(): Promise<void> {
     await page.screenshot({ path: join(artifactDirectory, "selected-long-conversation.png"), fullPage: true });
     const composerBottomAfterScroll = await page.locator(".turn-composer").evaluate((element) => element.getBoundingClientRect().bottom);
     assert.ok(Math.abs(composerBottomAfterScroll - composerBottomBeforeScroll) <= 1, "composer moved after conversation scrolling");
-    assert.equal(await page.locator("#composer-model").isDisabled(), true, "model selector must degrade safely without confirmed server support");
-    assert.equal(await page.locator("#composer-reasoning").isDisabled(), true, "reasoning selector must degrade safely without confirmed server support");
+    assert.equal(await page.locator("#composer-model").isDisabled(), false, "model selector must enable after model/list succeeds");
+    assert.equal(await page.locator("#composer-reasoning").isDisabled(), true, "reasoning selector must wait for an explicit model choice");
     await page.locator("[data-turn-id]").first().waitFor({ state: "visible" });
     const renderedCount = await page.locator("[data-turn-id]").count();
     assert.ok(renderedCount > 0 && renderedCount < 24, `expected virtualized DOM, got ${renderedCount} turn nodes`);
@@ -174,6 +175,21 @@ async function runCompletedPath(): Promise<void> {
     await page.getByRole("button", { name: "Switch language" }).click();
     await page.getByRole("button", { name: "返回会话历史" }).waitFor({ state: "visible" });
     assert.equal(await page.locator("#turn-input").inputValue(), "keep input while switching language");
+  });
+}
+
+async function runModelSelectorPath(): Promise<void> {
+  await runScenario("model-selector", "e2e-models", async (page) => {
+    await openThread(page);
+    const model = page.locator("#composer-model");
+    const reasoning = page.locator("#composer-reasoning");
+    assert.equal(await model.isDisabled(), false, "model selector must enable for a confirmed catalog");
+    await model.selectOption("fake-model");
+    assert.equal(await reasoning.isDisabled(), false, "reasoning selector must enable for the chosen model");
+    await reasoning.selectOption("low");
+    await page.locator("#turn-input").fill("Model option E2E message");
+    await page.locator(".turn-composer button[type=submit]").click();
+    await page.locator('[data-turn-id="e2e-live-turn"]').getByText("completed", { exact: true }).waitFor({ state: "visible" });
   });
 }
 
@@ -311,6 +327,7 @@ async function main(): Promise<void> {
   await runFirstLaunchDiscoveryPath();
   await runNewConversationPath();
   await runCompletedPath();
+  await runModelSelectorPath();
   await runTerminalPath("e2e-failed", "failed");
   await runTerminalPath("e2e-interrupted", "interrupted");
   await runImplicitThreadIdTerminalPath();

@@ -12,6 +12,7 @@ const desktopApi: DesktopApi = {
   connect: () => ipcRenderer.invoke("app:connect"),
   disconnect: () => ipcRenderer.invoke("app:disconnect"),
   reconnect: () => ipcRenderer.invoke("app:reconnect"),
+  listModels: () => ipcRenderer.invoke("models:list"),
   listThreads: () => ipcRenderer.invoke("threads:list"),
   getHistorySyncState: () => ipcRenderer.invoke("history:get-sync-state"),
   syncHistory: () => ipcRenderer.invoke("history:sync"),
@@ -30,9 +31,9 @@ const desktopApi: DesktopApi = {
   refreshThread: (threadId) => ipcRenderer.invoke("threads:refresh", threadId),
   loadMoreTurns: (threadId) => ipcRenderer.invoke("conversation:load-more", threadId),
   searchTurns: (threadId, query) => ipcRenderer.invoke("search:turns", threadId, query),
-  startTurn: (threadId, text) => ipcRenderer.invoke("conversation:start-turn", threadId, text),
+  startTurn: (threadId, text, options) => ipcRenderer.invoke("conversation:start-turn", threadId, text, options),
   interruptTurn: (threadId) => ipcRenderer.invoke("conversation:interrupt", threadId),
-  startNewConversation: (workspacePath, text) => ipcRenderer.invoke("conversation:start-new", workspacePath, text),
+  startNewConversation: (workspacePath, text, options) => ipcRenderer.invoke("conversation:start-new", workspacePath, text, options),
   onConversationUpdate: (listener) => {
     const handler = (_event: unknown, update: Parameters<typeof listener>[0]): void => listener(update);
     ipcRenderer.on("conversation:update", handler);
