@@ -230,8 +230,7 @@ function Conversation({ thread, activeTurnId, loadingMore, loadMoreError, onLoad
   const navigate = (turnId: string): void => {
     const index = turnIndexById.get(turnId);
     if (index === undefined) return;
-    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-    virtuosoRef.current?.scrollToIndex({ index, align: "start", behavior: reducedMotion ? "auto" : "smooth" });
+    virtuosoRef.current?.scrollToIndex({ index, align: "start", behavior: "auto" });
     onNavigate(turnId);
   };
   const statusLabel = thread.remoteActive || thread.writeState === "externalThreadWriter" ? m.remoteTurnRunning : thread.writeState === "workspaceLocked" ? m.workspaceLocked : thread.writeState === "stateUnknown" ? m.stateUnknown : thread.writeState === "localTurnRunning" ? m.localTurnRunning : thread.canAcceptDirectInput === false ? m.inputUnavailable : undefined;
@@ -244,7 +243,7 @@ function Conversation({ thread, activeTurnId, loadingMore, loadMoreError, onLoad
     if (!scrollToLatest) return;
     if (lastIndex < 0 || lastTurnId === undefined || lastAutoScrolledTurnId.current === lastTurnId) return;
     lastAutoScrolledTurnId.current = lastTurnId;
-    virtuosoRef.current?.scrollToIndex({ index: lastIndex, align: "end", behavior: "auto" });
+    virtuosoRef.current?.scrollToIndex({ index: "LAST", align: "end", behavior: "auto" });
     onScrollToLatestHandled();
   }, [thread.id, lastTurnId, scrollToLatest, onScrollToLatestHandled]);
   const onRangeChanged = (range: ListRange): void => onVisibleTurn(chooseActiveTurnIdFromRange(thread.turns.map((turn) => turn.id), range));
@@ -262,7 +261,7 @@ function Conversation({ thread, activeTurnId, loadingMore, loadMoreError, onLoad
   return (
     <div className="conversation-layout">
       <div className="conversation" aria-label={m.conversation}>
-        <div className="conversation-heading"><div><h2>{thread.title}</h2></div><div className="conversation-heading-actions">{newContent ? <button className="new-content-button" type="button" onClick={() => { const lastIndex = thread.turns.length - 1; if (lastIndex >= 0) virtuosoRef.current?.scrollToIndex({ index: lastIndex, align: "end", behavior: "auto" }); onNewContentHandled(); }}>{m.newContent}</button> : null}<button className="refresh-status" type="button" onClick={onRefreshStatus} aria-label={m.refreshStatus} title={m.refreshStatus}>↻</button>{statusLabel === undefined ? null : <span className="thread-status">{statusLabel}</span>}</div></div>
+        <div className="conversation-heading"><div><h2>{thread.title}</h2></div><div className="conversation-heading-actions">{newContent ? <button className="new-content-button" type="button" onClick={() => { if (thread.turns.length > 0) virtuosoRef.current?.scrollToIndex({ index: "LAST", align: "end", behavior: "auto" }); onNewContentHandled(); }}>{m.newContent}</button> : null}<button className="refresh-status" type="button" onClick={onRefreshStatus} aria-label={m.refreshStatus} title={m.refreshStatus}>↻</button>{statusLabel === undefined ? null : <span className="thread-status">{statusLabel}</span>}</div></div>
         <div className="pagination-controls">
           {thread.paging.hasMore ? <button type="button" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? m.loadingEarlier : m.loadEarlier}</button> : <span className="panel-note">{m.noMore}</span>}
           {loadMoreError === undefined ? null : <p className="error-summary">{loadMoreError}</p>}
@@ -353,6 +352,7 @@ function App(): React.JSX.Element {
   const [editingThreadName, setEditingThreadName] = useState("");
   const [navigateToTurn, setNavigateToTurn] = useState<NavigateTurn | undefined>();
   const seenUpdateKeys = useRef(new Set<string>());
+  const settledTurnIds = useRef(new Set<string>());
   const navigationTarget = useRef<string | undefined>(undefined);
   const outlineButtons = useRef(new Map<string, HTMLButtonElement>());
   const threadListElement = useRef<HTMLDivElement | null>(null);
@@ -748,6 +748,12 @@ function App(): React.JSX.Element {
   useEffect(() => window.threadPath.onConversationUpdate((update: ConversationUpdate) => {
     if (update.type === "turn/started") setRemoteActiveByThreadId((current) => ({ ...current, [update.threadId]: true }));
     if (update.type === "turn/completed" || update.type === "turn/failed" || update.type === "turn/interrupted") {
+      settledTurnIds.current.add(update.turnId);
+      while (settledTurnIds.current.size > 512) {
+        const oldestTurnId = settledTurnIds.current.values().next().value;
+        if (oldestTurnId === undefined) break;
+        settledTurnIds.current.delete(oldestTurnId);
+      }
       setTurnTimings((current) => {
         const timing = current[update.turnId];
         return timing === undefined || timing.finishedAt !== undefined ? current : { ...current, [update.turnId]: { ...timing, finishedAt: Date.now() } };
@@ -783,8 +789,10 @@ function App(): React.JSX.Element {
         setNewDraft("");
         setNewSendError(undefined);
         setSelectedThreadId(result.threadId);
-        setRunningTurnByThreadId((current) => ({ ...current, [result.threadId]: result.turnId }));
-        setTurnTimings((current) => ({ ...current, [result.turnId]: { threadId: result.threadId, startedAt: Date.now() } }));
+        if (!settledTurnIds.current.has(result.turnId)) {
+          setRunningTurnByThreadId((current) => ({ ...current, [result.threadId]: result.turnId }));
+          setTurnTimings((current) => ({ ...current, [result.turnId]: { threadId: result.threadId, startedAt: Date.now() } }));
+        }
         void loadThreads();
       } catch (error: unknown) {
         setNewSendError(errorMessage(error));
@@ -795,7 +803,6 @@ function App(): React.JSX.Element {
     if (inputUnavailable) return;
     setSendErrorByThreadId((current) => { const next = { ...current }; delete next[threadId]; return next; });
     setStartingTurn(true);
-    setScrollToLatest(true);
     try {
       const result = await window.threadPath.startTurn(threadId, text, composerOptions);
       if (result.displayName !== undefined) {
@@ -810,8 +817,11 @@ function App(): React.JSX.Element {
         const turns = [...current.turns, newTurn];
         return { ...current, turns, outline: buildTurnOutline(turns), paging: { ...current.paging, orderedTurnIds: turns.map((item) => item.id) } };
       });
-      setRunningTurnByThreadId((current) => ({ ...current, [result.threadId]: result.turnId }));
-      setTurnTimings((current) => ({ ...current, [result.turnId]: { threadId: result.threadId, startedAt: Date.now() } }));
+      setScrollToLatest(true);
+      if (!settledTurnIds.current.has(result.turnId)) {
+        setRunningTurnByThreadId((current) => ({ ...current, [result.threadId]: result.turnId }));
+        setTurnTimings((current) => ({ ...current, [result.turnId]: { threadId: result.threadId, startedAt: Date.now() } }));
+      }
       setDraftByThreadId((current) => { const next = { ...current }; delete next[threadId]; return next; });
     } catch (error: unknown) {
       const currentThreadId = selectedThreadId;

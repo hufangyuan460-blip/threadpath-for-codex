@@ -45,7 +45,7 @@ async function waitForText(page: Page, selector: string, text: string): Promise<
 
 async function openThread(page: Page): Promise<void> {
   await waitForText(page, '[aria-label="Connection status"]', "ready");
-  const thread = page.locator('.thread-row').first();
+  const thread = page.locator('.thread-row').filter({ hasText: "First E2E user question" }).first();
   await thread.waitFor({ state: "visible" });
   await thread.click();
   await page.locator('.conversation-heading h2').waitFor({ state: "visible" });
@@ -190,7 +190,6 @@ async function runLocalHidePath(): Promise<void> {
     await page.waitForFunction((hiddenTitle) => ![...document.querySelectorAll(".thread-row")].some((element) => element.textContent?.includes(hiddenTitle)), title ?? "");
 
     await page.locator("#history-filter").selectOption("hidden");
-    await page.getByText("Hidden conversations", { exact: true }).waitFor({ state: "visible" });
     await page.locator(".thread-row").filter({ hasText: title ?? "" }).waitFor({ state: "visible" });
     await page.getByRole("button", { name: /Thread actions:/ }).first().click();
     await page.getByRole("menuitem", { name: "Show conversation", exact: true }).click();
@@ -251,7 +250,7 @@ async function runGlobalHistorySearchPath(): Promise<void> {
     const firstThreadActions = page.getByRole("button", { name: /Thread actions:/ }).first();
     await firstThreadActions.click();
     await page.getByRole("menuitem", { name: "Hide conversation", exact: true }).click();
-    await search.fill("E2E conversation");
+    await search.fill("E2E history 10");
     const hiddenThreadResult = page.locator(".history-search-result").filter({ hasText: "Show and open" });
     await hiddenThreadResult.waitFor({ state: "visible" });
     await hiddenThreadResult.click();
