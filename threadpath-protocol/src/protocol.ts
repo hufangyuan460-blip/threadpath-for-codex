@@ -148,6 +148,16 @@ export function readString(object: JsonObject, key: string): string | undefined 
   return typeof value === "string" ? value : undefined;
 }
 
+function readTimestamp(object: JsonObject, ...keys: readonly string[]): string | undefined {
+  for (const key of keys) {
+    const stringValue = readString(object, key);
+    if (stringValue !== undefined) return stringValue;
+    const numericValue = readNumber(object, key);
+    if (numericValue !== undefined) return new Date(numericValue < 10_000_000_000 ? numericValue * 1_000 : numericValue).toISOString();
+  }
+  return undefined;
+}
+
 export function readNumber(object: JsonObject, key: string): number | undefined {
   const value = object[key];
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
@@ -203,8 +213,8 @@ export function getThreads(value: JsonValue): ThreadSummary[] {
     if (!isJsonObject(item)) return [];
     const id = readString(item, "id");
     const turnCount = readNumber(item, "turnCount");
-    const createdAt = readString(item, "createdAt");
-    const updatedAt = readString(item, "updatedAt");
+    const createdAt = readTimestamp(item, "createdAt", "created_at", "timestamp");
+    const updatedAt = readTimestamp(item, "updatedAt", "updated_at", "lastUpdatedAt", "last_updated_at") ?? createdAt;
     const title = readString(item, "title");
     const preview = readString(item, "preview");
     const name = readString(item, "name");
@@ -221,8 +231,8 @@ export function getThread(value: JsonValue): Thread | undefined {
   const id = readString(source, "id");
   if (id === undefined) return undefined;
   const turnCount = readNumber(source, "turnCount");
-  const createdAt = readString(source, "createdAt");
-  const updatedAt = readString(source, "updatedAt");
+  const createdAt = readTimestamp(source, "createdAt", "created_at", "timestamp");
+  const updatedAt = readTimestamp(source, "updatedAt", "updated_at", "lastUpdatedAt", "last_updated_at") ?? createdAt;
   return {
     id,
     ...(readString(source, "title") === undefined ? {} : { title: readString(source, "title") }),
