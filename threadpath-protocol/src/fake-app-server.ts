@@ -39,7 +39,7 @@ function e2eTurns(): JsonObject[] {
   }));
 }
 function e2eThreadSummaries(): JsonObject[] {
-  return Array.from({ length: 24 }, (_, index) => ({ id: index === 0 && mode === "e2e-new" ? "e2e-new-thread" : index === 0 ? "e2e-thread" : `e2e-history-${index + 1}`, title: index === 0 ? "E2E conversation" : `E2E history ${index + 1}`, cwd: process.cwd() }));
+  return Array.from({ length: 24 }, (_, index) => ({ id: index === 0 && mode === "e2e-new" ? "e2e-new-thread" : index === 0 ? "e2e-thread" : `e2e-history-${index + 1}`, title: index === 0 ? "E2E conversation" : `E2E history ${index + 1}`, ...(index === 0 ? { preview: "First E2E user question" } : {}), cwd: process.cwd() }));
 }
 function e2eThreadId(): string { return mode === "e2e-new" ? "e2e-new-thread" : "e2e-thread"; }
 if (mode === "non-json") process.stdout.write("this is not JSON\n");

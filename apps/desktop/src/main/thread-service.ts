@@ -16,7 +16,9 @@ export interface ThreadDisplayNameProvider {
 
 export interface ThreadListViewModel {
   readonly id: string;
+  readonly serverTitle?: string;
   readonly title: string;
+  readonly preview?: string;
   readonly status: string;
   readonly turnCount: number | null;
   readonly createdAt?: string;
@@ -66,9 +68,11 @@ export class ThreadService {
 
     return {
       id: thread.id,
+      ...((thread.title ?? thread.name) === undefined ? {} : { serverTitle: thread.title ?? thread.name }),
       title: this.displayNameProvider === undefined
         ? thread.title?.trim() || "Untitled thread"
         : this.displayNameProvider.getThreadDisplayName(thread.id, thread.title ?? thread.name, thread.preview),
+      ...(thread.preview === undefined ? {} : { preview: thread.preview }),
       status: thread.status?.trim() || "unknown",
       turnCount: turns === undefined ? thread.turnCount ?? null : turns.length,
       ...(thread.createdAt === undefined ? {} : { createdAt: thread.createdAt }),

@@ -64,7 +64,11 @@ export interface HistorySyncWorkspaceResult {
 
 export interface ThreadListItem {
   readonly id: string;
+  /** Original server-supplied title retained for local history search. */
+  readonly serverTitle?: string;
   readonly title: string;
+  /** Short thread metadata supplied by Codex; used only by ThreadPath's local history search. */
+  readonly preview?: string;
   readonly status: string;
   readonly turnCount: number | null;
   readonly createdAt?: string;

@@ -20,6 +20,14 @@ export interface Messages {
   readonly detectAgain: string;
   readonly workspace: string;
   readonly workspaceHistory: string;
+  readonly searchHistory: string;
+  readonly searchHistoryPlaceholder: string;
+  readonly noHistorySearchResults: string;
+  readonly openConversation: string;
+  readonly showAndOpen: string;
+  readonly locateWorkspace: string;
+  readonly hidden: string;
+  readonly officialArchived: string;
   readonly unclassified: string;
   readonly addWorkspace: string;
   readonly chooseWorkspace: string;
@@ -125,6 +133,14 @@ export interface Messages {
 
 const englishWorkspaceMessages = {
   workspaceHistory: "Workspace history",
+  searchHistory: "Search conversations and workspaces",
+  searchHistoryPlaceholder: "Search conversation or workspace…",
+  noHistorySearchResults: "No matching conversations or workspaces.",
+  openConversation: "Open conversation",
+  showAndOpen: "Show and open",
+  locateWorkspace: "Locate workspace",
+  hidden: "Hidden",
+  officialArchived: "Archived in Codex",
   unclassified: "Unclassified history",
   addWorkspace: "Add workspace",
   chooseWorkspace: "Choose a workspace directory before sending.",
@@ -169,6 +185,14 @@ const englishWorkspaceMessages = {
 
 const chineseWorkspaceMessages = {
   workspaceHistory: "工作区历史",
+  searchHistory: "搜索会话和工作区",
+  searchHistoryPlaceholder: "搜索会话或工作区…",
+  noHistorySearchResults: "没有匹配的会话或工作区。",
+  openConversation: "打开会话",
+  showAndOpen: "显示并打开",
+  locateWorkspace: "定位工作区",
+  hidden: "已隐藏",
+  officialArchived: "Codex 已归档",
   unclassified: "未归类历史",
   addWorkspace: "新增工作目录",
   chooseWorkspace: "发送前请选择工作目录。",

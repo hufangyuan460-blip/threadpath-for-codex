@@ -11,6 +11,7 @@ import { messages, type Messages } from "./i18n";
 import { MarkdownMessage } from "./markdown.tsx";
 import { replaceThreadTitle } from "../shared/workspace-state";
 import { formatElapsedTime, type TurnTiming } from "./turn-timing.ts";
+import { searchHistory, type HistorySearchResult } from "../shared/history-search";
 
 type LoadState = "idle" | "loading" | "ready" | "empty" | "error";
 type NavigateTurn = (turnId: string) => void;
@@ -90,12 +91,34 @@ function SearchPanel({ query, results, selectedIndex, error, onQueryChange, onKe
   );
 }
 
-function WorkspaceSidebar({ state, loading, listElement, onScroll, onChoose, onSync, onSelectThread, onSetCurrent, onToggle, onRename, onMove, onSetThreadHidden, onSetWorkspaceHidden, m }: { state: WorkspaceState | undefined; loading: boolean; listElement: React.RefObject<HTMLDivElement | null>; onScroll: (top: number) => void; onChoose: () => void; onSync: () => void; onSelectThread: (threadId: string) => void; onSetCurrent: (path: string) => void; onToggle: (path: string) => void; onRename: (thread: ThreadListItem) => void; onMove: (threadId: string, path: string | null) => void; onSetThreadHidden: (threadId: string, hidden: boolean) => void; onSetWorkspaceHidden: (path: string, hidden: boolean) => void; m: Messages }): React.JSX.Element {
+function WorkspaceSidebar({ state, loading, listElement, onScroll, onChoose, onSync, onSelectThread, onSetCurrent, onToggle, onRename, onMove, onSetThreadHidden, onSetWorkspaceHidden, onRevealThread, onRevealWorkspace, m }: { state: WorkspaceState | undefined; loading: boolean; listElement: React.RefObject<HTMLDivElement | null>; onScroll: (top: number) => void; onChoose: () => void; onSync: () => void; onSelectThread: (threadId: string) => void; onSetCurrent: (path: string) => void; onToggle: (path: string) => void; onRename: (thread: ThreadListItem) => void; onMove: (threadId: string, path: string | null) => void; onSetThreadHidden: (threadId: string, hidden: boolean) => void; onSetWorkspaceHidden: (path: string, hidden: boolean) => void; onRevealThread: (threadId: string, workspacePath: string | undefined) => Promise<void>; onRevealWorkspace: (path: string) => Promise<void>; m: Messages }): React.JSX.Element {
   const [openMenuThreadId, setOpenMenuThreadId] = useState<string | undefined>();
   const [movingThreadId, setMovingThreadId] = useState<string | undefined>();
   const [openWorkspaceMenuPath, setOpenWorkspaceMenuPath] = useState<string | undefined>();
   const [showHidden, setShowHidden] = useState(false);
+  const [historyQuery, setHistoryQuery] = useState("");
+  const [focusedWorkspacePath, setFocusedWorkspacePath] = useState<string | undefined>();
+  const workspaceGroupElements = useRef(new Map<string, HTMLElement>());
   const closeMenus = (): void => { setOpenMenuThreadId(undefined); setMovingThreadId(undefined); setOpenWorkspaceMenuPath(undefined); };
+  const searchResults = searchHistory(state, historyQuery);
+  const showingSearch = historyQuery.trim() !== "";
+  useEffect(() => {
+    if (focusedWorkspacePath === undefined || showingSearch || showHidden) return;
+    const element = workspaceGroupElements.current.get(focusedWorkspacePath);
+    element?.scrollIntoView({ block: "nearest" });
+    const timeout = window.setTimeout(() => setFocusedWorkspacePath(undefined), 900);
+    return () => window.clearTimeout(timeout);
+  }, [focusedWorkspacePath, showHidden, showingSearch, state]);
+  const activateSearchResult = async (result: HistorySearchResult): Promise<void> => {
+    closeMenus();
+    if (result.kind === "thread") await onRevealThread(result.id, result.workspacePath);
+    else {
+      await onRevealWorkspace(result.id);
+      setFocusedWorkspacePath(result.id);
+    }
+    setShowHidden(false);
+    setHistoryQuery("");
+  };
   const renderThread = (thread: ThreadListItem): React.JSX.Element => <div className="thread-row-wrap" key={thread.id}>
     <button className="thread-row" type="button" onClick={() => { closeMenus(); onSelectThread(thread.id); }} title={thread.title}><span className="thread-title">{thread.title}</span></button>
     <button className="thread-actions-button" type="button" onClick={(event) => { event.stopPropagation(); setMovingThreadId(undefined); setOpenMenuThreadId((current) => current === thread.id ? undefined : thread.id); }} onKeyDown={(event) => { if (event.key === "Escape") closeMenus(); }} aria-label={`${m.threadActions}: ${thread.title}`} aria-expanded={openMenuThreadId === thread.id} aria-haspopup="menu">···</button>
@@ -111,7 +134,7 @@ function WorkspaceSidebar({ state, loading, listElement, onScroll, onChoose, onS
   </div>;
   const renderGroup = (path: string, name: string, expanded: boolean, groupThreads: readonly ThreadListItem[], showThreads = true): React.JSX.Element => {
     const isWorkspace = !path.startsWith("__");
-    return <section className="workspace-group" key={path}>
+    return <section className={`workspace-group${focusedWorkspacePath === path ? " located" : ""}`} key={path} ref={isWorkspace ? (element) => { if (element === null) workspaceGroupElements.current.delete(path); else workspaceGroupElements.current.set(path, element); } : undefined}>
       <div className="workspace-group-row">
         {!isWorkspace ? <div className="workspace-toggle"><span aria-hidden="true">•</span><span aria-hidden="true">📁</span><span className="workspace-name" title={name}>{name}</span></div> : <button className="workspace-toggle" type="button" onClick={() => onToggle(path)} aria-expanded={expanded} aria-label={expanded ? m.collapseWorkspace : m.expandWorkspace}><span aria-hidden="true">{expanded ? "⌄" : "›"}</span><span aria-hidden="true">📁</span><span className="workspace-name" title={path}>{name}</span></button>}
         {!isWorkspace ? null : <button className={`workspace-select${state?.currentPath === path ? " selected" : ""}`} type="button" onClick={() => onSetCurrent(path)} aria-label={`${m.workingDirectory}: ${name}`}>•</button>}
@@ -128,12 +151,16 @@ function WorkspaceSidebar({ state, loading, listElement, onScroll, onChoose, onS
   const hasItems = showHidden ? visibleDirectories.length + hiddenThreads.length > 0 : visibleDirectories.length + visibleUnclassified.length > 0;
   return <div className="workspace-history">
     <div className="panel-heading workspace-history-heading"><h2>{showHidden ? m.hiddenItems : m.workspaceHistory}</h2><div className="workspace-history-actions"><button className="workspace-history-action" type="button" onClick={() => { closeMenus(); setShowHidden((current) => !current); }} aria-label={showHidden ? m.showWorkspaceHistory : m.showHiddenItems} title={showHidden ? m.showWorkspaceHistory : m.showHiddenItems}>◉</button><button className="workspace-history-action" type="button" onClick={onSync} aria-label={m.syncNow} title={m.syncNow}>↻</button><button className="workspace-history-action" type="button" onClick={onChoose} aria-label={m.addWorkspace} title={m.addWorkspace}>＋</button></div></div>
+    <div className="history-search"><input id="history-search" type="search" value={historyQuery} onChange={(event) => { closeMenus(); setHistoryQuery(event.target.value); }} placeholder={m.searchHistoryPlaceholder} aria-label={m.searchHistory} /></div>
     {syncLabel === undefined ? null : <p className={`sync-note sync-${sync?.state ?? "idle"}`} role="status">{syncLabel}</p>}
     {loading ? <p className="panel-note">{m.loading}</p> : null}
     <div ref={listElement} className="thread-list workspace-history-list" role="listbox" aria-label={showHidden ? m.hiddenItems : m.workspaceHistory} onScroll={(event) => onScroll(event.currentTarget.scrollTop)}>
-      {showHidden ? visibleDirectories.map((directory) => renderGroup(directory.path, directory.name, directory.expanded, [], false)) : visibleDirectories.map((directory) => renderGroup(directory.path, directory.name, directory.expanded, directory.threads.filter((thread) => !thread.hidden)))}
-      {showHidden ? (hiddenThreads.length > 0 ? renderGroup("__hidden_threads__", m.hiddenConversations, true, hiddenThreads) : null) : (visibleUnclassified.length > 0 ? renderGroup("__unclassified__", m.unclassified, true, visibleUnclassified) : null)}
-      {state !== undefined && !hasItems && !loading ? <p className="panel-note">{showHidden ? m.noHiddenItems : m.noThreads}</p> : null}
+      {showingSearch ? <ol className="history-search-results">{searchResults.map((result) => <li key={`${result.kind}:${result.id}`}><button type="button" className="history-search-result" onClick={() => { void activateSearchResult(result); }}><span className="history-search-copy"><strong>{result.title}</strong><small>{result.detail}</small></span><span className="history-search-status">{result.hidden ? <em>{m.hidden}</em> : null}{result.archived ? <em>{m.officialArchived}</em> : null}<b>{result.kind === "thread" ? result.hidden ? m.showAndOpen : m.openConversation : result.hidden ? m.showWorkspace : m.locateWorkspace}</b></span></button></li>)}</ol> : <>
+        {showHidden ? visibleDirectories.map((directory) => renderGroup(directory.path, directory.name, directory.expanded, [], false)) : visibleDirectories.map((directory) => renderGroup(directory.path, directory.name, directory.expanded, directory.threads.filter((thread) => !thread.hidden)))}
+        {showHidden ? (hiddenThreads.length > 0 ? renderGroup("__hidden_threads__", m.hiddenConversations, true, hiddenThreads) : null) : (visibleUnclassified.length > 0 ? renderGroup("__unclassified__", m.unclassified, true, visibleUnclassified) : null)}
+        {state !== undefined && !hasItems && !loading ? <p className="panel-note">{showHidden ? m.noHiddenItems : m.noThreads}</p> : null}
+      </>}
+      {showingSearch && searchResults.length === 0 && !loading ? <p className="panel-note">{m.noHistorySearchResults}</p> : null}
     </div>
   </div>;
 }
@@ -501,6 +528,24 @@ function App(): React.JSX.Element {
     } catch (error: unknown) { setThreadError(errorMessage(error)); }
   };
 
+  const applyWorkspaceState = (nextState: WorkspaceState): void => {
+    setWorkspaceState(nextState);
+    setThreads([...nextState.directories.flatMap((directory) => directory.threads), ...nextState.unclassifiedThreads]);
+  };
+
+  const handleRevealWorkspace = async (path: string): Promise<void> => {
+    try { applyWorkspaceState(await window.threadPath.setWorkspaceHidden(path, false)); }
+    catch (error: unknown) { setThreadError(errorMessage(error)); }
+  };
+
+  const handleRevealThread = async (threadId: string, workspacePath: string | undefined): Promise<void> => {
+    try {
+      if (workspacePath !== undefined) applyWorkspaceState(await window.threadPath.setWorkspaceHidden(workspacePath, false));
+      applyWorkspaceState(await window.threadPath.setThreadHidden(threadId, false));
+      setSelectedThreadId(threadId);
+    } catch (error: unknown) { setThreadError(errorMessage(error)); }
+  };
+
   useEffect(() => {
     if (connectionState.state === "ready") void loadThreads();
     else {
@@ -834,7 +879,7 @@ function App(): React.JSX.Element {
       <Onboarding snapshot={onboardingState} onRediscover={() => void handleRediscover()} onChooseExecutable={() => void handleChooseExecutable()} onChooseDirectory={() => void handleChooseDirectory()} onConnect={() => void handleOnboardingConnect()} m={m} />
       <section className="workspace" aria-label={m.workspace}>
         <aside className="thread-panel">
-          {selectedThreadId !== undefined ? <ThreadDirectory thread={selectedThread} hidden={selectedListThread?.hidden === true} workspacePath={selectedThreadWorkspacePath} workspaceState={workspaceState} activeTurnId={activeTurnId} query={searchQuery} results={searchResults} selectedIndex={selectedSearchIndex} error={searchError} onQueryChange={setSearchQuery} onSearchKeyDown={(event) => handleSearchKeyDown(event, (turnId) => navigateToTurn?.(turnId))} onNavigate={(turnId) => navigateToTurn?.(turnId)} onBack={() => setSelectedThreadId(undefined)} onRename={() => { const current = threads.find((thread) => thread.id === selectedThreadId); if (current !== undefined) beginRename(current); }} onMove={(threadId, path) => void moveThreadToWorkspace(threadId, path)} onSetHidden={(threadId, hidden) => void handleSetThreadHidden(threadId, hidden)} setOutlineButton={setOutlineButton} m={m} /> : <WorkspaceSidebar state={workspaceState} loading={workspaceLoading || threadLoadState === "loading"} listElement={threadListElement} onScroll={(top) => { threadListScrollTop.current = top; }} onChoose={() => void handleChooseWorkspaceDirectory()} onSync={() => void syncHistory()} onSelectThread={setSelectedThreadId} onSetCurrent={(path) => void handleSetCurrentWorkspace(path)} onToggle={(path) => void handleToggleWorkspace(path)} onRename={beginRename} onMove={(threadId, path) => void moveThreadToWorkspace(threadId, path)} onSetThreadHidden={(threadId, hidden) => void handleSetThreadHidden(threadId, hidden)} onSetWorkspaceHidden={(path, hidden) => void handleSetWorkspaceHidden(path, hidden)} m={m} />}
+          {selectedThreadId !== undefined ? <ThreadDirectory thread={selectedThread} hidden={selectedListThread?.hidden === true} workspacePath={selectedThreadWorkspacePath} workspaceState={workspaceState} activeTurnId={activeTurnId} query={searchQuery} results={searchResults} selectedIndex={selectedSearchIndex} error={searchError} onQueryChange={setSearchQuery} onSearchKeyDown={(event) => handleSearchKeyDown(event, (turnId) => navigateToTurn?.(turnId))} onNavigate={(turnId) => navigateToTurn?.(turnId)} onBack={() => setSelectedThreadId(undefined)} onRename={() => { const current = threads.find((thread) => thread.id === selectedThreadId); if (current !== undefined) beginRename(current); }} onMove={(threadId, path) => void moveThreadToWorkspace(threadId, path)} onSetHidden={(threadId, hidden) => void handleSetThreadHidden(threadId, hidden)} setOutlineButton={setOutlineButton} m={m} /> : <WorkspaceSidebar state={workspaceState} loading={workspaceLoading || threadLoadState === "loading"} listElement={threadListElement} onScroll={(top) => { threadListScrollTop.current = top; }} onChoose={() => void handleChooseWorkspaceDirectory()} onSync={() => void syncHistory()} onSelectThread={setSelectedThreadId} onSetCurrent={(path) => void handleSetCurrentWorkspace(path)} onToggle={(path) => void handleToggleWorkspace(path)} onRename={beginRename} onMove={(threadId, path) => void moveThreadToWorkspace(threadId, path)} onSetThreadHidden={(threadId, hidden) => void handleSetThreadHidden(threadId, hidden)} onSetWorkspaceHidden={(path, hidden) => void handleSetWorkspaceHidden(path, hidden)} onRevealThread={handleRevealThread} onRevealWorkspace={handleRevealWorkspace} m={m} />}
         </aside>
         <section className="details-panel" aria-label={m.selectedConversation}>
           <div className="details-content">

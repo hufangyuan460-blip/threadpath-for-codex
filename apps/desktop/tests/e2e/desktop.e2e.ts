@@ -209,6 +209,39 @@ async function runLocalHidePath(): Promise<void> {
   });
 }
 
+async function runGlobalHistorySearchPath(): Promise<void> {
+  await runScenario("global-history-search", "e2e-completed", async (page) => {
+    await waitForText(page, '[aria-label="Connection status"]', "ready");
+    const search = page.locator("#history-search");
+    await search.fill("First E2E user question");
+    const previewResult = page.locator(".history-search-result").filter({ hasText: "First E2E user question" });
+    await previewResult.waitFor({ state: "visible" });
+    await previewResult.click();
+    await page.locator(".conversation-heading h2").getByText("User turn 1", { exact: true }).waitFor({ state: "visible" });
+    await page.getByRole("button", { name: "Back to conversation history" }).click();
+
+    const firstThreadActions = page.getByRole("button", { name: /Thread actions:/ }).first();
+    await firstThreadActions.click();
+    await page.getByRole("menuitem", { name: "Hide conversation", exact: true }).click();
+    await search.fill("E2E conversation");
+    const hiddenThreadResult = page.locator(".history-search-result").filter({ hasText: "Show and open" });
+    await hiddenThreadResult.waitFor({ state: "visible" });
+    await hiddenThreadResult.click();
+    await page.locator(".conversation-heading h2").getByText("User turn 1", { exact: true }).waitFor({ state: "visible" });
+    await page.getByRole("button", { name: "Back to conversation history" }).click();
+
+    const workspaceActions = page.getByRole("button", { name: /Workspace actions:/ }).first();
+    await workspaceActions.click();
+    await page.getByRole("menuitem", { name: "Hide workspace", exact: true }).click();
+    await search.fill("threadpath");
+    const hiddenWorkspaceResult = page.locator(".history-search-result").filter({ hasText: "Show workspace" });
+    await hiddenWorkspaceResult.waitFor({ state: "visible" });
+    await hiddenWorkspaceResult.click();
+    await page.waitForFunction(() => document.querySelector<HTMLInputElement>("#history-search")?.value === "");
+    await page.locator(".workspace-group.located").waitFor({ state: "visible" });
+  });
+}
+
 async function runModelSelectorPath(): Promise<void> {
   await runScenario("model-selector", "e2e-models", async (page) => {
     await openThread(page);
@@ -372,6 +405,7 @@ async function main(): Promise<void> {
   await runNewConversationPath();
   await runCompletedPath();
   await runLocalHidePath();
+  await runGlobalHistorySearchPath();
   await runModelSelectorPath();
   await runTerminalPath("e2e-failed", "failed");
   await runTerminalPath("e2e-interrupted", "interrupted");
