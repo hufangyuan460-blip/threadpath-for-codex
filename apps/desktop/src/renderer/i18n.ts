@@ -26,6 +26,12 @@ export interface Messages {
   readonly filterHidden: string;
   readonly filterArchived: string;
   readonly filterUnclassified: string;
+  readonly filterRecentlyUpdated: string;
+  readonly sortHistory: string;
+  readonly sortUpdated: string;
+  readonly sortName: string;
+  readonly sortWorkspace: string;
+  readonly updated: string;
   readonly favoriteConversation: string;
   readonly unfavoriteConversation: string;
   readonly favoriteWorkspace: string;
@@ -154,6 +160,12 @@ const englishWorkspaceMessages = {
   filterHidden: "Hidden",
   filterArchived: "Archived in Codex",
   filterUnclassified: "Unclassified",
+  filterRecentlyUpdated: "Recently updated",
+  sortHistory: "Sort history",
+  sortUpdated: "Last updated",
+  sortName: "Name",
+  sortWorkspace: "Workspace",
+  updated: "Updated",
   favoriteConversation: "Favorite conversation",
   unfavoriteConversation: "Remove conversation from favorites",
   favoriteWorkspace: "Favorite workspace",
@@ -221,6 +233,12 @@ const chineseWorkspaceMessages = {
   filterHidden: "已隐藏",
   filterArchived: "Codex 已归档",
   filterUnclassified: "未归类",
+  filterRecentlyUpdated: "最近更新",
+  sortHistory: "排序历史",
+  sortUpdated: "最后更新",
+  sortName: "名称",
+  sortWorkspace: "工作区",
+  updated: "更新于",
   favoriteConversation: "收藏会话",
   unfavoriteConversation: "取消收藏会话",
   favoriteWorkspace: "收藏工作区",
