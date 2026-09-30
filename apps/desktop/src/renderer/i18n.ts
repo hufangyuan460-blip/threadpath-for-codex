@@ -20,6 +20,21 @@ export interface Messages {
   readonly detectAgain: string;
   readonly workspace: string;
   readonly workspaceHistory: string;
+  readonly filterHistory: string;
+  readonly filterAll: string;
+  readonly filterFavorites: string;
+  readonly filterHidden: string;
+  readonly filterArchived: string;
+  readonly filterUnclassified: string;
+  readonly favoriteConversation: string;
+  readonly unfavoriteConversation: string;
+  readonly favoriteWorkspace: string;
+  readonly unfavoriteWorkspace: string;
+  readonly selectConversations: string;
+  readonly selectConversation: (title: string) => string;
+  readonly hideSelected: (count: number) => string;
+  readonly showSelected: (count: number) => string;
+  readonly cancelSelection: string;
   readonly searchHistory: string;
   readonly searchHistoryPlaceholder: string;
   readonly noHistorySearchResults: string;
@@ -133,6 +148,21 @@ export interface Messages {
 
 const englishWorkspaceMessages = {
   workspaceHistory: "Workspace history",
+  filterHistory: "Filter history",
+  filterAll: "All visible",
+  filterFavorites: "Favorites",
+  filterHidden: "Hidden",
+  filterArchived: "Archived in Codex",
+  filterUnclassified: "Unclassified",
+  favoriteConversation: "Favorite conversation",
+  unfavoriteConversation: "Remove conversation from favorites",
+  favoriteWorkspace: "Favorite workspace",
+  unfavoriteWorkspace: "Remove workspace from favorites",
+  selectConversations: "Select conversations",
+  selectConversation: (title: string) => `Select conversation: ${title}`,
+  hideSelected: (count: number) => `Hide selected (${count})`,
+  showSelected: (count: number) => `Show selected (${count})`,
+  cancelSelection: "Cancel selection",
   searchHistory: "Search conversations and workspaces",
   searchHistoryPlaceholder: "Search conversation or workspace…",
   noHistorySearchResults: "No matching conversations or workspaces.",
@@ -185,6 +215,21 @@ const englishWorkspaceMessages = {
 
 const chineseWorkspaceMessages = {
   workspaceHistory: "工作区历史",
+  filterHistory: "筛选历史",
+  filterAll: "全部可见",
+  filterFavorites: "收藏",
+  filterHidden: "已隐藏",
+  filterArchived: "Codex 已归档",
+  filterUnclassified: "未归类",
+  favoriteConversation: "收藏会话",
+  unfavoriteConversation: "取消收藏会话",
+  favoriteWorkspace: "收藏工作区",
+  unfavoriteWorkspace: "取消收藏工作区",
+  selectConversations: "选择会话",
+  selectConversation: (title: string) => `选择会话：${title}`,
+  hideSelected: (count: number) => `隐藏已选（${count}）`,
+  showSelected: (count: number) => `显示已选（${count}）`,
+  cancelSelection: "取消选择",
   searchHistory: "搜索会话和工作区",
   searchHistoryPlaceholder: "搜索会话或工作区…",
   noHistorySearchResults: "没有匹配的会话或工作区。",

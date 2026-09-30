@@ -53,6 +53,7 @@ ThreadPath for Codex 是与 Codex 官方客户端并行使用的独立桌面工�
 - 工作区分组优先使用本地显式绑定，其次使用 app-server 返回的 `cwd`；路径会规范化并在 Git 仓库中归一到仓库根目录，同时保留线程实际工作目录用于运行。无法确认的线程进入未分类历史。
 - 会话和工作区可在 ThreadPath 本地隐藏，并可从“隐藏项目”视图恢复；此操作只改变 ThreadPath 的展示偏好，不会归档、删除或修改 Codex 原始会话数据。
 - 左侧历史搜索会在已同步的本地镜像中检索会话标题、Codex 返回的首条用户文本摘要、工作区名称和路径；搜索不会批量读取会话正文或上传任何内容。隐藏的会话可“显示并打开”，隐藏的工作区可直接“显示工作区”并定位。
+- 历史侧栏支持本地“全部可见、收藏、已隐藏、Codex 已归档、未归类”筛选；会话与工作区可收藏，选择模式可批量隐藏或恢复会话。所有整理状态仅保存在 ThreadPath 偏好中。
 - 发送前刷新当前线程状态，并对同线程及同一规范化工作区建立本地写入锁；发现活动回合、状态未知或工作区被占用时安全阻止发送。不同客户端之间的并发仍以 app-server 的 active-writer 拒绝为最终边界。
 - 当 CLI 可用但尚未确认实际项目目录时，ThreadPath 会使用用户配置目录下的隔离 `history-runtime` 启动目录进入只读历史模式；该目录不会显示为工作区，也不会用于用户会话写入。确认工作目录后才切换到可写工作区模式。
 - 官方线程返回的 `cwd` 会在可视化侧栏中自动形成工作区分组；这只是 ThreadPath 的本地整理，只有用户明确确认并由 ThreadPath 以该目录重启 app-server 后，才视为当前可写目录。
@@ -208,7 +209,7 @@ On first launch, the app discovers Codex CLI in this order: `CODEX_EXECUTABLE`, 
 
 When no confirmed working directory is available, the app still connects automatically in read-only history mode using an isolated `history-runtime` directory under its own user data. It can synchronize, read, and search official history, but sending, creating, and continuing turns stay disabled until the user confirms a project directory. The runtime directory is not shown in the workspace list.
 
-The desktop app keeps ThreadPath-only preferences in its own user configuration: local thread display names, local hidden conversation/workspace flags, and the selected UI language (`中文` / `English`). Hidden items can be restored from the Hidden items view or directly from global history search. That search covers the already-synchronized thread title, Codex-provided first-user-text preview, workspace name, and workspace path; it does not bulk-read conversation bodies or upload query data. These values never call a Codex title-changing RPC and never alter conversation content. Existing threads are resumed with the verified `thread/resume` protocol operation before a new turn; if the thread disappeared, the input remains available while the app asks the user to refresh the list.
+The desktop app keeps ThreadPath-only preferences in its own user configuration: local thread display names, favorite flags, local hidden conversation/workspace flags, and the selected UI language (`中文` / `English`). The history sidebar filters local visible, favorite, hidden, Codex-archived, and unclassified entries; selection mode can hide or restore multiple conversations. Hidden items can also be restored from global history search. That search covers the already-synchronized thread title, Codex-provided first-user-text preview, workspace name, and workspace path; it does not bulk-read conversation bodies or upload query data. These values never call a Codex title-changing RPC and never alter conversation content. Existing threads are resumed with the verified `thread/resume` protocol operation before a new turn; if the thread disappeared, the input remains available while the app asks the user to refresh the list.
 
 When a thread is selected, the compact left sidebar switches from conversation history to that thread's question outline. The history and outline are independently scrollable; returning to history restores its previous scroll position. The conversation pane keeps its title and composer fixed while only the virtualized turn list scrolls.
 

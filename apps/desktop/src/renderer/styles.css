@@ -37,6 +37,10 @@ h1 { margin-bottom: 0; overflow: hidden; font-size: 13px; line-height: 1; letter
 .history-search { flex: none; margin: 0 0 6px; }
 .history-search input { width: 100%; padding: 7px 8px; border: 1px solid #3a485c; border-radius: 7px; color: #e8edf5; background: #101620; font: inherit; font-size: 11px; }
 .history-search input:focus { outline: 2px solid #6082af; outline-offset: 1px; }
+.history-filter { width: 100%; height: 25px; margin: 0 0 6px; padding: 0 6px; border: 1px solid #35465e; border-radius: 6px; color: #cbd8ea; background: #171e28; font: inherit; font-size: 10px; }
+.history-selection-actions { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin: 0 0 6px; padding: 4px 6px; border: 1px solid #35465e; border-radius: 6px; color: #9fb9df; background: #1b2634; font-size: 10px; }
+.history-selection-actions button { padding: 4px 6px; border-radius: 5px; color: #dce7f5; background: #2a3d56; font: inherit; font-size: 10px; }
+.history-selection-actions button:disabled { cursor: not-allowed; opacity: .55; }
 .workspace-history > .panel-note { flex: none; margin: 6px 4px; font-size: 11px; }
 .workspace-group { min-width: 0; flex: none; }
 .workspace-group.located { border-radius: 7px; background: #223149; box-shadow: inset 2px 0 #8bb2e5; }
@@ -195,7 +199,10 @@ h1 { margin-bottom: 0; overflow: hidden; font-size: 13px; line-height: 1; letter
 .history-search-status em { padding: 2px 5px; border-radius: 999px; color: #e2c189; background: #51411f; font-style: normal; white-space: nowrap; }
 .history-search-status b { color: #9fb9df; font-size: 10px; font-weight: 700; white-space: nowrap; }
 .thread-row-wrap { position: relative; display: grid; gap: 6px; }
+.thread-selection { position: absolute; z-index: 1; top: 50%; left: 8px; display: grid; width: 14px; height: 14px; place-items: center; transform: translateY(-50%); }
+.thread-selection input { margin: 0; accent-color: #8bb2e5; }
 .thread-row { display: block; width: 100%; overflow: hidden; padding: 10px 38px 10px 9px; border: 1px solid transparent; border-radius: 7px; color: #dce5f2; background: transparent; cursor: pointer; text-align: left; font: inherit; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.thread-row.selecting { padding-left: 29px; }
 .thread-row:hover { border-color: #35465e; background: #202b3a; }
 .thread-row.selected { border-color: #6082af; background: #263b56; }
 .thread-actions-button { position: absolute; top: 4px; right: 4px; width: 28px; padding: 4px 2px; color: #a9c8f2; background: transparent; font-size: 13px; line-height: 1; opacity: 0; }

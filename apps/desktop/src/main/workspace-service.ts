@@ -44,14 +44,14 @@ export class WorkspaceService {
       const rawPath = this.preferences.getThreadWorkingDirectory(thread.id) ?? thread.workspacePath;
       const path = rawPath === undefined ? undefined : this.cachedRoot(rawPath);
       const target = path === undefined ? undefined : grouped.get(path);
-      const view = { ...thread, ...(this.preferences.isThreadHidden(thread.id) ? { hidden: true } : {}) };
+      const view = { ...thread, ...(this.preferences.isThreadHidden(thread.id) ? { hidden: true } : {}), ...(this.preferences.isThreadFavorite(thread.id) ? { favorite: true } : {}) };
       if (target === undefined) unclassifiedThreads.push(view);
       else target.push({ ...view, workspacePath: path });
     }
     const currentPath = this.cachedRoot(this.preferences.getCurrentWorkingDirectory() ?? "");
     return {
       ...(currentPath === undefined ? {} : { currentPath }),
-      directories: directories.map((path) => ({ path, name: workspaceDisplayName(path), expanded: this.preferences.getWorkspaceExpanded(path), ...(this.preferences.isWorkspaceHidden(path) ? { hidden: true } : {}), threads: grouped.get(path) ?? [] })),
+      directories: directories.map((path) => ({ path, name: workspaceDisplayName(path), expanded: this.preferences.getWorkspaceExpanded(path), ...(this.preferences.isWorkspaceHidden(path) ? { hidden: true } : {}), ...(this.preferences.isWorkspaceFavorite(path) ? { favorite: true } : {}), threads: grouped.get(path) ?? [] })),
       unclassifiedThreads,
       configuredWorkspaces: [...configured.values()] as readonly ConfiguredWorkspace[],
       sync,
@@ -75,6 +75,10 @@ export class WorkspaceService {
 
   async setHidden(path: string, hidden: boolean): Promise<void> {
     await this.preferences.setWorkspaceHidden(path, hidden);
+  }
+
+  async setFavorite(path: string, favorite: boolean): Promise<void> {
+    await this.preferences.setWorkspaceFavorite(path, favorite);
   }
 
   async associateThread(threadId: string, path: unknown): Promise<void> {

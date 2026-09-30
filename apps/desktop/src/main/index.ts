@@ -256,6 +256,13 @@ function registerApi(): void {
     await workspaceService.setHidden(path, hidden);
     return getWorkspaceState();
   });
+  ipcMain.handle("workspace:set-favorite", async (_event, path: unknown, favorite: unknown) => {
+    if (typeof path !== "string" || typeof favorite !== "boolean") throw new ProcessError("workspace favorite request is invalid");
+    const state = await getWorkspaceState();
+    if (!state.directories.some((directory) => directory.path === path)) throw new ProcessError("workspace is not available in local history");
+    await workspaceService.setFavorite(path, favorite);
+    return getWorkspaceState();
+  });
   ipcMain.handle("workspace:associate-thread", async (_event, threadId: unknown, path: unknown) => {
     const validThreadId = validateThreadId(threadId);
     if (path === null || path === undefined) await workspaceService.associateThread(validThreadId, path);
@@ -292,6 +299,21 @@ function registerApi(): void {
     if (typeof hidden !== "boolean") throw new ProcessError("thread hide request is invalid");
     if (!historySyncService.getCurrentResult().threads.some((thread) => thread.id === validThreadId)) throw new ThreadUnavailableError();
     await preferencesService.setThreadHidden(validThreadId, hidden);
+    return getWorkspaceState();
+  });
+  ipcMain.handle("threads:set-hidden-many", async (_event, threadIds: unknown, hidden: unknown) => {
+    if (!Array.isArray(threadIds) || threadIds.length === 0 || threadIds.length > 1000 || typeof hidden !== "boolean") throw new ProcessError("thread bulk hide request is invalid");
+    const validThreadIds = [...new Set(threadIds.map((threadId) => validateThreadId(threadId)))];
+    const available = new Set(historySyncService.getCurrentResult().threads.map((thread) => thread.id));
+    if (validThreadIds.some((threadId) => !available.has(threadId))) throw new ThreadUnavailableError();
+    await preferencesService.setThreadsHidden(validThreadIds, hidden);
+    return getWorkspaceState();
+  });
+  ipcMain.handle("threads:set-favorite", async (_event, threadId: unknown, favorite: unknown) => {
+    const validThreadId = validateThreadId(threadId);
+    if (typeof favorite !== "boolean") throw new ProcessError("thread favorite request is invalid");
+    if (!historySyncService.getCurrentResult().threads.some((thread) => thread.id === validThreadId)) throw new ThreadUnavailableError();
+    await preferencesService.setThreadFavorite(validThreadId, favorite);
     return getWorkspaceState();
   });
   ipcMain.handle("threads:read", async (_event, threadId: unknown) => withReadyConnection(async () => localizeThreadView(await conversationService.readThread(threadId))));

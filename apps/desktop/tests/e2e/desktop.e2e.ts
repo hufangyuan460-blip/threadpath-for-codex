@@ -189,23 +189,51 @@ async function runLocalHidePath(): Promise<void> {
     await page.getByRole("menuitem", { name: "Hide conversation", exact: true }).click();
     await page.waitForFunction((hiddenTitle) => ![...document.querySelectorAll(".thread-row")].some((element) => element.textContent?.includes(hiddenTitle)), title ?? "");
 
-    await page.getByRole("button", { name: "Show hidden items", exact: true }).click();
+    await page.locator("#history-filter").selectOption("hidden");
     await page.getByText("Hidden conversations", { exact: true }).waitFor({ state: "visible" });
     await page.locator(".thread-row").filter({ hasText: title ?? "" }).waitFor({ state: "visible" });
     await page.getByRole("button", { name: /Thread actions:/ }).first().click();
     await page.getByRole("menuitem", { name: "Show conversation", exact: true }).click();
-    await page.getByRole("button", { name: "Show workspace history", exact: true }).click();
+    await page.locator("#history-filter").selectOption("all");
     await page.locator(".thread-row").filter({ hasText: title ?? "" }).waitFor({ state: "visible" });
 
     const workspaceActions = page.getByRole("button", { name: /Workspace actions:/ }).first();
     await workspaceActions.click();
     await page.getByRole("menuitem", { name: "Hide workspace", exact: true }).click();
     await page.waitForFunction(() => document.querySelectorAll(".workspace-group").length === 0);
-    await page.getByRole("button", { name: "Show hidden items", exact: true }).click();
+    await page.locator("#history-filter").selectOption("hidden");
     await page.getByRole("button", { name: /Workspace actions:/ }).first().click();
     await page.getByRole("menuitem", { name: "Show workspace", exact: true }).click();
-    await page.getByRole("button", { name: "Show workspace history", exact: true }).click();
+    await page.locator("#history-filter").selectOption("all");
     await page.locator(".thread-row").filter({ hasText: title ?? "" }).waitFor({ state: "visible" });
+  });
+}
+
+async function runHistoryOrganizationPath(): Promise<void> {
+  await runScenario("history-organization", "e2e-completed", async (page) => {
+    await waitForText(page, '[aria-label="Connection status"]', "ready");
+    const firstThread = page.locator(".thread-row").first();
+    const firstTitle = await firstThread.textContent();
+    await page.getByRole("button", { name: /Thread actions:/ }).first().click();
+    await page.getByRole("menuitem", { name: "Favorite conversation", exact: true }).click();
+    await page.locator("#history-filter").selectOption("favorites");
+    await page.locator(".thread-row").filter({ hasText: firstTitle ?? "" }).waitFor({ state: "visible" });
+
+    await page.locator("#history-filter").selectOption("archived");
+    await page.locator(".thread-row").filter({ hasText: "E2E history 2" }).waitFor({ state: "visible" });
+
+    await page.locator("#history-filter").selectOption("all");
+    await page.getByRole("button", { name: "Select conversations", exact: true }).click();
+    const selection = page.locator('input[type="checkbox"]').first();
+    await selection.check();
+    await page.getByRole("button", { name: /Hide selected \(1\)/ }).click();
+    await page.locator("#history-filter").selectOption("hidden");
+    await page.locator(".thread-row").filter({ hasText: firstTitle ?? "" }).waitFor({ state: "visible" });
+    await page.getByRole("button", { name: "Select conversations", exact: true }).click();
+    await page.locator('input[type="checkbox"]').first().check();
+    await page.getByRole("button", { name: /Show selected \(1\)/ }).click();
+    await page.locator("#history-filter").selectOption("all");
+    await page.locator(".thread-row").filter({ hasText: firstTitle ?? "" }).waitFor({ state: "visible" });
   });
 }
 
@@ -405,6 +433,7 @@ async function main(): Promise<void> {
   await runNewConversationPath();
   await runCompletedPath();
   await runLocalHidePath();
+  await runHistoryOrganizationPath();
   await runGlobalHistorySearchPath();
   await runModelSelectorPath();
   await runTerminalPath("e2e-failed", "failed");
