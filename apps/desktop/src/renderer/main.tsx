@@ -1,4 +1,4 @@
-import { Fragment, StrictMode, type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Virtuoso, type VirtuosoHandle, type ListRange } from "react-virtuoso";
 import "./styles.css";
@@ -17,6 +17,17 @@ type NavigateTurn = (turnId: string) => void;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function preferredModel(models: readonly ModelOption[]): ModelOption | undefined {
+  return models.find((model) => model.isDefault) ?? models[0];
+}
+
+function preferredReasoningEffort(model: ModelOption | undefined): string {
+  if (model === undefined) return "";
+  return model.supportedReasoningEfforts.find((effort) => effort.id === model.defaultReasoningEffort)?.id
+    ?? model.supportedReasoningEfforts[0]?.id
+    ?? "";
 }
 
 function isConfirmedActiveTurnMessage(error: unknown): boolean {
@@ -255,8 +266,8 @@ function App(): React.JSX.Element {
   const [newDraft, setNewDraft] = useState("");
   const [newSendError, setNewSendError] = useState<string | undefined>();
   const [modelOptions, setModelOptions] = useState<readonly ModelOption[]>([]);
-  const [modelSelection, setModelSelection] = useState("default");
-  const [reasoningSelection, setReasoningSelection] = useState("default");
+  const [modelSelection, setModelSelection] = useState("");
+  const [reasoningSelection, setReasoningSelection] = useState("");
   const [editingThreadId, setEditingThreadId] = useState<string | undefined>();
   const [editingThreadName, setEditingThreadName] = useState("");
   const [navigateToTurn, setNavigateToTurn] = useState<NavigateTurn | undefined>();
@@ -269,11 +280,9 @@ function App(): React.JSX.Element {
   const m = messages[language];
   const selectedModel = modelOptions.find((model) => model.id === modelSelection);
   const reasoningOptions = selectedModel?.supportedReasoningEfforts ?? [];
-  const modelOptionColumns = Math.max(16, ...[m.codexDefault, ...modelOptions.map((model) => `${model.displayName}${model.isDefault ? ` · ${m.codexDefault}` : ""}`)].map((label) => Array.from(label).length + 3));
-  const reasoningOptionColumns = Math.max(13, ...[m.codexDefault, ...reasoningOptions.map((effort) => effort.id)].map((label) => Array.from(label).length + 3));
   const composerOptions: ComposerOptions = {
     ...(selectedModel === undefined ? {} : { model: selectedModel.id }),
-    ...(reasoningSelection === "default" ? {} : { effort: reasoningSelection }),
+    ...(reasoningSelection === "" ? {} : { effort: reasoningSelection }),
   };
   const selectedListThread = selectedThreadId === undefined ? undefined : threads.find((thread) => thread.id === selectedThreadId);
   const currentWorkspacePath = selectedThreadId === undefined ? workspaceState?.currentPath : selectedListThread?.workspacePath;
@@ -288,12 +297,6 @@ function App(): React.JSX.Element {
   const remoteActive = selectedThreadId !== undefined && (remoteActiveByThreadId[selectedThreadId] === true || selectedThread?.remoteActive === true || writeState === "externalThreadWriter");
   const inputUnavailable = historyMode || selectedThread?.canAcceptDirectInput === false || writeState === "inputUnavailable" || writeState === "stateUnknown" || writeState === "workspaceLocked";
   const turnIsRunning = startingTurn || localRunningTurnId !== undefined || remoteActive || writeState === "localTurnRunning";
-  const composerLayoutStyle = {
-    "--composer-model-width": `${modelOptionColumns}ch`,
-    "--composer-reasoning-width": `${reasoningOptionColumns}ch`,
-    "--composer-options-width": `calc(${modelOptionColumns}ch + ${reasoningOptionColumns}ch + 3px)`,
-    "--composer-options-left": showWorkspacePicker ? "42px" : "8px",
-  } as CSSProperties;
   const hasRunningTimer = Object.values(turnTimings).some((timing) => timing.finishedAt === undefined);
 
   const setInputText = (text: string): void => {
@@ -322,13 +325,19 @@ function App(): React.JSX.Element {
     try {
       const nextModels = await window.threadPath.listModels();
       setModelOptions(nextModels);
-      setModelSelection((current) => current === "default" || nextModels.some((model) => model.id === current) ? current : "default");
+      setModelSelection((current) => {
+        const nextModel = nextModels.find((model) => model.id === current) ?? preferredModel(nextModels);
+        setReasoningSelection((currentEffort) => nextModel?.supportedReasoningEfforts.some((effort) => effort.id === currentEffort) === true
+          ? currentEffort
+          : preferredReasoningEffort(nextModel));
+        return nextModel?.id ?? "";
+      });
     } catch {
-      // Model selection is optional. Keep the composer usable with Codex's
-      // defaults if this server or account cannot expose a model catalog.
+      // Model selection is optional. Keep the composer usable when this server
+      // or account cannot expose a model catalog.
       setModelOptions([]);
-      setModelSelection("default");
-      setReasoningSelection("default");
+      setModelSelection("");
+      setReasoningSelection("");
     }
   }, []);
 
@@ -487,8 +496,8 @@ function App(): React.JSX.Element {
     if (connectionState.state === "ready") void loadModels();
     else {
       setModelOptions([]);
-      setModelSelection("default");
-      setReasoningSelection("default");
+      setModelSelection("");
+      setReasoningSelection("");
     }
   }, [connectionState.state, loadModels]);
 
@@ -804,16 +813,20 @@ function App(): React.JSX.Element {
             {selectedThreadId === undefined ? <div className="new-conversation-space"><p>{m.welcome}</p></div> : null}
           </div>
           <form className="turn-composer" onSubmit={(event) => { event.preventDefault(); void handleStartTurn(); }}>
-              <div className={`composer-input${showWorkspacePicker ? " has-workspace-picker" : ""}`} style={composerLayoutStyle}>
-                {showWorkspacePicker ? <button className="composer-workspace-picker" type="button" onClick={() => setWorkspaceMenuOpen((open) => !open)} aria-label={m.addWorkspace} title={currentWorkspacePath ?? m.chooseWorkspace}>＋</button> : null}
+              <div className="composer-input">
                 {workspaceMenuOpen ? <div className="workspace-menu" role="menu"><strong>{m.workspace}</strong>{workspaceState?.directories.map((directory) => <button key={directory.path} type="button" role="menuitem" className={directory.path === currentWorkspacePath ? "selected" : ""} onClick={() => void handleSetCurrentWorkspace(directory.path)} title={directory.path}>📁 {directory.name}</button>)}<button type="button" role="menuitem" onClick={() => void handleChooseWorkspaceForComposer()}>＋ {m.addWorkspace}</button></div> : null}
-                <div className="composer-options" aria-label={m.codexDefault}>
-                  <label title={modelOptions.length === 0 ? m.modelUnavailable : m.model}><span className="sr-only">{m.model}</span><select id="composer-model" value={modelSelection} onChange={(event) => { setModelSelection(event.target.value); setReasoningSelection("default"); }} disabled={modelOptions.length === 0 || turnIsRunning} aria-label={m.model}><option value="default">{m.codexDefault}</option>{modelOptions.map((model) => <option key={model.id} value={model.id}>{model.displayName}{model.isDefault ? ` · ${m.codexDefault}` : ""}</option>)}</select></label>
-                  <label title={selectedModel === undefined || reasoningOptions.length === 0 ? m.reasoningUnavailable : m.reasoning}><span className="sr-only">{m.reasoning}</span><select id="composer-reasoning" value={reasoningSelection} onChange={(event) => setReasoningSelection(event.target.value)} disabled={selectedModel === undefined || reasoningOptions.length === 0 || turnIsRunning} aria-label={m.reasoning}><option value="default">{m.codexDefault}</option>{reasoningOptions.map((effort) => <option key={effort.id} value={effort.id} title={effort.description}>{effort.id}</option>)}</select></label>
+                <div className="composer-toolbar">
+                  <div className="composer-options">
+                    <label title={selectedModel?.displayName ?? (modelOptions.length === 0 ? m.modelUnavailable : m.model)}><span className="sr-only">{m.model}</span><select id="composer-model" value={modelSelection} onChange={(event) => { const nextModel = modelOptions.find((model) => model.id === event.target.value); setModelSelection(event.target.value); setReasoningSelection(preferredReasoningEffort(nextModel)); }} disabled={modelOptions.length === 0 || turnIsRunning} aria-label={m.model}>{modelOptions.map((model) => <option key={model.id} value={model.id}>{model.displayName}</option>)}</select></label>
+                    <label title={selectedModel === undefined || reasoningOptions.length === 0 ? m.reasoningUnavailable : m.reasoning}><span className="sr-only">{m.reasoning}</span><select id="composer-reasoning" value={reasoningSelection} onChange={(event) => setReasoningSelection(event.target.value)} disabled={selectedModel === undefined || reasoningOptions.length === 0 || turnIsRunning} aria-label={m.reasoning}>{reasoningOptions.map((effort) => <option key={effort.id} value={effort.id} title={effort.description}>{effort.id}</option>)}</select></label>
+                  </div>
+                  <span className="composer-status" aria-live="polite">{interruptingThreadId !== undefined && interruptingThreadId === selectedThreadId ? m.stopping : startingTurn ? m.starting : historyMode ? m.confirmWorkspaceToSend : selectedThreadId === undefined && currentWorkspacePath === undefined ? m.chooseWorkspace : remoteActive ? m.remoteTurnRunning : inputUnavailable ? m.inputUnavailable : localRunningTurnId === undefined ? null : m.turnRunning}</span>
+                  <button className="composer-send" type={canInterruptLocalTurn ? "button" : "submit"} onClick={canInterruptLocalTurn ? () => void handleInterruptTurn() : undefined} aria-label={canInterruptLocalTurn ? m.stopTurn : turnIsRunning ? m.pauseUnavailable : historyMode ? m.confirmWorkspaceToSend : inputUnavailable ? m.inputUnavailable : selectedThreadId === undefined && currentWorkspacePath === undefined ? m.chooseWorkspace : m.send} title={canInterruptLocalTurn ? m.stopTurn : turnIsRunning ? m.pauseUnavailable : historyMode ? m.confirmWorkspaceToSend : inputUnavailable ? m.inputUnavailable : selectedThreadId === undefined && currentWorkspacePath === undefined ? m.chooseWorkspace : m.send} disabled={canInterruptLocalTurn ? interruptingThreadId !== undefined : connectionState.state !== "ready" || inputText.trim() === "" || turnIsRunning || inputUnavailable || (selectedThreadId === undefined && currentWorkspacePath === undefined)}><span aria-hidden="true">{turnIsRunning ? "Ⅱ" : "➤"}</span><span className="sr-only">{canInterruptLocalTurn ? m.stopTurn : turnIsRunning ? m.pauseUnavailable : historyMode ? m.confirmWorkspaceToSend : inputUnavailable ? m.inputUnavailable : m.send}</span></button>
                 </div>
-                <textarea ref={inputElement} id="turn-input" aria-label={m.sendMessage} value={inputText} onChange={(event) => setInputText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void handleStartTurn(); } }} placeholder={m.inputPlaceholder} rows={1} disabled={connectionState.state !== "ready" || turnIsRunning || inputUnavailable} />
-                <span className="composer-status" aria-live="polite">{interruptingThreadId !== undefined && interruptingThreadId === selectedThreadId ? m.stopping : startingTurn ? m.starting : historyMode ? m.confirmWorkspaceToSend : selectedThreadId === undefined && currentWorkspacePath === undefined ? m.chooseWorkspace : remoteActive ? m.remoteTurnRunning : inputUnavailable ? m.inputUnavailable : localRunningTurnId === undefined ? null : m.turnRunning}</span>
-                <button className="composer-send" type={canInterruptLocalTurn ? "button" : "submit"} onClick={canInterruptLocalTurn ? () => void handleInterruptTurn() : undefined} aria-label={canInterruptLocalTurn ? m.stopTurn : turnIsRunning ? m.pauseUnavailable : historyMode ? m.confirmWorkspaceToSend : inputUnavailable ? m.inputUnavailable : selectedThreadId === undefined && currentWorkspacePath === undefined ? m.chooseWorkspace : m.send} title={canInterruptLocalTurn ? m.stopTurn : turnIsRunning ? m.pauseUnavailable : historyMode ? m.confirmWorkspaceToSend : inputUnavailable ? m.inputUnavailable : selectedThreadId === undefined && currentWorkspacePath === undefined ? m.chooseWorkspace : m.send} disabled={canInterruptLocalTurn ? interruptingThreadId !== undefined : connectionState.state !== "ready" || inputText.trim() === "" || turnIsRunning || inputUnavailable || (selectedThreadId === undefined && currentWorkspacePath === undefined)}><span aria-hidden="true">{turnIsRunning ? "Ⅱ" : "➤"}</span><span className="sr-only">{canInterruptLocalTurn ? m.stopTurn : turnIsRunning ? m.pauseUnavailable : historyMode ? m.confirmWorkspaceToSend : inputUnavailable ? m.inputUnavailable : m.send}</span></button>
+                <div className="composer-textarea-row">
+                  {showWorkspacePicker ? <button className="composer-workspace-picker" type="button" onClick={() => setWorkspaceMenuOpen((open) => !open)} aria-label={m.addWorkspace} title={currentWorkspacePath ?? m.chooseWorkspace}>＋</button> : null}
+                  <textarea ref={inputElement} id="turn-input" aria-label={m.sendMessage} value={inputText} onChange={(event) => setInputText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void handleStartTurn(); } }} placeholder={m.inputPlaceholder} rows={1} disabled={connectionState.state !== "ready" || turnIsRunning || inputUnavailable} />
+                </div>
               </div>
               {sendError === undefined ? null : <p className="error-summary">{sendError}</p>}
           </form>

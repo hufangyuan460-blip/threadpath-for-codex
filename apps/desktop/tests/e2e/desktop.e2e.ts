@@ -113,7 +113,7 @@ async function runCompletedPath(): Promise<void> {
     const composerBottomAfterScroll = await page.locator(".turn-composer").evaluate((element) => element.getBoundingClientRect().bottom);
     assert.ok(Math.abs(composerBottomAfterScroll - composerBottomBeforeScroll) <= 1, "composer moved after conversation scrolling");
     assert.equal(await page.locator("#composer-model").isDisabled(), false, "model selector must enable after model/list succeeds");
-    assert.equal(await page.locator("#composer-reasoning").isDisabled(), true, "reasoning selector must wait for an explicit model choice");
+    assert.equal(await page.locator("#composer-reasoning").isDisabled(), false, "reasoning selector must use the server default model immediately");
     await page.locator("[data-turn-id]").first().waitFor({ state: "visible" });
     const renderedCount = await page.locator("[data-turn-id]").count();
     assert.ok(renderedCount > 0 && renderedCount < 24, `expected virtualized DOM, got ${renderedCount} turn nodes`);
@@ -184,16 +184,18 @@ async function runModelSelectorPath(): Promise<void> {
     const model = page.locator("#composer-model");
     const reasoning = page.locator("#composer-reasoning");
     assert.equal(await model.isDisabled(), false, "model selector must enable for a confirmed catalog");
-    await model.selectOption("fake-model");
-    const modelSize = await model.evaluate((element) => {
-      const select = element as HTMLSelectElement;
-      const context = document.createElement("canvas").getContext("2d");
-      if (context === null) throw new Error("canvas text measurement is unavailable");
-      context.font = window.getComputedStyle(select).font;
-      return { width: select.getBoundingClientRect().width, required: context.measureText(select.options[select.selectedIndex]?.text ?? "").width + 14 };
+    assert.equal(await model.inputValue(), "fake-model", "server default model must be preselected");
+    assert.equal(await reasoning.inputValue(), "medium", "server default reasoning effort must be preselected");
+    assert.equal(await model.locator('option[value="default"]').count(), 0, "model picker must not add a synthetic default option");
+    assert.equal(await reasoning.locator('option[value="default"]').count(), 0, "reasoning picker must not add a synthetic default option");
+    const composerRows = await page.locator(".composer-input").evaluate((element) => {
+      const textarea = element.querySelector("textarea");
+      const toolbar = element.querySelector(".composer-toolbar");
+      if (textarea === null || toolbar === null) throw new Error("composer rows are missing");
+      return { textareaTop: textarea.getBoundingClientRect().top, toolbarTop: toolbar.getBoundingClientRect().top, width: (element.querySelector("#composer-model") as HTMLElement).getBoundingClientRect().width };
     });
-    assert.ok(modelSize.width >= modelSize.required, `model selector truncated the full model name: ${JSON.stringify(modelSize)}`);
-    assert.equal(await reasoning.isDisabled(), false, "reasoning selector must enable for the chosen model");
+    assert.ok(composerRows.textareaTop > composerRows.toolbarTop, "input must be below the model controls");
+    assert.ok(composerRows.width <= 168, `model picker must stay compact: ${JSON.stringify(composerRows)}`);
     await reasoning.selectOption("low");
     await page.locator("#turn-input").fill("Model option E2E message");
     await page.locator(".turn-composer button[type=submit]").click();
