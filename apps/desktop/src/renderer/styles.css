@@ -15,6 +15,13 @@
   --tp-accent: #a9c8f2;
   --tp-accent-text: #11151c;
   --tp-accent-soft: #263f5f;
+  --tp-button-bg: #a9c8f2;
+  --tp-button-hover: #bdd7fa;
+  --tp-button-text: #11151c;
+  --tp-button-border: transparent;
+  --tp-primary-bg: #a9c8f2;
+  --tp-primary-hover: #bdd7fa;
+  --tp-primary-text: #11151c;
   --tp-focus: #7fa9dc;
   --tp-scroll-track: #14181e;
   --tp-scroll-thumb: #465366;
@@ -272,6 +279,13 @@ dd { margin: 0; color: #e5edf7; }
   --tp-accent: #b4d1f5;
   --tp-accent-text: #0b1016;
   --tp-accent-soft: #203d5d;
+  --tp-button-bg: #1a1f25;
+  --tp-button-hover: #262d35;
+  --tp-button-text: #e5e9ee;
+  --tp-button-border: #414952;
+  --tp-primary-bg: #294a67;
+  --tp-primary-hover: #365d80;
+  --tp-primary-text: #eef5fd;
   --tp-focus: #8db9eb;
   --tp-scroll-track: #080808;
   --tp-scroll-thumb: #4a4f57;
@@ -294,6 +308,13 @@ dd { margin: 0; color: #e5edf7; }
   --tp-accent: #2f6eae;
   --tp-accent-text: #ffffff;
   --tp-accent-soft: #dceafa;
+  --tp-button-bg: #f1f4f7;
+  --tp-button-hover: #e2e8ef;
+  --tp-button-text: #27384b;
+  --tp-button-border: #c5d0dc;
+  --tp-primary-bg: #3978b8;
+  --tp-primary-hover: #2f6eae;
+  --tp-primary-text: #ffffff;
   --tp-focus: #3978b8;
   --tp-scroll-track: #e4e8ed;
   --tp-scroll-thumb: #aab6c3;
@@ -355,7 +376,12 @@ body, .shell, .details-panel, .turn-composer { background: var(--tp-bg); color: 
 .markdown-code-block { border-color: var(--tp-border-strong); background: var(--tp-code); }
 .markdown-message td { border-color: var(--tp-border); background: var(--tp-surface); }
 .turn-composer textarea:focus, .history-search input:focus, .search-panel input:focus, .rename-modal input:focus { outline-color: var(--tp-focus); border-color: var(--tp-focus); }
-.composer-send, button { color: var(--tp-accent-text); background: var(--tp-accent); }
+.workspace-history-action:hover, .language-switch:hover, .theme-switch:hover, .pagination-controls button:hover, .composer-options select:hover { background: var(--tp-surface-hover); }
+button { border: 1px solid var(--tp-button-border); color: var(--tp-button-text); background: var(--tp-button-bg); }
+button:hover:not(:disabled) { background: var(--tp-button-hover); }
+.composer-send { border-color: var(--tp-primary-bg); color: var(--tp-primary-text); background: var(--tp-primary-bg); }
+.composer-send:hover:not(:disabled) { border-color: var(--tp-primary-hover); background: var(--tp-primary-hover); }
+.history-selection-actions button, .markdown-code-toolbar button, .modal-actions button:first-child { border-color: var(--tp-border-strong); color: var(--tp-button-text); background: var(--tp-button-bg); }
 .composer-send:disabled, button:disabled { color: var(--tp-text-subtle); background: var(--tp-surface-raised); }
 .history-search-status em, .workspace-select.selected, .history-search-status b, .back-history, .directory-rename, .workspace-menu strong { color: var(--tp-focus); }
 .theme-switch { min-width: 64px; cursor: pointer; }
