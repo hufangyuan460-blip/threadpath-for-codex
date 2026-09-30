@@ -101,6 +101,7 @@ h1 { margin-bottom: 0; overflow: hidden; font-size: 13px; line-height: 1; letter
 .turn-index { margin-right: 10px; color: #e2eaf5; font-weight: 800; }
 .turn-status { padding: 3px 6px; font-size: 10px; }
 .turn-heading time { color: #718095; }
+.turn-elapsed { display: inline-flex; width: fit-content; margin: 0 0 -2px; color: #91add1; font-size: 10px; font-variant-numeric: tabular-nums; }
 .turn-items { display: grid; gap: 10px; }
 .conversation-item { max-width: 82%; padding: 11px 14px; border-left: 0; border-radius: 12px; background: #202a38aa; }
 .conversation-item p { margin: 7px 0 0; color: #d6dfeb; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -149,12 +150,14 @@ h1 { margin-bottom: 0; overflow: hidden; font-size: 13px; line-height: 1; letter
 .turn-composer { position: relative; z-index: 2; display: grid; flex: none; gap: 0; margin: 0; padding: 6px 0 0; border-top: 1px solid #29313c; background: #101318; }
 .composer-input { position: relative; min-width: 0; }
 .turn-composer textarea { width: 100%; min-height: 46px; max-height: 110px; resize: none; overflow-x: hidden; overflow-y: auto; padding: 11px 76px 11px 13px; border: 1px solid #3a485c; border-radius: 10px; color: #e8edf5; background: #171b22; font: inherit; font-size: 13px; line-height: 1.35; }
-.turn-composer textarea { padding-left: 160px; }
+.turn-composer textarea { padding-left: calc(var(--composer-options-left, 42px) + var(--composer-options-width, 112px) + 12px); }
 .turn-composer textarea:focus { outline: 2px solid #6082af; outline-offset: 1px; }
 .turn-composer textarea:disabled { cursor: wait; opacity: .65; }
-.composer-options { position: absolute; bottom: 7px; left: 42px; z-index: 1; display: flex; align-items: center; gap: 3px; max-width: 112px; }
+.composer-options { position: absolute; bottom: 7px; left: var(--composer-options-left, 42px); z-index: 1; display: flex; align-items: center; gap: 3px; width: var(--composer-options-width, 112px); }
 .composer-options label { min-width: 0; }
-.composer-options select { width: 54px; height: 30px; padding: 0 2px; overflow: hidden; border: 0; border-radius: 7px; color: #91a0b3; background: #202a38; font: inherit; font-size: 9px; text-overflow: ellipsis; }
+.composer-options select { height: 30px; padding: 0 7px; overflow: visible; border: 0; border-radius: 7px; color: #91a0b3; background: #202a38; font: inherit; font-size: 10px; white-space: nowrap; }
+.composer-options label:first-child select { width: var(--composer-model-width, 54px); }
+.composer-options label:last-child select { width: var(--composer-reasoning-width, 54px); }
 .composer-options select:disabled { cursor: not-allowed; opacity: .75; }
 .composer-status { position: absolute; right: 50px; bottom: 12px; max-width: min(42%, 260px); overflow: hidden; color: #8290a1; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .composer-send { position: absolute; right: 7px; bottom: 7px; display: grid; width: 30px; height: 30px; padding: 0; place-items: center; border-radius: 8px; color: #11151c; background: #a9c8f2; font-size: 15px; line-height: 1; }

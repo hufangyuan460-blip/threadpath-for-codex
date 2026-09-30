@@ -1,4 +1,4 @@
-import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, StrictMode, type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Virtuoso, type VirtuosoHandle, type ListRange } from "react-virtuoso";
 import "./styles.css";
@@ -10,6 +10,7 @@ import { moveSearchSelection, searchNavigationTarget } from "./search-navigation
 import { messages, type Messages } from "./i18n";
 import { MarkdownMessage } from "./markdown.tsx";
 import { replaceThreadTitle } from "../shared/workspace-state";
+import { formatElapsedTime, type TurnTiming } from "./turn-timing.ts";
 
 type LoadState = "idle" | "loading" | "ready" | "empty" | "error";
 type NavigateTurn = (turnId: string) => void;
@@ -54,6 +55,17 @@ function ConversationItem({ item, markdown, m }: { item: ConversationItemView; m
     return <div className="conversation-item status-item"><span className="item-label">{m.status}</span><p>{item.text}</p></div>;
   }
   return <div className={`conversation-item text-item role-${item.role}`}><span className="item-label">{m.role(item.role)}</span>{markdown && (item.role === "assistant" || item.role === "system") ? <MarkdownMessage text={item.text} m={m} /> : <p>{item.text}</p>}</div>;
+}
+
+function TurnItems({ items, timingLabel, m }: { items: readonly ConversationItemView[]; timingLabel: string | undefined; m: Messages }): React.JSX.Element {
+  const assistantIndex = items.findIndex((item) => item.kind === "text" && item.role === "assistant");
+  return <div className="turn-items">
+    {assistantIndex !== -1 || timingLabel === undefined ? null : <span className="turn-elapsed">{timingLabel}</span>}
+    {items.map((item, index) => <Fragment key={item.id}>
+      {timingLabel === undefined || index !== assistantIndex ? null : <span className="turn-elapsed">{timingLabel}</span>}
+      <ConversationItem item={item} markdown={item.kind === "text" && item.role !== "user" && item.phase === "final"} m={m} />
+    </Fragment>)}
+  </div>;
 }
 
 function SearchPanel({ query, results, selectedIndex, error, onQueryChange, onKeyDown, onNavigate, m }: { query: string; results: readonly SearchResult[]; selectedIndex: number; error: string | undefined; onQueryChange: (query: string) => void; onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void; onNavigate: (turnId: string) => void; m: Messages }): React.JSX.Element {
@@ -118,7 +130,7 @@ function ThreadDirectory({ thread, workspacePath, workspaceState, activeTurnId, 
   );
 }
 
-function Conversation({ thread, activeTurnId, loadingMore, loadMoreError, onLoadMore, onNavigate, onVisibleTurn, onUserScroll, m, onNavigateReady, onRefreshStatus, scrollToLatest, onScrollToLatestHandled, newContent, onNewContentHandled }: { thread: ConversationThreadView; activeTurnId: string | undefined; loadingMore: boolean; loadMoreError: string | undefined; onLoadMore: () => void; onNavigate: (turnId: string) => void; onVisibleTurn: (turnId: string | undefined) => void; onUserScroll: () => void; m: Messages; onNavigateReady: (navigate: NavigateTurn | undefined) => void; onRefreshStatus: () => void; scrollToLatest: boolean; onScrollToLatestHandled: () => void; newContent: boolean; onNewContentHandled: () => void }): React.JSX.Element {
+function Conversation({ thread, activeTurnId, loadingMore, loadMoreError, onLoadMore, onNavigate, onVisibleTurn, onUserScroll, m, onNavigateReady, onRefreshStatus, scrollToLatest, onScrollToLatestHandled, newContent, onNewContentHandled, turnTimings, now }: { thread: ConversationThreadView; activeTurnId: string | undefined; loadingMore: boolean; loadMoreError: string | undefined; onLoadMore: () => void; onNavigate: (turnId: string) => void; onVisibleTurn: (turnId: string | undefined) => void; onUserScroll: () => void; m: Messages; onNavigateReady: (navigate: NavigateTurn | undefined) => void; onRefreshStatus: () => void; scrollToLatest: boolean; onScrollToLatestHandled: () => void; newContent: boolean; onNewContentHandled: () => void; turnTimings: Readonly<Record<string, TurnTiming>>; now: number }): React.JSX.Element {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const scroller = useRef<HTMLElement | null>(null);
   const lastTurnId = thread.turns[thread.turns.length - 1]?.id;
@@ -174,15 +186,19 @@ function Conversation({ thread, activeTurnId, loadingMore, loadMoreError, onLoad
           rangeChanged={onRangeChanged}
           scrollerRef={setScroller}
           className="turn-virtual-list"
-          itemContent={(_, turn) => (
-            <article className="turn-card" data-turn-id={turn.id} key={turn.id}>
+          itemContent={(_, turn) => {
+            const timing = turnTimings[turn.id];
+            const timingLabel = timing === undefined ? undefined : timing.finishedAt === undefined
+              ? m.thinkingElapsed(formatElapsedTime(timing.startedAt, now))
+              : m.responseElapsed(formatElapsedTime(timing.startedAt, timing.finishedAt));
+            return <article className="turn-card" data-turn-id={turn.id} key={turn.id}>
               <header className="turn-heading">
                 <div><span className="turn-index">{m.turn(turn.index)}</span><span className="turn-status">{turn.status}</span></div>
                 {turn.createdAt === undefined ? null : <time dateTime={turn.createdAt}>{turn.createdAt}</time>}
               </header>
-              {turn.items.length === 0 ? <p className="partial-note">{m.noReadableItems}</p> : <div className="turn-items">{turn.items.map((item) => <ConversationItem item={item} markdown={item.kind === "text" && item.role !== "user" && item.phase === "final"} key={item.id} m={m} />)}</div>}
-            </article>
-          )}
+              {turn.items.length === 0 ? <p className="partial-note">{m.noReadableItems}</p> : <TurnItems items={turn.items} timingLabel={timingLabel} m={m} />}
+            </article>;
+          }}
         />}
       </div>
     </div>
@@ -233,6 +249,8 @@ function App(): React.JSX.Element {
   const [startingTurn, setStartingTurn] = useState(false);
   const [interruptingThreadId, setInterruptingThreadId] = useState<string | undefined>();
   const [runningTurnByThreadId, setRunningTurnByThreadId] = useState<Record<string, string | undefined>>({});
+  const [turnTimings, setTurnTimings] = useState<Record<string, TurnTiming>>({});
+  const [clock, setClock] = useState(() => Date.now());
   const [remoteActiveByThreadId, setRemoteActiveByThreadId] = useState<Record<string, boolean>>({});
   const [newDraft, setNewDraft] = useState("");
   const [newSendError, setNewSendError] = useState<string | undefined>();
@@ -251,6 +269,8 @@ function App(): React.JSX.Element {
   const m = messages[language];
   const selectedModel = modelOptions.find((model) => model.id === modelSelection);
   const reasoningOptions = selectedModel?.supportedReasoningEfforts ?? [];
+  const modelOptionColumns = Math.max(16, ...[m.codexDefault, ...modelOptions.map((model) => `${model.displayName}${model.isDefault ? ` · ${m.codexDefault}` : ""}`)].map((label) => Array.from(label).length + 3));
+  const reasoningOptionColumns = Math.max(13, ...[m.codexDefault, ...reasoningOptions.map((effort) => effort.id)].map((label) => Array.from(label).length + 3));
   const composerOptions: ComposerOptions = {
     ...(selectedModel === undefined ? {} : { model: selectedModel.id }),
     ...(reasoningSelection === "default" ? {} : { effort: reasoningSelection }),
@@ -268,6 +288,13 @@ function App(): React.JSX.Element {
   const remoteActive = selectedThreadId !== undefined && (remoteActiveByThreadId[selectedThreadId] === true || selectedThread?.remoteActive === true || writeState === "externalThreadWriter");
   const inputUnavailable = historyMode || selectedThread?.canAcceptDirectInput === false || writeState === "inputUnavailable" || writeState === "stateUnknown" || writeState === "workspaceLocked";
   const turnIsRunning = startingTurn || localRunningTurnId !== undefined || remoteActive || writeState === "localTurnRunning";
+  const composerLayoutStyle = {
+    "--composer-model-width": `${modelOptionColumns}ch`,
+    "--composer-reasoning-width": `${reasoningOptionColumns}ch`,
+    "--composer-options-width": `calc(${modelOptionColumns}ch + ${reasoningOptionColumns}ch + 3px)`,
+    "--composer-options-left": showWorkspacePicker ? "42px" : "8px",
+  } as CSSProperties;
+  const hasRunningTimer = Object.values(turnTimings).some((timing) => timing.finishedAt === undefined);
 
   const setInputText = (text: string): void => {
     if (selectedThreadId === undefined) setNewDraft(text);
@@ -443,10 +470,18 @@ function App(): React.JSX.Element {
       setThreadLoadState("idle");
       setSendErrorByThreadId({});
       setRunningTurnByThreadId({});
+      setTurnTimings({});
       setRemoteActiveByThreadId({});
       setNewSendError(undefined);
     }
   }, [connectionState.state, loadThreads]);
+
+  useEffect(() => {
+    if (!hasRunningTimer) return;
+    setClock(Date.now());
+    const timer = window.setInterval(() => setClock(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [hasRunningTimer]);
 
   useEffect(() => {
     if (connectionState.state === "ready") void loadModels();
@@ -558,6 +593,10 @@ function App(): React.JSX.Element {
   useEffect(() => window.threadPath.onConversationUpdate((update: ConversationUpdate) => {
     if (update.type === "turn/started") setRemoteActiveByThreadId((current) => ({ ...current, [update.threadId]: true }));
     if (update.type === "turn/completed" || update.type === "turn/failed" || update.type === "turn/interrupted") {
+      setTurnTimings((current) => {
+        const timing = current[update.turnId];
+        return timing === undefined || timing.finishedAt !== undefined ? current : { ...current, [update.turnId]: { ...timing, finishedAt: Date.now() } };
+      });
       setRunningTurnByThreadId((current) => {
         if (current[update.threadId] !== update.turnId) return current;
         const next = { ...current };
@@ -590,6 +629,7 @@ function App(): React.JSX.Element {
         setNewSendError(undefined);
         setSelectedThreadId(result.threadId);
         setRunningTurnByThreadId((current) => ({ ...current, [result.threadId]: result.turnId }));
+        setTurnTimings((current) => ({ ...current, [result.turnId]: { threadId: result.threadId, startedAt: Date.now() } }));
         void loadThreads();
       } catch (error: unknown) {
         setNewSendError(errorMessage(error));
@@ -616,6 +656,7 @@ function App(): React.JSX.Element {
         return { ...current, turns, outline: buildTurnOutline(turns), paging: { ...current.paging, orderedTurnIds: turns.map((item) => item.id) } };
       });
       setRunningTurnByThreadId((current) => ({ ...current, [result.threadId]: result.turnId }));
+      setTurnTimings((current) => ({ ...current, [result.turnId]: { threadId: result.threadId, startedAt: Date.now() } }));
       setDraftByThreadId((current) => { const next = { ...current }; delete next[threadId]; return next; });
     } catch (error: unknown) {
       const currentThreadId = selectedThreadId;
@@ -726,6 +767,16 @@ function App(): React.JSX.Element {
           delete next[refreshed.id];
           return next;
         });
+        setTurnTimings((current) => {
+          const finishedAt = Date.now();
+          let changed = false;
+          const next = Object.fromEntries(Object.entries(current).map(([turnId, timing]) => {
+            if (timing.threadId !== refreshed.id || timing.finishedAt !== undefined) return [turnId, timing];
+            changed = true;
+            return [turnId, { ...timing, finishedAt }];
+          })) as Record<string, TurnTiming>;
+          return changed ? next : current;
+        });
       }
       setSendErrorByThreadId((current) => { const next = { ...current }; delete next[selectedThreadId]; return next; });
     } catch (error: unknown) {
@@ -749,11 +800,11 @@ function App(): React.JSX.Element {
             {selectedThreadState === "idle" && selectedThreadId !== undefined ? <div className="details-empty"><p className="empty-kicker">{m.conversation}</p><h2>{m.selectThread}</h2><p>{m.chooseThread}</p></div> : null}
             {selectedThreadState === "loading" ? <p className="panel-note">{m.loadingConversation}</p> : null}
             {selectedThreadState === "error" ? <p className="error-summary">{selectedThreadError}</p> : null}
-            {(selectedThreadState === "empty" || selectedThreadState === "ready") && selectedThread !== undefined ? <Conversation thread={selectedThread} activeTurnId={activeTurnId} loadingMore={loadingMore} loadMoreError={loadMoreError} onLoadMore={() => void handleLoadMore()} onNavigate={handleNavigate} onVisibleTurn={handleVisibleTurn} onUserScroll={handleUserScroll} m={m} onNavigateReady={handleNavigateReady} onRefreshStatus={() => void handleRefreshStatus()} scrollToLatest={scrollToLatest} onScrollToLatestHandled={() => setScrollToLatest(false)} newContent={newContentAvailable} onNewContentHandled={() => setNewContentAvailable(false)} /> : null}
+            {(selectedThreadState === "empty" || selectedThreadState === "ready") && selectedThread !== undefined ? <Conversation thread={selectedThread} activeTurnId={activeTurnId} loadingMore={loadingMore} loadMoreError={loadMoreError} onLoadMore={() => void handleLoadMore()} onNavigate={handleNavigate} onVisibleTurn={handleVisibleTurn} onUserScroll={handleUserScroll} m={m} onNavigateReady={handleNavigateReady} onRefreshStatus={() => void handleRefreshStatus()} scrollToLatest={scrollToLatest} onScrollToLatestHandled={() => setScrollToLatest(false)} newContent={newContentAvailable} onNewContentHandled={() => setNewContentAvailable(false)} turnTimings={turnTimings} now={clock} /> : null}
             {selectedThreadId === undefined ? <div className="new-conversation-space"><p>{m.welcome}</p></div> : null}
           </div>
           <form className="turn-composer" onSubmit={(event) => { event.preventDefault(); void handleStartTurn(); }}>
-              <div className={`composer-input${showWorkspacePicker ? " has-workspace-picker" : ""}`}>
+              <div className={`composer-input${showWorkspacePicker ? " has-workspace-picker" : ""}`} style={composerLayoutStyle}>
                 {showWorkspacePicker ? <button className="composer-workspace-picker" type="button" onClick={() => setWorkspaceMenuOpen((open) => !open)} aria-label={m.addWorkspace} title={currentWorkspacePath ?? m.chooseWorkspace}>＋</button> : null}
                 {workspaceMenuOpen ? <div className="workspace-menu" role="menu"><strong>{m.workspace}</strong>{workspaceState?.directories.map((directory) => <button key={directory.path} type="button" role="menuitem" className={directory.path === currentWorkspacePath ? "selected" : ""} onClick={() => void handleSetCurrentWorkspace(directory.path)} title={directory.path}>📁 {directory.name}</button>)}<button type="button" role="menuitem" onClick={() => void handleChooseWorkspaceForComposer()}>＋ {m.addWorkspace}</button></div> : null}
                 <div className="composer-options" aria-label={m.codexDefault}>

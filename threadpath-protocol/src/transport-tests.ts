@@ -100,7 +100,7 @@ async function verifyCapabilities(): Promise<void> {
     assert.equal(completeClient.supports("turn/interrupted"), true);
     assert.equal(completeClient.supports("model/list"), true);
     const models = await completeClient.listModels();
-    assert.deepEqual(models, [{ id: "fake-model", displayName: "Fake Model", defaultReasoningEffort: "medium", supportedReasoningEfforts: [{ reasoningEffort: "low", description: "Fast" }, { reasoningEffort: "medium", description: "Balanced" }], isDefault: true }]);
+    assert.deepEqual(models, [{ id: "fake-model", displayName: "Fake Model with Complete Visible Name", defaultReasoningEffort: "medium", supportedReasoningEfforts: [{ reasoningEffort: "low", description: "Fast" }, { reasoningEffort: "medium", description: "Balanced" }], isDefault: true }]);
   } finally {
     await completeClient.close();
   }

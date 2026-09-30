@@ -185,11 +185,21 @@ async function runModelSelectorPath(): Promise<void> {
     const reasoning = page.locator("#composer-reasoning");
     assert.equal(await model.isDisabled(), false, "model selector must enable for a confirmed catalog");
     await model.selectOption("fake-model");
+    const modelSize = await model.evaluate((element) => {
+      const select = element as HTMLSelectElement;
+      const context = document.createElement("canvas").getContext("2d");
+      if (context === null) throw new Error("canvas text measurement is unavailable");
+      context.font = window.getComputedStyle(select).font;
+      return { width: select.getBoundingClientRect().width, required: context.measureText(select.options[select.selectedIndex]?.text ?? "").width + 14 };
+    });
+    assert.ok(modelSize.width >= modelSize.required, `model selector truncated the full model name: ${JSON.stringify(modelSize)}`);
     assert.equal(await reasoning.isDisabled(), false, "reasoning selector must enable for the chosen model");
     await reasoning.selectOption("low");
     await page.locator("#turn-input").fill("Model option E2E message");
     await page.locator(".turn-composer button[type=submit]").click();
-    await page.locator('[data-turn-id="e2e-live-turn"]').getByText("completed", { exact: true }).waitFor({ state: "visible" });
+    const liveTurn = page.locator('[data-turn-id="e2e-live-turn"]');
+    await liveTurn.getByText("completed", { exact: true }).waitFor({ state: "visible" });
+    await liveTurn.locator(".turn-elapsed").getByText("Elapsed · 00:00", { exact: true }).waitFor({ state: "visible" });
   });
 }
 
