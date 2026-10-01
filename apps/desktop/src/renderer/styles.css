@@ -70,10 +70,25 @@ h1 { margin-bottom: 0; overflow: hidden; font-size: 13px; line-height: 1; letter
 .status-error { background: #de6d72; box-shadow: 0 0 0 4px #de6d7222; }
 .status-meta { color: #728196; font-size: 10px; }
 .workspace { display: grid; width: 100%; height: 0; min-height: 0; flex: 1; grid-template-columns: clamp(176px, 20vw, 240px) minmax(0, 1fr); overflow: hidden; }
-.onboarding-card { width: min(760px, calc(100% - 72px)); flex: none; margin: 18px auto 0; padding: 20px 24px; border: 1px solid #303945; border-radius: 10px; background: #171b22; }
-.onboarding-card h2 { margin-bottom: 12px; font-size: 24px; }
-.onboarding-card p:not(.empty-kicker):not(.error-summary) { color: #aebbd0; line-height: 1.6; }
-.onboarding-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.onboarding-backdrop { position: fixed; inset: 32px 0 0; z-index: 10; display: grid; place-items: center; padding: clamp(20px, 5vh, 72px) 28px; background: var(--tp-modal-backdrop); }
+.onboarding-card { width: min(630px, 100%); padding: 28px; border: 1px solid #303945; border-radius: 16px; background: #171b22; box-shadow: 0 24px 80px #0009; }
+.onboarding-heading { display: flex; align-items: flex-start; gap: 14px; }
+.onboarding-heading h2 { margin: 1px 0 0; font-size: clamp(21px, 2vw, 27px); line-height: 1.25; letter-spacing: -.02em; }
+.onboarding-state { display: grid; width: 36px; height: 36px; flex: none; place-items: center; border: 1px solid var(--tp-border-strong); border-radius: 11px; background: var(--tp-surface-raised); }
+.onboarding-state span { width: 10px; height: 10px; border-radius: 50%; background: var(--tp-connection-connecting); box-shadow: 0 0 0 5px color-mix(in srgb, var(--tp-connection-connecting) 16%, transparent); }
+.onboarding-state-error { border-color: var(--tp-error-border); background: var(--tp-error-surface); }
+.onboarding-state-error span { background: var(--tp-connection-error); box-shadow: 0 0 0 5px color-mix(in srgb, var(--tp-connection-error) 16%, transparent); }
+.onboarding-state-found span { background: var(--tp-connection-ready); box-shadow: 0 0 0 5px color-mix(in srgb, var(--tp-connection-ready) 16%, transparent); }
+.onboarding-state-connecting span { animation: onboarding-pulse 1.15s ease-in-out infinite; }
+.onboarding-body { display: grid; gap: 10px; margin: 23px 0 0; }
+.onboarding-body p { margin: 0; color: #aebbd0; line-height: 1.6; }
+.onboarding-body .onboarding-path { padding: 10px 12px; border: 1px solid var(--tp-border); border-radius: 9px; color: var(--tp-text-muted); background: var(--tp-input); }
+.onboarding-body .error-summary { margin: 0; }
+.onboarding-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 24px; }
+.onboarding-actions button { min-height: 42px; padding: 9px 14px; }
+.onboarding-actions .onboarding-secondary { border-color: var(--tp-border-strong); color: var(--tp-text-muted); background: var(--tp-surface-raised); }
+.onboarding-actions .onboarding-secondary:hover:not(:disabled) { background: var(--tp-surface-hover); }
+@keyframes onboarding-pulse { 50% { opacity: .55; transform: scale(.82); } }
 .thread-panel { display: flex; width: 100%; height: 100%; min-width: 0; max-width: 300px; min-height: 0; flex-direction: column; padding: 8px; border-right: 1px solid #292f39; background: #15191f; overflow: hidden; }
 .workspace-history { display: flex; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; }
 .workspace-history > .panel-heading { flex: none; }

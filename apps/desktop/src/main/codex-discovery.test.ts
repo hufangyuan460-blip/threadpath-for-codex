@@ -91,6 +91,23 @@ async function testKnownInstallAndInvalidSavedRecovery(): Promise<void> {
   assert.equal(saved.executablePath, knownExecutable);
 }
 
+async function testLegacyLauncherPrefersVersionedInstall(): Promise<void> {
+  const paths = await createTestPaths();
+  const { mkdir } = await import("node:fs/promises");
+  const launcher = join(paths.localAppData, "OpenAI", "Codex", "bin", "codex.exe");
+  const current = join(paths.localAppData, "OpenAI", "Codex", "bin", "current", "codex.exe");
+  await mkdir(join(paths.localAppData, "OpenAI", "Codex", "bin", "current"), { recursive: true });
+  await writeFile(launcher, "legacy");
+  await writeFile(current, "current");
+  await writeFile(paths.configPath, JSON.stringify({ executablePath: launcher, cwd: paths.cwd }));
+  const calls: string[] = [];
+  const service = new CodexDiscoveryService({ configPath: paths.configPath, platform: "win32", localAppData: paths.localAppData, env: {}, validateExecutable: validator(new Set([current]), calls) });
+  const result = await service.discover();
+  assert.equal(result.executablePath, current);
+  assert.equal(result.source, "known-install");
+  assert.deepEqual(calls, [current]);
+}
+
 async function testValidationFailureAndSelection(): Promise<void> {
   const paths = await createTestPaths();
   const environment = join(paths.root, "environment.exe");
@@ -125,6 +142,7 @@ async function main(): Promise<void> {
   await testEnvironmentPriority();
   await testSavedAndPathPriority();
   await testKnownInstallAndInvalidSavedRecovery();
+  await testLegacyLauncherPrefersVersionedInstall();
   await testValidationFailureAndSelection();
   testDialogCancellation();
   await testVersionTimeout();

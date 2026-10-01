@@ -80,14 +80,22 @@ export class CodexDiscoveryService {
 
   private async candidates(): Promise<Array<{ path: string; source: CodexDiscoverySource }>> {
     const result: Array<{ path: string; source: CodexDiscoverySource }> = [];
+    const fallback: Array<{ path: string; source: CodexDiscoverySource }> = [];
+    const addCandidate = (candidate: { path: string; source: CodexDiscoverySource }, honorExplicitChoice = false): void => {
+      // Older Windows installs leave a root-level launcher behind after updating.
+      // It can answer --version but may not support the current app-server flags,
+      // so only use it when no versioned installation is available.
+      if (!honorExplicitChoice && this.isLegacyWindowsLauncher(candidate.path)) fallback.push(candidate);
+      else result.push(candidate);
+    };
     const envExecutable = this.options.env?.CODEX_EXECUTABLE?.trim();
-    if (envExecutable !== undefined && envExecutable !== "") result.push({ path: envExecutable, source: "environment" });
+    if (envExecutable !== undefined && envExecutable !== "") addCandidate({ path: envExecutable, source: "environment" }, true);
     const savedExecutable = this.savedConfiguration.executablePath?.trim();
-    if (savedExecutable !== undefined && savedExecutable !== "") result.push({ path: savedExecutable, source: "saved" });
-    for (const pathCandidate of await this.pathCandidates()) result.push({ path: pathCandidate, source: "path" });
-    for (const pathCandidate of await this.knownInstallCandidates()) result.push({ path: pathCandidate, source: "known-install" });
+    if (savedExecutable !== undefined && savedExecutable !== "") addCandidate({ path: savedExecutable, source: "saved" });
+    for (const pathCandidate of await this.pathCandidates()) addCandidate({ path: pathCandidate, source: "path" });
+    for (const pathCandidate of await this.knownInstallCandidates()) addCandidate({ path: pathCandidate, source: "known-install" });
     const seen = new Set<string>();
-    return result.filter((candidate) => {
+    return [...result, ...fallback].filter((candidate) => {
       const key = normalize(candidate.path).toLowerCase();
       if (seen.has(key)) return false;
       seen.add(key);
@@ -114,14 +122,24 @@ export class CodexDiscoveryService {
     if (localAppData === undefined || localAppData.trim() === "") return [];
     const root = join(localAppData, "OpenAI", "Codex", "bin");
     const candidates: string[] = [];
-    if (await isFile(join(root, "codex.exe"))) candidates.push(join(root, "codex.exe"));
     const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
-    const directories = entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort().reverse();
-    for (const directory of directories) {
-      const candidate = join(root, directory, "codex.exe");
+    const directories = await Promise.all(entries.filter((entry) => entry.isDirectory()).map(async (entry) => ({
+      name: entry.name,
+      modifiedAt: (await stat(join(root, entry.name)).catch(() => undefined))?.mtimeMs ?? 0,
+    })));
+    for (const directory of directories.sort((left, right) => right.modifiedAt - left.modifiedAt || right.name.localeCompare(left.name))) {
+      const candidate = join(root, directory.name, "codex.exe");
       if (await isFile(candidate)) candidates.push(candidate);
     }
+    if (await isFile(join(root, "codex.exe"))) candidates.push(join(root, "codex.exe"));
     return candidates;
+  }
+
+  private isLegacyWindowsLauncher(executablePath: string): boolean {
+    if ((this.options.platform ?? process.platform) !== "win32") return false;
+    const localAppData = this.options.localAppData ?? this.options.env?.LOCALAPPDATA;
+    if (localAppData === undefined || localAppData.trim() === "") return false;
+    return normalize(executablePath).toLowerCase() === normalize(join(localAppData, "OpenAI", "Codex", "bin", "codex.exe")).toLowerCase();
   }
 
   private resolveSavedCwd(): string | undefined {

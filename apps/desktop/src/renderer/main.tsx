@@ -66,14 +66,22 @@ function Onboarding({ snapshot, onRediscover, onChooseExecutable, onChooseDirect
   if (snapshot.state === "ready") return null;
   const hasExecutable = snapshot.executablePath !== undefined;
   return (
-    <section className="onboarding-card" aria-label={m.setup}>
-      <p className="empty-kicker">{m.firstLaunch}</p>
-      {snapshot.state === "detecting" ? <><h2>{m.detectingCli}</h2><p>{m.detectingDetails}</p></> : null}
-      {snapshot.state === "found" ? <><h2>{m.cliFound}</h2><p>{m.version}: <strong>{snapshot.version ?? "unknown"}</strong></p><p className="mono">{snapshot.executablePath}</p>{snapshot.cwd === undefined ? <><p>{m.chooseProjectBeforeConnect}</p><button type="button" onClick={onChooseDirectory}>{m.chooseWorkingDirectory}</button></> : <><p className="mono">{m.workingDirectory}: {snapshot.cwd}</p><button type="button" onClick={onConnect}>{m.connectVerify}</button></>}</> : null}
-      {snapshot.state === "connecting" ? <><h2>{m.connecting}</h2><p>{m.connectingDetails}</p></> : null}
-      {snapshot.state === "error" ? <><h2>{m.setupAttention}</h2><p className="error-summary">{snapshot.error ?? m.setupAttention}</p><div className="onboarding-actions"><button type="button" onClick={onRediscover}>{m.retryDetection}</button><button type="button" onClick={onChooseExecutable}>{m.chooseCli}</button>{hasExecutable ? <button type="button" onClick={onChooseDirectory}>{m.chooseWorkingDirectory}</button> : null}</div></> : null}
-      {snapshot.state === "found" && hasExecutable ? <div className="onboarding-actions"><button type="button" onClick={onChooseExecutable}>{m.chooseAnotherCli}</button><button type="button" onClick={onRediscover}>{m.detectAgain}</button></div> : null}
-    </section>
+    <div className="onboarding-backdrop" role="presentation">
+      <section className="onboarding-card" role="dialog" aria-modal="true" aria-labelledby="onboarding-title" aria-describedby="onboarding-description">
+        <header className="onboarding-heading">
+          <div className={`onboarding-state onboarding-state-${snapshot.state}`} aria-hidden="true"><span /></div>
+          <div><p className="empty-kicker">{m.firstLaunch}</p><h2 id="onboarding-title">{snapshot.state === "error" ? m.setupAttention : snapshot.state === "found" ? m.cliFound : snapshot.state === "connecting" ? m.connecting : m.detectingCli}</h2></div>
+        </header>
+        <div className="onboarding-body" id="onboarding-description">
+          {snapshot.state === "detecting" ? <p>{m.detectingDetails}</p> : null}
+          {snapshot.state === "found" ? <><p>{m.version}: <strong>{snapshot.version ?? "unknown"}</strong></p><p className="onboarding-path mono">{snapshot.executablePath}</p>{snapshot.cwd === undefined ? <p>{m.chooseProjectBeforeConnect}</p> : <p className="onboarding-path mono">{m.workingDirectory}: {snapshot.cwd}</p>}</> : null}
+          {snapshot.state === "connecting" ? <p>{m.connectingDetails}</p> : null}
+          {snapshot.state === "error" ? <p className="error-summary">{snapshot.error ?? m.setupAttention}</p> : null}
+        </div>
+        {snapshot.state === "found" ? <div className="onboarding-actions"><button className="onboarding-secondary" type="button" onClick={onChooseExecutable}>{m.chooseAnotherCli}</button><button className="onboarding-secondary" type="button" onClick={onRediscover}>{m.detectAgain}</button><button className="onboarding-primary" type="button" onClick={snapshot.cwd === undefined ? onChooseDirectory : onConnect}>{snapshot.cwd === undefined ? m.chooseWorkingDirectory : m.connectVerify}</button></div> : null}
+        {snapshot.state === "error" ? <div className="onboarding-actions"><button className="onboarding-primary" type="button" onClick={onRediscover}>{m.retryDetection}</button><button className="onboarding-secondary" type="button" onClick={onChooseExecutable}>{m.chooseCli}</button>{hasExecutable ? <button className="onboarding-secondary" type="button" onClick={onChooseDirectory}>{m.chooseWorkingDirectory}</button> : null}</div> : null}
+      </section>
+    </div>
   );
 }
 
@@ -955,7 +963,6 @@ function App(): React.JSX.Element {
         <div><h1>ThreadPath for Codex</h1></div>
         <div className="topbar-actions"><div className="status" aria-label={m.connectionStatus}><span className={`status-dot status-${connectionState.state}`} />{m.connectionState(connectionState.state)}{connectionState.serverVersion === undefined ? null : <span className="status-meta">{m.server} {connectionState.serverVersion}</span>}</div><select className="theme-switch" value={theme} onChange={(event) => void handleThemeChange(event.target.value as Theme)} aria-label={m.theme}><option value="graphite">{m.themeGraphite}</option><option value="black">{m.themeBlack}</option><option value="light">{m.themeLight}</option></select><button className="language-switch" type="button" onClick={() => void handleLanguageChange()} aria-label={m.language}>{language === "zh-CN" ? "EN" : "中文"}</button></div>
       </header>
-      <Onboarding snapshot={onboardingState} onRediscover={() => void handleRediscover()} onChooseExecutable={() => void handleChooseExecutable()} onChooseDirectory={() => void handleChooseDirectory()} onConnect={() => void handleOnboardingConnect()} m={m} />
       <section className="workspace" aria-label={m.workspace}>
         <aside className="thread-panel">
           {selectedThreadId !== undefined ? <ThreadDirectory thread={selectedThread} hidden={selectedListThread?.hidden === true} workspacePath={selectedThreadWorkspacePath} workspaceState={workspaceState} activeTurnId={activeTurnId} query={searchQuery} results={searchResults} selectedIndex={selectedSearchIndex} error={searchError} onQueryChange={setSearchQuery} onSearchKeyDown={(event) => handleSearchKeyDown(event, (turnId) => navigateToTurn?.(turnId))} onNavigate={(turnId) => navigateToTurn?.(turnId)} onBack={() => setSelectedThreadId(undefined)} onRename={() => { const current = threads.find((thread) => thread.id === selectedThreadId); if (current !== undefined) beginRename(current); }} onMove={(threadId, path) => void moveThreadToWorkspace(threadId, path)} onSetHidden={(threadId, hidden) => void handleSetThreadHidden(threadId, hidden)} setOutlineButton={setOutlineButton} m={m} /> : <WorkspaceSidebar state={workspaceState} loading={workspaceLoading || threadLoadState === "loading"} listElement={threadListElement} onScroll={(top) => { threadListScrollTop.current = top; }} onChoose={() => void handleChooseWorkspaceDirectory()} onSync={() => void syncHistory()} onSelectThread={setSelectedThreadId} onSetCurrent={(path) => void handleSetCurrentWorkspace(path)} onToggle={(path) => void handleToggleWorkspace(path)} onRename={beginRename} onMove={(threadId, path) => void moveThreadToWorkspace(threadId, path)} onSetThreadHidden={(threadId, hidden) => void handleSetThreadHidden(threadId, hidden)} onSetWorkspaceHidden={(path, hidden) => void handleSetWorkspaceHidden(path, hidden)} onSetThreadFavorite={(threadId, favorite) => void handleSetThreadFavorite(threadId, favorite)} onSetWorkspaceFavorite={(path, favorite) => void handleSetWorkspaceFavorite(path, favorite)} onSetThreadsHidden={handleSetThreadsHidden} onRevealThread={handleRevealThread} onRevealWorkspace={handleRevealWorkspace} language={language} m={m} />}
@@ -988,6 +995,7 @@ function App(): React.JSX.Element {
           </form>
         </section>
       </section>
+      <Onboarding snapshot={onboardingState} onRediscover={() => void handleRediscover()} onChooseExecutable={() => void handleChooseExecutable()} onChooseDirectory={() => void handleChooseDirectory()} onConnect={() => void handleOnboardingConnect()} m={m} />
       {editingThreadId === undefined ? null : <RenameModal name={editingThreadName} onChange={setEditingThreadName} onCancel={() => setEditingThreadId(undefined)} onSave={() => void saveThreadName(editingThreadId, editingThreadName)} m={m} />}
       <footer className={`footer${connectionState.state === "error" || connectionState.state === "stopped" || connectionState.error !== undefined ? " visible" : ""}`}><span>{appInfo === undefined ? "ThreadPath" : `ThreadPath ${appInfo.version}`}</span>{connectionState.state === "error" || connectionState.state === "stopped" ? <button type="button" onClick={() => void handleReconnect()} disabled={reconnecting}>{reconnecting ? m.reconnecting : m.reconnect}</button> : null}{connectionState.error === undefined ? null : <span className="footer-error">{connectionState.error}</span>}</footer>
     </main>
