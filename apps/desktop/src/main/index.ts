@@ -405,11 +405,15 @@ function applyWindowTheme(window: BrowserWindow, theme: Theme): void {
 function createWindow(): void {
   const theme = preferencesService.getTheme();
   const nativeColors = nativeThemeColors(theme);
+  const icon = app.isPackaged
+    ? join(process.resourcesPath, "icon.ico")
+    : join(currentDirectory, "../../build/icon.ico");
   const window = new BrowserWindow({
     width: 1100,
     height: 720,
     minWidth: 760,
     minHeight: 480,
+    icon,
     backgroundColor: nativeColors.backgroundColor,
     titleBarStyle: "hidden",
     ...(process.platform === "darwin" ? {} : {

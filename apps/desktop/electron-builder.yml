@@ -5,7 +5,11 @@ directories:
 files:
   - out/**
   - package.json
+extraResources:
+  - from: build/icon.ico
+    to: icon.ico
 win:
+  icon: build/icon.ico
   signAndEditExecutable: false
   target:
     - target: nsis
