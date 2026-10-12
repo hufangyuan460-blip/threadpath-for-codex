@@ -420,7 +420,8 @@ async function runLocalInterruptPath(): Promise<void> {
 async function runStartupFailurePath(): Promise<void> {
   await runScenario("startup-failure", "e2e-completed", async (page) => {
     await waitForText(page, '[aria-label="Connection status"]', "error");
-    await page.getByRole("button", { name: "Reconnect" }).click();
+    // The current onboarding modal owns recovery while setup has failed.
+    await page.getByRole("dialog").getByRole("button", { name: "Retry detection" }).click();
     await waitForText(page, '[aria-label="Connection status"]', "error");
     await page.locator(".footer-error").waitFor({ state: "visible" });
   }, join(desktopDirectory, "tests", "e2e", "missing-fake-app-server.cmd"));
