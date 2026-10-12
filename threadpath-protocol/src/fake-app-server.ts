@@ -9,6 +9,7 @@ const e2eImplicitThreadId = mode === "e2e-implicit-thread";
 const e2eOutcome = (mode === "e2e-new" || mode === "e2e-models" || e2eImplicitThreadId ? "completed" : mode.slice("e2e-".length)) as "completed" | "failed" | "interrupted";
 let probeRequestId: number | undefined;
 let serverRequestId: number | string | undefined;
+let existingArchived = false;
 function send(message: JsonObject): void { process.stdout.write(`${JSON.stringify(message)}\n`); }
 function initializeResult(): JsonObject {
   const result: JsonObject = { serverInfo: { name: "fake-app-server", version: "fixture-1.0" } };
@@ -17,7 +18,7 @@ function initializeResult(): JsonObject {
       ? ["thread/list", "thread/start"]
       : capabilityMode === "optional-missing"
         ? ["thread/list", "thread/start", "turn/start"]
-        : ["thread/list", "thread/read", "thread/turns/list", "thread/start", "thread/resume", "turn/start", "model/list"];
+        : ["thread/list", "thread/read", "thread/turns/list", "thread/start", "thread/resume", "thread/archive", "thread/unarchive", "turn/start", "model/list"];
     result.capabilities = {
       methods,
       events: capabilityMode === "terminal-events-omitted" ? [] : ["turn/completed", "turn/failed", "turn/interrupted"],
@@ -57,18 +58,29 @@ lines.on("line", (line: string) => {
   }
   const id = typeof message.id === "number" ? message.id : undefined;
   if (id === undefined) return;
+  const requestedThreadId = isJsonObject(message.params) && typeof message.params.threadId === "string" ? message.params.threadId : e2eThreadId();
   if (mode === "server-error") {
     send({ jsonrpc: "2.0", id, error: { code: "server_failure", message: `Fake server rejected ${message.method}` } });
     return;
   }
   switch (message.method) {
     case "initialize": send({ jsonrpc: "2.0", id, result: initializeResult() }); break;
-    case "thread/list": send({ jsonrpc: "2.0", id, result: { data: e2eMode ? e2eThreadSummaries() : hasExistingThread ? [{ id: "existing-thread", title: "Existing" }] : [] } }); break;
-    case "thread/read": send({ jsonrpc: "2.0", id, result: { thread: { id: e2eMode ? e2eThreadId() : "existing-thread", title: e2eMode ? "E2E conversation" : "Existing", cwd: process.cwd(), turns: e2eMode ? e2eTurns() : [] } } }); break;
+    case "thread/list": {
+      const archived = isJsonObject(message.params) && message.params.archived === true;
+      const summaries = e2eMode ? e2eThreadSummaries().filter((thread) => (thread.archived === true) === archived) : hasExistingThread && archived === existingArchived ? [{ id: "existing-thread", title: "Existing" }] : [];
+      send({ jsonrpc: "2.0", id, result: { data: summaries } }); break;
+    }
+    case "thread/archive":
+      existingArchived = true;
+      send({ id, result: mode === "archive-malformed" ? [] : {} }); break;
+    case "thread/unarchive":
+      existingArchived = false;
+      send({ id, result: { thread: { id: mode === "unarchive-malformed" ? "wrong-thread" : requestedThreadId } } }); break;
+    case "thread/read": send({ jsonrpc: "2.0", id, result: { thread: { id: e2eMode ? requestedThreadId : "existing-thread", title: e2eMode ? "E2E conversation" : "Existing", cwd: process.cwd(), turns: e2eMode ? e2eTurns() : [] } } }); break;
     case "thread/resume":
       if (mode === "e2e-deleted" || mode === "resume-error") send({ jsonrpc: "2.0", id, error: { code: "thread_not_found", message: "thread not found" } });
       else {
-        const resumedThread: JsonObject = { id: e2eMode ? e2eThreadId() : "existing-thread", title: e2eMode ? "E2E conversation" : "Existing", cwd: process.cwd(), canAcceptDirectInput: mode !== "e2e-readonly" };
+        const resumedThread: JsonObject = { id: e2eMode ? requestedThreadId : "existing-thread", title: e2eMode ? "E2E conversation" : "Existing", cwd: process.cwd(), canAcceptDirectInput: mode !== "e2e-readonly" };
         if (mode === "e2e-active-writer") {
           resumedThread.status = "active";
           resumedThread.turns = [{ id: "e2e-live-turn", status: "running" }];

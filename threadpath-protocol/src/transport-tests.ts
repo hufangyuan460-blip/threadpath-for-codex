@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { AppServerClient } from "./app-server-client.ts";
-import { type DiagnosticRecord, type ErrorCategory, AppServerError, CompatibilityError, NetworkTimeoutError, ProcessError, ProtocolError, TimeoutError, isJsonObject } from "./protocol.ts";
+import { type DiagnosticRecord, type ErrorCategory, AppServerError, CompatibilityError, ConfigurationError, NetworkTimeoutError, ProcessError, ProtocolError, TimeoutError, isJsonObject } from "./protocol.ts";
 
 const cwd = process.cwd();
 const fakeServerPath = fileURLToPath(new URL("./fake-app-server.ts", import.meta.url));
@@ -66,6 +66,9 @@ async function verifyHighLevelErrors(): Promise<void> {
     (client) => client.listTurns("existing-thread"),
     (client) => client.listModels(),
     (client) => client.resumeThread("existing-thread"),
+    (client) => client.forkThread("existing-thread", { lastTurnId: "ended-turn" }),
+    (client) => client.archiveThread("existing-thread"),
+    (client) => client.unarchiveThread("existing-thread"),
     (client) => client.startThread({ cwd, ephemeral: true }),
     (client) => client.startTurn("existing-thread", []),
   ];
@@ -223,7 +226,28 @@ async function verifyLaunchFailure(): Promise<void> {
   const client = new AppServerClient({ cwd, executable: "codex-does-not-exist-for-protocol-test", requestTimeoutMs: 250 });
   try { await assert.rejects(client.request("initialize"), ProcessError); } finally { await client.close(); }
 }
+async function verifyArchival(): Promise<void> {
+  await withClient("completed", true, async (client) => {
+    await client.initialize();
+    await client.archiveThread("existing-thread");
+    assert.equal((await client.listThreads({ archived: false })).length, 0);
+    assert.equal((await client.listThreads({ archived: true }))[0]?.id, "existing-thread");
+    assert.equal((await client.unarchiveThread("existing-thread")).id, "existing-thread");
+    assert.equal((await client.listThreads({ archived: false }))[0]?.id, "existing-thread");
+    await assert.rejects(client.archiveThread(" "), ConfigurationError);
+    await assert.rejects(client.unarchiveThread(" "), ConfigurationError);
+  });
+  await withClient("archive-malformed", true, async (client) => { await assert.rejects(client.archiveThread("existing-thread"), ProtocolError); });
+  await withClient("unarchive-malformed", true, async (client) => { await assert.rejects(client.unarchiveThread("existing-thread"), ProtocolError); });
+  const unsupported = createFakeClient("completed", true, undefined, "optional-missing");
+  try {
+    await unsupported.initialize();
+    await assert.rejects(unsupported.archiveThread("existing-thread"), CompatibilityError);
+    await assert.rejects(unsupported.unarchiveThread("existing-thread"), CompatibilityError);
+  } finally { await unsupported.close(); }
+}
 async function main(): Promise<void> {
+  await verifyArchival();
   await verifyHappyPath(true, "completed");
   await verifyHappyPath(false, "completed");
   await verifyHappyPath(false, "failed");

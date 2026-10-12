@@ -4,6 +4,10 @@
 
 ## Prerequisites
 
+The current client also exposes typed `archiveThread(threadId)` and `unarchiveThread(threadId)` methods for `thread/archive` and `thread/unarchive`. They validate the response shape and honor explicitly missing capabilities; unknown capability sets are probed through the real RPC. Archive/unarchive does not delete conversation content. The desktop separates these Codex operations from its local hide preferences.
+
+On 2026-10-12, offline transport checks covered both methods, server errors, invalid responses and missing capabilities. The basic live smoke passed; a dedicated non-empty read-only conversation also passed archival, both list filters, archived reading/pagination and restoration to the ordinary list. Only the dedicated test conversation was archived on cleanup. See [the desktop acceptance record](../docs/workspace-archive.md) for scope and limitations.
+
 - Node.js that supports `--experimental-strip-types`;
 - Codex CLI installed and authenticated, for the live smoke test;
 - a project directory that Codex can open.
@@ -54,6 +58,7 @@ listThreads(options)
 listThreadPage(options) → { threads, nextCursor? }
 readThread(threadId)
 resumeThread(threadId) → re-activate an existing thread before a new turn
+forkThread(threadId, options?) → a new thread, optionally through lastTurnId inclusive
 listTurns(threadId, options?) → { turns, nextCursor? }
 listModels() → account-visible model ids and supported reasoning efforts
 startThread(options) → supports an optional model override
@@ -129,3 +134,35 @@ ThreadPath never kills the app-server process to recover a stuck UI state. It re
 - The fake server proves transport behavior, not compatibility with every Codex CLI version.
 - The live smoke test needs a functioning local Codex authentication and may fail a turn because the upstream Responses connection is unavailable or times out. That is reported separately from initialization and JSON-RPC failures.
 - Protocol method payloads are kept close to this executable prototype and must be re-verified against the installed app-server before expanding the client.
+
+## Fork protocol verification
+
+`resumeThread(threadId, { sandbox: "read-only" })` requests the explicit sandbox override and requires `response.sandbox.type === "readOnly"` before returning. A missing or different policy raises `CompatibilityError`; desktop discussion branches then skip `turn/start` and retain their draft. Calling `resumeThread(threadId)` without options keeps existing behavior. This policy is checked again for every discussion-branch send, including after restarting the desktop.
+
+`forkThread(threadId, { lastTurnId })` requests `thread/fork` directly. The returned ID must be new; the inclusive cutoff retains the specified ended turn and excludes later turns. Omitting `lastTurnId` requests the stored history. The narrow options also support `cwd`, `ephemeral`, `model`, `approvalPolicy`, and `sandbox`. Invalid cutoff and unsupported-method responses retain their server error category; malformed or reused thread IDs are protocol errors. Explicitly missing capabilities are rejected before the RPC. On a server that omits capability discovery, the RPC can be tried, but `supports("thread/fork")` remains false until supported methods are explicitly advertised; no CLI-wide compatibility is inferred from an absent capability list.
+
+Thread metadata retains optional `sessionId` and `forkedFromId` across list/read/resume/fork. Do not infer ordinary fork relationships from matching `sessionId`: local CLI `0.162.0-alpha.17.2` returned the fork's own ID in that field on 2026-10-12. Protocol `parentThreadId` describes subagent ancestry, not the ordinary fork source. ThreadPath must separately retain the source cutoff turn when it creates a branch.
+
+`npm test` now also runs a stateful fake-server suite for cutoff, unchanged source history, independent continuation, nested/full-history forks, metadata hydration, process restart, in-progress cutoff rejection and error/compatibility cases. This suite verifies client engineering; it cannot prove model-visible context or actual Codex persistence behavior.
+
+Run the separate live acceptance script:
+
+```powershell
+npm run smoke:fork
+```
+
+This performs real model calls. It creates only dedicated read-only persistent test threads, checks random synthetic state markers on both routes, restarts app-server, resumes the fork, manually compacts its context, and then forks again from a pre-compaction turn. It archives only the threads it created on completion or failure. No existing user thread is selected or edited, and no Codex authentication or persistent configuration is changed.
+
+Defaults, relative to this package's working directory:
+
+- `CODEX_FORK_SMOKE_CWD`: `../artifacts/fork-smoke-workspace`;
+- `CODEX_FORK_SMOKE_REPORT`: `../artifacts/protocol-fork-report.json`;
+- `CODEX_FORK_SMOKE_MODEL`: unset, preserving the configured model;
+- `CODEX_FORK_SMOKE_COMPACT`: compaction enabled; set to `0` for a reduced run that does **not** claim compaction acceptance;
+- `CODEX_EXECUTABLE` and `CODEX_SMOKE_TIMEOUT_MS`: same executable/timeout controls as the basic smoke test.
+
+The script requests `low` reasoning effort only when the selected catalog model advertises it. The report contains check outcomes, durations, platform/version information and archival status; it omits prompts, replies, random markers, thread IDs and environment paths. Raw app-server stderr is not printed or persisted; only its byte count is recorded. A failed real model call, assertion, timeout or archival operation makes the run fail rather than silently reducing coverage.
+
+On 2026-10-12, the full live run on local CLI `0.162.0-alpha.17.2` / Node `v24.19.0` passed all 10 checks, including compaction, and archived all 3 test threads. The changed protocol also passed the basic live smoke, workspace type checks, and protocol/desktop offline tests. See [the dated verification record](../docs/protocol-fork-verification.md) for actual results and limitations. A successful short synthetic run is not a guarantee for every CLI version, long conversation or compression history. Forking conversation history does not restore or isolate code files in the working directory.
+
+After adding desktop discussion branches, the basic live smoke passed again. A second live fork run with `CODEX_FORK_SMOKE_COMPACT=0` passed 7 checks, including the explicit read-only override on restart resume, and archived its 2 dedicated threads. Its redacted report is `artifacts/branch-readonly-report.json`; the reduced run does not claim new compaction coverage. See [the desktop acceptance record](../docs/branch-conversation.md) for the UI, drafts, IPC, and fake-server E2E scope.

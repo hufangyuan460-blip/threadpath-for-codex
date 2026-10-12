@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams, type SpawnOptionsWithoutStdio } from "node:child_process";
 import { createInterface } from "node:readline";
+import type { ForkThreadOptions } from "./protocol.ts";
 import { type AppServerCapabilities, type AppServerModel, type JsonObject, type JsonValue, type DiagnosticRecord, type InitializeResult, type StartThreadOptions, type StartTurnOptions, type TerminalTurnEvent, type Thread, type ThreadListOptions, type ThreadPage, type ThreadSummary, type Turn, type TurnInput, type TurnListOptions, type TurnPage, AppServerError, CompatibilityError, ConfigurationError, ProcessError, ProtocolError, TimeoutError, errorFromServer, getModels, getThread, getThreadPage, getTurnId, getTurnPage, isJsonObject, parseInitializeResult, terminalTurnEvent } from "./protocol.ts";
 
 type RequestId = number;
@@ -148,12 +149,51 @@ export class AppServerClient {
     return thread;
   }
 
+  async archiveThread(threadId: string): Promise<void> {
+    if (threadId.trim() === "") throw new ConfigurationError("archive requires a non-empty thread id");
+    this.requireCapability("thread/archive");
+    this.requireObject(await this.request("thread/archive", { threadId }), "thread/archive");
+  }
+
+  async unarchiveThread(threadId: string): Promise<Thread> {
+    if (threadId.trim() === "") throw new ConfigurationError("unarchive requires a non-empty thread id");
+    this.requireCapability("thread/unarchive");
+    const response = await this.request("thread/unarchive", { threadId });
+    const thread = getThread(this.requireObject(response, "thread/unarchive"));
+    if (thread?.id !== threadId) throw new ProtocolError("thread/unarchive response must contain the requested thread id");
+    return thread;
+  }
+
   /** Resume an existing thread before sending a new turn. The app-server keeps this separate from thread/read. */
-  async resumeThread(threadId: string): Promise<Thread> {
+  async resumeThread(threadId: string, options: { sandbox?: "read-only" } = {}): Promise<Thread> {
     this.requireCapability("thread/resume");
-    const response = await this.request("thread/resume", { threadId, excludeTurns: true });
-    const thread = getThread(this.requireObject(response, "thread/resume"));
+    const response = await this.request("thread/resume", { threadId, excludeTurns: true, ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }) });
+    const object = this.requireObject(response, "thread/resume");
+    if (options.sandbox === "read-only") this.requireReadOnlySandbox(object);
+    const thread = getThread(object);
     if (thread === undefined) throw new ProtocolError("thread/resume response did not contain a thread id");
+    return thread;
+  }
+
+  /** Probe unknown servers through the actual RPC; never assume an older CLI supports fork. */
+  async forkThread(threadId: string, options: ForkThreadOptions = {}): Promise<Thread> {
+    if (threadId.trim() === "" || options.lastTurnId?.trim() === "") {
+      throw new ConfigurationError("fork requires a non-empty thread id and, when supplied, a non-empty last turn id");
+    }
+    this.requireCapability("thread/fork");
+    const params: JsonObject = { threadId };
+    if (options.lastTurnId !== undefined) params.lastTurnId = options.lastTurnId;
+    if (options.cwd !== undefined) params.cwd = options.cwd;
+    if (options.ephemeral !== undefined) params.ephemeral = options.ephemeral;
+    if (options.approvalPolicy !== undefined) params.approvalPolicy = options.approvalPolicy;
+    if (options.sandbox !== undefined) params.sandbox = options.sandbox;
+    if (options.model !== undefined) params.model = options.model;
+    const response = await this.request("thread/fork", params);
+    const object = this.requireObject(response, "thread/fork");
+    const thread = getThread(object);
+    if (thread === undefined || thread.id.trim() === "" || thread.id === threadId) {
+      throw new ProtocolError("thread/fork response must contain a new thread id");
+    }
     return thread;
   }
 
@@ -314,6 +354,11 @@ export class AppServerClient {
   }
   private requireCapability(name: string): void {
     if (this.capabilitiesState.known && !this.supports(name)) throw new CompatibilityError(`app-server does not support ${name}`);
+  }
+  private requireReadOnlySandbox(response: JsonObject): void {
+    if (!isJsonObject(response.sandbox) || response.sandbox.type !== "readOnly") {
+      throw new CompatibilityError("Codex did not confirm the requested read-only sandbox; sending is blocked");
+    }
   }
   private emitRequestFailure(requestId: number, method: string, startedAt: number, error: Error): void {
     this.onDiagnostic({ event: "request.failed", method, status: "failed", requestId, startedAt: new Date(startedAt).toISOString(), durationMs: Date.now() - startedAt, errorCategory: error instanceof AppServerError ? error.category : "process" });

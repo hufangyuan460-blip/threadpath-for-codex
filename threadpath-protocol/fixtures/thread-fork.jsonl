@@ -1,0 +1,7 @@
+{"id":10,"method":"thread/fork","params":{"threadId":"fixture-root","lastTurnId":"fixture-turn-1","ephemeral":false,"sandbox":"read-only","approvalPolicy":"never"}}
+{"id":10,"result":{"thread":{"id":"fixture-branch","sessionId":"fixture-branch","forkedFromId":"fixture-root","parentThreadId":null,"turns":[{"id":"fixture-turn-1","status":"completed"}],"futureField":"ignored"}}}
+{"method":"thread/started","params":{"thread":{"id":"fixture-branch","sessionId":"fixture-branch","forkedFromId":"fixture-root","turns":[]}}}
+{"id":11,"method":"thread/read","params":{"threadId":"fixture-branch","includeTurns":true}}
+{"id":11,"result":{"thread":{"id":"fixture-branch","sessionId":"fixture-branch","forkedFromId":"fixture-root","parentThreadId":null,"turns":[{"id":"fixture-turn-1","status":"completed"},{"id":"fixture-branch-turn","status":"completed"}]}}}
+{"id":12,"method":"thread/list","params":{}}
+{"id":12,"result":{"data":[{"id":"fixture-root","sessionId":"fixture-root","forkedFromId":null},{"id":"fixture-branch","sessionId":"fixture-branch","forkedFromId":"fixture-root"}],"nextCursor":null}}

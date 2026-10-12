@@ -68,6 +68,28 @@ async function main(): Promise<void> {
   assert.equal(getThread(asObject(threadResume[1]).result)?.canAcceptDirectInput, true);
   const readOnlyResume = await readJsonLines("thread-resume-read-only.jsonl");
   assert.equal(getThread(asObject(readOnlyResume[1]).result)?.canAcceptDirectInput, false);
+  const forkMessages = await readJsonLines("thread-fork.jsonl");
+  for (const [requestIndex, responseIndex] of [[0, 1], [3, 4], [5, 6]]) {
+    assert.equal(asObject(forkMessages[requestIndex]).id, asObject(forkMessages[responseIndex]).id);
+  }
+  const forkParams = asObject(asObject(forkMessages[0]).params);
+  assert.equal(forkParams.lastTurnId, "fixture-turn-1");
+  const fork = getThread(asObject(forkMessages[1]).result);
+  assert.equal(fork?.id, "fixture-branch");
+  assert.equal(fork?.forkedFromId, "fixture-root");
+  assert.equal(fork?.sessionId, "fixture-branch");
+  assert.deepEqual(fork?.turns?.map((turn) => turn.id), ["fixture-turn-1"]);
+  assert.equal(asObject(forkMessages[2]).id, undefined);
+  assert.equal(getThread(asObject(forkMessages[4]).result)?.forkedFromId, "fixture-root");
+  const forkList = getThreads(asObject(forkMessages[6]).result);
+  assert.equal(forkList[0]?.forkedFromId, null);
+  assert.equal(forkList[1]?.forkedFromId, "fixture-root");
+  assert.equal(forkList[1]?.sessionId, "fixture-branch");
+  assert.equal(getThread({ thread: { id: "legacy-fork" } })?.forkedFromId, undefined);
+  assert.equal(getThread({ thread: { id: "bad-metadata", forkedFromId: 5, sessionId: {}, parentThreadId: "subagent-parent" } })?.forkedFromId, undefined);
+  const activeFork = await readJsonLines("thread-fork-active-turn.jsonl");
+  assert.equal(asObject(activeFork[0]).id, asObject(activeFork[1]).id);
+  assert.equal(errorFromServer(asObject(activeFork[1]).error).code, -32602);
   const activeWriter = await readJsonLines("thread-active-writer.jsonl");
   assert.equal(getThread(asObject(activeWriter[1]).result)?.status, "active");
   assert.equal(errorFromServer(asObject(activeWriter[2]).error).code, "active_writer");

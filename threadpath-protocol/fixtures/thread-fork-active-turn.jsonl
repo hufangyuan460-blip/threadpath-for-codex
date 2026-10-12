@@ -1,0 +1,2 @@
+{"id":20,"method":"thread/fork","params":{"threadId":"fixture-root","lastTurnId":"fixture-active-turn"}}
+{"id":20,"error":{"code":-32602,"message":"lastTurnId is in progress"}}

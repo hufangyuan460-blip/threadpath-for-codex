@@ -41,6 +41,17 @@ export interface StartTurnOptions {
   effort?: string;
 }
 
+/** Verified against the local app-server ThreadForkParams contract. */
+export interface ForkThreadOptions {
+  /** Include this ended turn and omit all later turns. */
+  lastTurnId?: string;
+  cwd?: string;
+  ephemeral?: boolean;
+  approvalPolicy?: string;
+  sandbox?: string;
+  model?: string;
+}
+
 export interface AppServerReasoningEffort {
   readonly reasoningEffort: string;
   readonly description?: string;
@@ -97,7 +108,14 @@ export class NetworkTimeoutError extends AppServerError {
   constructor(message: string, code?: JsonValue) { super(message, "network-timeout", code); this.name = "NetworkTimeoutError"; }
 }
 
-export interface ThreadSummary { id: string; title?: string; status?: string; turnCount?: number; createdAt?: string; updatedAt?: string; preview?: string; name?: string; archived?: boolean; canAcceptDirectInput?: boolean; cwd?: string; }
+export interface ThreadSummary {
+  id: string;
+  /** Reported session identity. Ordinary forks may have different values; do not infer ancestry from it. */
+  sessionId?: string;
+  /** Fork source. This is distinct from the subagent parentThreadId field. */
+  forkedFromId?: string | null;
+  title?: string; status?: string; turnCount?: number; createdAt?: string; updatedAt?: string; preview?: string; name?: string; archived?: boolean; canAcceptDirectInput?: boolean; cwd?: string;
+}
 export interface Thread extends ThreadSummary { turns?: Turn[]; }
 export interface Turn { id: string; status?: string; createdAt?: string; items?: TurnItem[]; }
 export interface TurnPage {
@@ -221,7 +239,7 @@ export function getThreads(value: JsonValue): ThreadSummary[] {
     const status = readStatus(item);
     const archived = typeof item.archived === "boolean" ? item.archived : undefined;
     const cwd = readString(item, "cwd");
-    return id === undefined ? [] : [{ id, ...(title === undefined ? {} : { title }), ...(preview === undefined ? {} : { preview }), ...(name === undefined ? {} : { name }), ...(status === undefined ? {} : { status }), ...(turnCount === undefined ? {} : { turnCount }), ...(createdAt === undefined ? {} : { createdAt }), ...(updatedAt === undefined ? {} : { updatedAt }), ...(archived === undefined ? {} : { archived }), ...(cwd === undefined ? {} : { cwd }) }];
+    return id === undefined ? [] : [{ id, ...readForkMetadata(item), ...(title === undefined ? {} : { title }), ...(preview === undefined ? {} : { preview }), ...(name === undefined ? {} : { name }), ...(status === undefined ? {} : { status }), ...(turnCount === undefined ? {} : { turnCount }), ...(createdAt === undefined ? {} : { createdAt }), ...(updatedAt === undefined ? {} : { updatedAt }), ...(archived === undefined ? {} : { archived }), ...(cwd === undefined ? {} : { cwd }) }];
   });
 }
 
@@ -235,6 +253,7 @@ export function getThread(value: JsonValue): Thread | undefined {
   const updatedAt = readTimestamp(source, "updatedAt", "updated_at", "lastUpdatedAt", "last_updated_at") ?? createdAt;
   return {
     id,
+    ...readForkMetadata(source),
     ...(readString(source, "title") === undefined ? {} : { title: readString(source, "title") }),
     ...(readString(source, "preview") === undefined ? {} : { preview: readString(source, "preview") }),
     ...(readString(source, "name") === undefined ? {} : { name: readString(source, "name") }),
@@ -246,6 +265,15 @@ export function getThread(value: JsonValue): Thread | undefined {
     ...(turnCount === undefined ? {} : { turnCount }),
     ...(createdAt === undefined ? {} : { createdAt }),
     turns: Array.isArray(source.turns) ? source.turns.flatMap((item) => isJsonObject(item) ? [parseTurn(item)] : []).filter((turn): turn is Turn => turn !== undefined) : undefined,
+  };
+}
+
+function readForkMetadata(source: JsonObject): Pick<ThreadSummary, "sessionId" | "forkedFromId"> {
+  const sessionId = readString(source, "sessionId");
+  const forkedFromId = source.forkedFromId === null ? null : readString(source, "forkedFromId");
+  return {
+    ...(sessionId === undefined ? {} : { sessionId }),
+    ...(forkedFromId === undefined ? {} : { forkedFromId }),
   };
 }
 
