@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { mkdir, readFile, realpath } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, type Page } from "playwright-core";
 
 const desktop = fileURLToPath(new URL("../../", import.meta.url));
 const repo = fileURLToPath(new URL("../../../../", import.meta.url));
+const repositoryName = basename(repo);
 const artifacts = join(repo, "artifacts", "e2e");
 const userData = join(artifacts, "user-data", `workspace-archive-${process.pid}-${Date.now()}`);
 const statePath = join(userData, "synthetic-archive-state.json");
@@ -28,7 +29,7 @@ async function main(): Promise<void> {
   let { app, page } = await launch();
   try {
     const picker = page.locator(".composer-workspace-picker");
-    assert.ok((await picker.textContent())?.includes("threadPath"), "homepage must show current workspace without hovering");
+    assert.ok((await picker.textContent())?.includes(repositoryName), "homepage must show current workspace without hovering");
     assert.equal(await picker.getAttribute("title"), repo.replace(/[\\/]+$/, ""));
     assert.ok(!(await picker.textContent())?.includes("＋"), "selected workspace must replace the plus icon");
     await mkdir(extraWorkspace, { recursive: true });
@@ -51,8 +52,8 @@ async function main(): Promise<void> {
     await page.getByRole("button", { name: "切换语言" }).click();
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(1100, 720));
     await picker.click();
-    await page.locator(".workspace-menu").getByRole("menuitem", { name: "📁 threadPath", exact: true }).click();
-    await page.waitForFunction(() => document.querySelector(".composer-workspace-picker")?.textContent?.includes("threadPath"));
+    await page.locator(".workspace-menu").getByRole("menuitem", { name: `📁 ${repositoryName}`, exact: true }).click();
+    await page.waitForFunction((name) => document.querySelector(".composer-workspace-picker")?.textContent?.includes(name), repositoryName);
 
     await openMenu(page);
     await page.getByRole("menuitem", { name: "Archive conversation", exact: true }).click();
