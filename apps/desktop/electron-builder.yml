@@ -10,13 +10,15 @@ extraResources:
     to: icon.ico
 win:
   icon: build/icon.ico
-  signAndEditExecutable: false
+  signAndEditExecutable: true
   target:
     - target: nsis
       arch:
         - x64
   artifactName: ThreadPath for Codex Setup ${version}.${ext}
 nsis:
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
