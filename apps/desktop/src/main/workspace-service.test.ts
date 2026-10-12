@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ThreadListItem } from "../shared/api.ts";
@@ -7,7 +7,8 @@ import { UserPreferencesService } from "./user-preferences.ts";
 import { WorkspaceService, workspaceDisplayName } from "./workspace-service.ts";
 
 async function main(): Promise<void> {
-  const root = await mkdtemp(join(tmpdir(), "threadpath-workspaces-"));
+  // Windows CI can expose TEMP through an 8.3 alias; compare canonical paths.
+  const root = await realpath(await mkdtemp(join(tmpdir(), "threadpath-workspaces-")));
   const first = join(root, "threadPath");
   const second = join(root, "another-project");
   const { mkdir } = await import("node:fs/promises");

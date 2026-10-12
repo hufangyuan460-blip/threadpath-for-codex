@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -11,7 +11,7 @@ const artifacts = join(repo, "artifacts", "e2e");
 const userData = join(artifacts, "user-data", `workspace-archive-${process.pid}-${Date.now()}`);
 const statePath = join(userData, "synthetic-archive-state.json");
 const logPath = join(userData, "archive-requests.jsonl");
-const extraWorkspace = join(tmpdir(), `a-long-workspace-directory-to-check-the-composer-layout-${process.pid}-${Date.now()}`);
+const extraWorkspace = join(await realpath(tmpdir()), `a-long-workspace-directory-to-check-the-composer-layout-${process.pid}-${Date.now()}`);
 async function launch(mode = "normal", directory = userData) {
   await mkdir(directory, { recursive: true });
   const app = await electron.launch({ executablePath: process.env.THREADPATH_PACKAGED_EXE ?? join(desktop, "node_modules", "electron", "dist", "electron.exe"), args: ["--no-sandbox", "--disable-gpu", `--user-data-dir=${directory}`, ...(process.env.THREADPATH_PACKAGED_EXE === undefined ? [join(desktop, "out", "main", "index.js")] : [])], env: { ...process.env, CODEX_EXECUTABLE: join(desktop, "tests", "e2e", "fake-archive-app-server.cmd"), CODEX_CWD: repo, ARCHIVE_STATE_PATH: statePath, ARCHIVE_REQUEST_LOG: logPath, ARCHIVE_FIXTURE_MODE: mode, ELECTRON_IS_DEV: "0", THREADPATH_E2E: "1", THREADPATH_E2E_LANGUAGE: "en-US" } });
