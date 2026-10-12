@@ -1,4 +1,4 @@
-import { ActiveTurnError, AppServerError, ConfigurationError, ProtocolError, ThreadUnavailableError, type JsonObject, type JsonValue, type StartTurnOptions, type TerminalTurnEvent, type Thread, type Turn, type TurnInput, type TurnItem, type TurnPage, isJsonObject, readString } from "../../../../threadpath-protocol/src/protocol.ts";
+import { ActiveTurnError, AppServerError, CompatibilityError, ConfigurationError, ProtocolError, ThreadUnavailableError, type ForkThreadOptions, type JsonObject, type JsonValue, type StartTurnOptions, type TerminalTurnEvent, type Thread, type Turn, type TurnInput, type TurnItem, type TurnPage, isJsonObject, readString } from "../../../../threadpath-protocol/src/protocol.ts";
 import type { ConversationItemView, ConversationPagingState, ConversationThreadView, ConversationTurnView, ConversationUpdate, SearchResult, StartTurnResult } from "../shared/api";
 import { type ThreadClient, type ThreadClientProvider, validateThreadId } from "./thread-service.ts";
 import { buildTurnOutline } from "../shared/outline.ts";
@@ -20,7 +20,8 @@ export interface ConversationClient extends ThreadClient {
   readonly turnPageOrder?: TurnCollectionOrder;
   startThread(options: { cwd: string; ephemeral?: boolean; model?: string }): Promise<Thread>;
   listTurns(threadId: string, options?: { limit?: number; cursor?: string }): Promise<TurnPage>;
-  resumeThread(threadId: string): Promise<Thread>;
+  resumeThread(threadId: string, options?: { sandbox?: "read-only" }): Promise<Thread>;
+  forkThread?(threadId: string, options?: ForkThreadOptions): Promise<Thread>;
   startTurn(threadId: string, input: readonly TurnInput[], options?: StartTurnOptions): Promise<Turn>;
   interruptTurn(threadId: string, turnId: string): Promise<void>;
   waitForTurnTerminal?(turnId: string): Promise<TerminalTurnEvent>;
@@ -44,6 +45,9 @@ export class ConversationService {
   private boundClient: ConversationClient | undefined;
   private unsubscribeNotifications: (() => void) | undefined;
   private readonly loadedThreads = new Map<string, ConversationThreadView>();
+  /** IDs only: accepted input stays in the existing in-memory view until history echoes it. */
+  private readonly pendingLocalTurnIds = new Map<string, Set<string>>();
+  private readonly lastReadActiveTurnIds = new Map<string, readonly string[]>();
   private readonly olderCachedTurnIds = new Map<string, Set<string>>();
   private readonly remoteActiveThreads = new Set<string>();
   private readonly remoteActiveTurnIds = new Map<string, string>();
@@ -57,9 +61,11 @@ export class ConversationService {
   private readonly settledTurnIds = new Set<string>();
   private activeTurn: { threadId: string; turnId: string } | undefined;
   private startingTurn = false;
+  private readonly isReadOnlyThread: (threadId: string) => boolean;
 
-  constructor(clientProvider: ConversationClientProvider) {
+  constructor(clientProvider: ConversationClientProvider, isReadOnlyThread: (threadId: string) => boolean = () => false) {
     this.clientProvider = clientProvider;
+    this.isReadOnlyThread = isReadOnlyThread;
   }
 
   async readThread(threadId: unknown): Promise<ConversationThreadView> {
@@ -68,18 +74,20 @@ export class ConversationService {
     this.bindNotifications(client);
     const thread = await client.readThread(validThreadId);
     const page = await client.listTurns(validThreadId, { limit: 20 });
+    this.lastReadActiveTurnIds.set(validThreadId, [...new Set([...(thread.turns ?? []), ...page.turns].filter(isActiveTurn).map((turn) => turn.id))]);
     const readTurns = normalizeTurnCollection(thread.turns ?? [], client.threadReadOrder ?? DEFAULT_THREAD_READ_ORDER);
     const pageTurns = normalizeTurnCollection(page.turns, client.turnPageOrder ?? DEFAULT_TURN_PAGE_ORDER);
-    const freshTurns = mergeConversationSources(
+    const parsedTurns = mergeConversationSources(
       readTurns.map((turn, index) => toConversationTurnView(turn, index)),
       pageTurns.map((turn, index) => toConversationTurnView(turn, index)),
     );
+    const previouslyLoaded = this.loadedThreads.get(validThreadId);
+    const freshTurns = this.preserveAcceptedInput(validThreadId, parsedTurns, previouslyLoaded);
     const view = withPaging(toConversationThreadView({ ...thread, turns: [] }), {
       nextCursor: page.nextCursor,
       hasMore: page.nextCursor !== undefined,
       loadMoreError: undefined,
     });
-    const previouslyLoaded = this.loadedThreads.get(validThreadId);
     const bufferedUpdates = this.recentUpdates.get(validThreadId) ?? [];
     const bufferedTurnId = bufferedUpdates.at(-1)?.turnId;
     const localTurnId = this.activeTurn?.threadId === validThreadId ? this.activeTurn.turnId : bufferedTurnId;
@@ -119,7 +127,8 @@ export class ConversationService {
     this.loadedThreads.set(validThreadId, loading);
     try {
       const page = await client.listTurns(validThreadId, { limit: 20, cursor: current.paging.nextCursor });
-      const incomingTurns = normalizeTurnCollection(page.turns, client.turnPageOrder ?? DEFAULT_TURN_PAGE_ORDER).map((turn, index) => toConversationTurnView(turn, index));
+      const parsed = normalizeTurnCollection(page.turns, client.turnPageOrder ?? DEFAULT_TURN_PAGE_ORDER).map((turn, index) => toConversationTurnView(turn, index));
+      const incomingTurns = this.preserveAcceptedInput(validThreadId, parsed, current);
       for (const turn of incomingTurns) this.rememberTurn(validThreadId, turn.id);
       const turns = mergeConversationTurns(current.turns, incomingTurns, "prepend");
       const existingIds = new Set(current.turns.map((turn) => turn.id));
@@ -158,10 +167,11 @@ export class ConversationService {
     // some app-server versions can report the second call as an active writer.
     const thread = await this.readThread(validThreadId);
     const localTurnId = this.activeTurn?.threadId === validThreadId ? this.activeTurn.turnId : undefined;
-    const activeTurn = thread.turns.find((turn) => turn.id !== localTurnId && isActiveStatus(turn.status));
-    const serverActive = activeTurn !== undefined || isActiveThreadStatus(thread.status);
+    // Accepted-message placeholders are display state, not server activity evidence.
+    const activeTurnId = this.lastReadActiveTurnIds.get(validThreadId)?.find((turnId) => turnId !== localTurnId);
+    const serverActive = activeTurnId !== undefined || isActiveThreadStatus(thread.status);
     if (serverActive) {
-      this.markRemoteActive(validThreadId, activeTurn?.id);
+      this.markRemoteActive(validThreadId, activeTurnId);
       return { thread: this.withKnownActivity(validThreadId, thread), activity: "active" };
     }
     // A successful idle snapshot is authoritative. It also recovers a local
@@ -188,7 +198,7 @@ export class ConversationService {
       // thread/read only reads history. thread/resume is the verified app-server
       // operation that reactivates an existing thread for a subsequent turn.
       try {
-        const resumedThread = await client.resumeThread(validThreadId);
+        const resumedThread = await client.resumeThread(validThreadId, this.isReadOnlyThread(validThreadId) ? { sandbox: "read-only" } : undefined);
         if (resumedThread.canAcceptDirectInput === false) {
           throw new ThreadUnavailableError("This thread cannot accept direct input. Refresh the thread list and choose another thread.");
         }
@@ -217,6 +227,7 @@ export class ConversationService {
       this.activeTurn = { threadId: validThreadId, turnId: turn.id };
       this.rememberTurn(validThreadId, turn.id);
       this.watchTurnTerminal(client, validThreadId, turn.id);
+      this.rememberAcceptedInput(validThreadId, turn.id, text.trim());
       return { threadId: validThreadId, turnId: turn.id };
     } finally {
       this.startingTurn = false;
@@ -230,6 +241,25 @@ export class ConversationService {
     const client = this.clientProvider.getReadyClient();
     this.bindNotifications(client);
     await client.interruptTurn(validThreadId, active.turnId);
+  }
+
+  async forkConversation(threadId: unknown, turnId: unknown, cwd: string): Promise<Thread> {
+    const sourceId = validateThreadId(threadId);
+    const cutoffId = validateThreadId(turnId);
+    const source = this.loadedThreads.get(sourceId);
+    const cutoff = source?.turns.find((turn) => turn.id === cutoffId);
+    if (cutoff === undefined) throw new ConfigurationError("Load the source turn before branching");
+    if (!["completed", "failed", "interrupted"].includes(cutoff.status)) throw new ActiveTurnError("Only an ended turn can be used as a branch point");
+    if (source?.remoteActive || this.startingTurn || this.activeTurn !== undefined) throw new ActiveTurnError("Wait for the running conversation before branching");
+    const client = this.clientProvider.getReadyClient();
+    if (client.forkThread === undefined) throw new CompatibilityError("This Codex client does not support branching");
+    this.startingTurn = true;
+    try {
+      const fork = await client.forkThread(sourceId, { lastTurnId: cutoffId, cwd, ephemeral: false, sandbox: "read-only" });
+      if (fork.id === sourceId || fork.forkedFromId !== sourceId) throw new ProtocolError("Codex did not return the expected branch source");
+      this.loadedThreads.set(fork.id, toConversationThreadView(fork));
+      return fork;
+    } finally { this.startingTurn = false; }
   }
 
   async startNewConversation(cwd: unknown, text: unknown, options: unknown = undefined): Promise<StartTurnResult> {
@@ -256,10 +286,7 @@ export class ConversationService {
       this.activeTurn = { threadId: thread.id, turnId: turn.id };
       this.rememberTurn(thread.id, turn.id);
       this.watchTurnTerminal(client, thread.id, turn.id);
-      const current = this.loadedThreads.get(thread.id) ?? toConversationThreadView(thread);
-      const createdTurn: ConversationTurnView = { id: turn.id, index: current.turns.length + 1, status: "running", items: [{ kind: "text", id: `${turn.id}:user`, role: "user", text: validText, phase: "historical" }] };
-      const turns = mergeConversationTurns(current.turns, [createdTurn], "append");
-      this.loadedThreads.set(thread.id, { ...current, turns, outline: buildTurnOutline(turns), paging: { ...current.paging, orderedTurnIds: turns.map((item) => item.id) } });
+      this.rememberAcceptedInput(thread.id, turn.id, validText);
       return { threadId: thread.id, turnId: turn.id };
     } finally {
       this.startingTurn = false;
@@ -287,6 +314,41 @@ export class ConversationService {
     this.recentUpdates.clear();
     this.olderCachedTurnIds.clear();
     this.loadedThreads.clear();
+    this.pendingLocalTurnIds.clear();
+    this.lastReadActiveTurnIds.clear();
+  }
+
+  private rememberAcceptedInput(threadId: string, turnId: string, text: string): void {
+    const current = this.loadedThreads.get(threadId) ?? toConversationThreadView({ id: threadId, turns: [] });
+    const existing = current.turns.find((turn) => turn.id === turnId);
+    const user: ConversationItemView = { kind: "text", id: `${turnId}:user`, role: "user", text, phase: "historical" };
+    const created: ConversationTurnView = { ...existing, id: turnId, index: existing?.index ?? current.turns.length + 1, status: existing?.status ?? "running", items: [user, ...existing?.items.filter((item) => !(item.kind === "text" && item.role === "user")) ?? []] };
+    const turns = current.turns.some((turn) => turn.id === turnId) ? current.turns.map((turn) => turn.id === turnId ? created : turn) : [...current.turns, created];
+    this.loadedThreads.set(threadId, { ...current, turns, outline: buildTurnOutline(turns), paging: { ...current.paging, orderedTurnIds: turns.map((turn) => turn.id) } });
+    const pending = this.pendingLocalTurnIds.get(threadId) ?? new Set<string>();
+    pending.add(turnId);
+    this.pendingLocalTurnIds.set(threadId, pending);
+  }
+
+  private preserveAcceptedInput(threadId: string, fresh: readonly ConversationTurnView[], cached: ConversationThreadView | undefined): ConversationTurnView[] {
+    const pending = this.pendingLocalTurnIds.get(threadId);
+    if (pending === undefined || cached === undefined) return [...fresh];
+    const preserved = cached.turns.filter((turn) => pending.has(turn.id)).map((turn) => {
+      const remote = fresh.find((candidate) => candidate.id === turn.id);
+      if (remote === undefined) return turn;
+      const isUser = (item: ConversationItemView): boolean => item.kind === "text" && item.role === "user";
+      const accepted = turn.items.find((item) => item.kind === "text" && item.role === "user" && item.id === `${turn.id}:user`);
+      const confirmed = accepted?.kind === "text" && remote.items.some((item) => item.kind === "text" && item.role === "user" && item.text.includes(accepted.text));
+      if (confirmed) {
+        pending.delete(turn.id);
+        // Server user-message IDs can differ from the local placeholder ID.
+        return mergeConversationTurn({ ...turn, items: turn.items.filter((item) => !isUser(item)) }, remote);
+      }
+      return mergeConversationTurn(turn, { ...remote, items: remote.items.filter((item) => !isUser(item)) });
+    });
+    if (pending.size === 0) this.pendingLocalTurnIds.delete(threadId);
+    const byId = new Map(preserved.map((turn) => [turn.id, turn]));
+    return mergeConversationSources(fresh.map((turn) => byId.get(turn.id) ?? turn), preserved);
   }
 
   private bindNotifications(client: ConversationClient): void {

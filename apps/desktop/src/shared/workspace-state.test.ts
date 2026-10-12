@@ -33,6 +33,15 @@ function main(): void {
   assert.deepEqual(hidden.directories[0]?.threads.map((thread) => thread.id), ["inherited", "explicit"]);
   assert.deepEqual(hidden.directories[1]?.threads.map((thread) => thread.id), ["private"]);
   assert.deepEqual(hidden.unclassifiedThreads.map((thread) => thread.id), ["loose"]);
+  const archivedState: WorkspaceState = { ...historyState, directories: historyState.directories.map((directory) => ({ ...directory, threads: [...directory.threads, { id: `archived-${directory.name}`, title: "Archived", status: "idle", turnCount: null, archived: true, favorite: true }] })), unclassifiedThreads: [{ id: "archived-loose", title: "Loose archive", status: "idle", turnCount: null, archived: true }] };
+  for (const filter of ["all", "favorites", "updated", "unclassified"] as const) {
+    const view = filterWorkspaceHistory(archivedState, filter);
+    assert.ok([...view.directories.flatMap((directory) => directory.threads), ...view.unclassifiedThreads].every((thread) => !thread.archived), `${filter} must not include archived conversations`);
+  }
+  const archives = filterWorkspaceHistory(archivedState, "archived");
+  assert.equal(archives.directories.length, 3, "hidden workspaces must not make archived conversations irrecoverable");
+  assert.ok(archives.directories.flatMap((directory) => directory.threads).every((thread) => thread.archived));
+  assert.equal(archives.unclassifiedThreads[0]?.id, "archived-loose");
   console.log("[desktop-test] workspace state title checks passed");
 }
 

@@ -240,7 +240,10 @@ h1 { margin-bottom: 0; overflow: hidden; font-size: 13px; line-height: 1; letter
 .composer-status { min-width: 0; margin-left: auto; overflow: hidden; color: #8290a1; font-size: 10px; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .composer-send { display: grid; flex: none; width: 30px; height: 28px; padding: 0; place-items: center; border-radius: 7px; color: #11151c; background: #a9c8f2; font-size: 15px; line-height: 1; }
 .composer-send:disabled { color: #7e8b9d; background: #2a3442; }
-.composer-workspace-picker { display: grid; flex: none; width: 30px; min-height: 46px; padding: 0; place-items: center; border-radius: 8px; color: #b9cbea; background: transparent; font-size: 20px; line-height: 1; }
+.composer-workspace-picker { display: flex; flex: 0 1 auto; min-width: 30px; max-width: min(180px, 35%); min-height: 46px; padding: 0 7px; align-items: center; gap: 6px; border-radius: 8px; color: #b9cbea; background: transparent; font-size: 17px; line-height: 1; }
+.composer-workspace-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.archive-error { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.archive-error button { flex: none; }
 .composer-workspace-picker:hover, .composer-workspace-picker:focus-visible { background: #263242; }
 .workspace-menu { position: absolute; bottom: 51px; left: 0; z-index: 4; display: grid; width: min(280px, 100%); gap: 3px; padding: 8px; border: 1px solid #3a485c; border-radius: 8px; background: #171d26; box-shadow: 0 8px 24px #0008; }
 .workspace-menu strong { padding: 2px 5px 5px; color: #9fb9df; font-size: 11px; }
@@ -430,6 +433,41 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 *::-webkit-scrollbar-track { background: var(--tp-scroll-track); }
 *::-webkit-scrollbar-thumb { border: 2px solid var(--tp-scroll-track); border-radius: 999px; background: var(--tp-scroll-thumb); }
 *::-webkit-scrollbar-thumb:hover { background: var(--tp-scroll-thumb-hover); }
+
+.branch-map { flex: none; min-width: 0; margin-bottom: 10px; border: 1px solid var(--tp-border); border-radius: 10px; background: var(--tp-panel); }
+.branch-map-heading { display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; }
+.branch-map-heading h3 { margin: 0; font-size: 12px; font-weight: 600; color: var(--tp-text-muted); }
+.branch-map-heading button, .fork-turn { padding: 4px 8px; font-size: 11px; border-color: var(--tp-border-strong); background: var(--tp-surface); color: var(--tp-text-muted); }
+.branch-map-scroll { max-height: min(270px, 36vh); overflow: auto; border-top: 1px solid var(--tp-border); }
+.branch-map-canvas { position: relative; }
+.branch-lines { position: absolute; inset: 0; pointer-events: none; }
+.branch-lines path { fill: none; stroke: var(--tp-border-strong); stroke-width: 2; }
+.branch-lines path.on-path { stroke: var(--tp-focus); }
+.branch-node { position: absolute; width: 200px; height: 116px; display: flex; flex-direction: column; text-align: left; border: 1px solid var(--tp-border-strong); border-radius: 8px; background: var(--tp-surface); color: var(--tp-text); overflow: hidden; }
+.branch-node.selected { border-color: var(--tp-focus); box-shadow: inset 0 0 0 1px var(--tp-focus); background: var(--tp-directory-selected); }
+.branch-node.on-path { border-color: var(--tp-focus); }
+.branch-node button { border: 0; border-radius: 0; background: transparent; color: var(--tp-text); text-align: left; }
+.branch-node button:hover:not(:disabled) { background: var(--tp-surface-hover); }
+.branch-node-open { display: flex; flex: 1; min-height: 0; flex-direction: column; justify-content: center; gap: 4px; width: 100%; padding: 8px 12px; }
+.branch-node .branch-origin { flex: none; display: flex; flex-direction: column; gap: 3px; width: 100%; padding: 5px 12px; border-top: 1px solid var(--tp-border); color: var(--tp-text-link); font-size: 10px; }
+.branch-origin span { width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.branch-node button:focus-visible { outline-offset: -3px; }
+.branch-node strong, .branch-preview, .branch-node small { width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.branch-node strong { font-size: 12px; }
+.branch-preview { color: var(--tp-text-muted); font-size: 11px; }
+.branch-node small { color: var(--tp-text-subtle); font-size: 10px; }
+.composer-route { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; color: var(--tp-text-muted); font-size: 12px; }
+.composer-route span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-route small { color: var(--tp-text-subtle); }
+.branch-error { flex: none; margin: 0 0 8px; }
+.branch-point-loading { flex: none; margin: 0 0 6px; }
+.branch-point-error, .branch-boundary-notice { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-bottom: 8px; font-size: 12px; color: var(--tp-text-muted); }
+.branch-point-error { color: var(--tp-text-danger); }
+.branch-point-error button, .branch-boundary-notice button { padding: 4px 8px; font-size: 11px; }
+.branch-history-boundary { display: flex; flex-direction: column; gap: 5px; margin-top: 14px; padding: 10px 0 4px; border-top: 1px dashed var(--tp-focus); color: var(--tp-text-muted); font-size: 11px; }
+.branch-history-boundary strong { font-weight: 600; }
+.branch-discussion-label { margin: 4px 0 10px; font-size: 11px; color: var(--tp-text-accent); }
+.fork-turn { margin-left: auto; flex: none; }
 
 /* Tokenized global surfaces. These declarations deliberately come last so themes
    affect existing compact components without changing their layout. */

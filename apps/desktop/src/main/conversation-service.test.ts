@@ -152,6 +152,37 @@ async function main(): Promise<void> {
   const newConversationService = new ConversationService({ getReadyClient: () => newConversationClient });
   assert.deepEqual(await newConversationService.startNewConversation("D:\\threadPath", "first message"), { threadId: "thread-new", turnId: "turn-new" });
   assert.deepEqual(newThreadOptions, { cwd: "D:\\threadPath", ephemeral: false });
+  let historyItems: JsonObject[] = [];
+  let snapshotHasTurn = true;
+  let delayedListener: ((event: { method: string; params: JsonObject }) => void) | undefined;
+  const delayedHistoryClient: ConversationClient = {
+    ...client,
+    startThread: async () => ({ id: "delayed-new", title: "Delayed history" }),
+    startTurn: async () => ({ id: "delayed-turn" }),
+    readThread: async () => ({ id: "delayed-new", title: "Delayed history", turns: snapshotHasTurn ? [{ id: "delayed-turn", status: "completed", items: historyItems }] : [] }),
+    listTurns: async () => ({ turns: [] }),
+    onNotification: (listener) => { delayedListener = listener; return () => undefined; },
+  };
+  const delayedService = new ConversationService({ getReadyClient: () => delayedHistoryClient });
+  await delayedService.startNewConversation("D:\\threadPath", "show my first message");
+  // Completion before the first read must not discard input awaiting a history echo.
+  delayedListener?.({ method: "turn/completed", params: { threadId: "delayed-new", turn: { id: "delayed-turn", status: "completed" } } });
+  const userTexts = (thread: ReturnType<typeof toConversationThreadView>) => thread.turns.flatMap((turn) => turn.items).filter((item) => item.kind === "text" && item.role === "user").map((item) => item.kind === "text" ? item.text : "");
+  assert.deepEqual(userTexts(await delayedService.readThread("delayed-new")), ["show my first message"], "same turn ID with empty body must preserve accepted input");
+  historyItems = [{ id: "empty-user", type: "userMessage", content: [] }];
+  assert.deepEqual(userTexts(await delayedService.readThread("delayed-new")), ["show my first message"], "empty user placeholders must not replace the real input");
+  historyItems = [{ id: "partial-user", type: "userMessage", text: "show my" }];
+  assert.deepEqual(userTexts(await delayedService.readThread("delayed-new")), ["show my first message"], "partial history must not truncate accepted input");
+  snapshotHasTurn = false;
+  assert.deepEqual(userTexts(await delayedService.readThread("delayed-new")), ["show my first message"], "input must remain visible through repeated empty reads after completion");
+  snapshotHasTurn = true;
+  historyItems = [{ id: "server-user-id", type: "userMessage", text: "show my first message" }];
+  const hydrated = await delayedService.readThread("delayed-new");
+  assert.deepEqual(userTexts(hydrated), ["show my first message"], "server hydration must not duplicate the local bubble");
+  assert.equal(hydrated.turns[0]?.items[0]?.id, "server-user-id");
+  snapshotHasTurn = false;
+  assert.deepEqual((await delayedService.readThread("delayed-new")).turns, [], "confirmed history must become authoritative instead of resurrecting removed content");
+  delayedService.close();
   const activeWriterResponseClient: ConversationClient = {
     ...client,
     readThread: async () => ({ id: fixtureThread.id, title: "Available fixture", status: "completed" }),
@@ -200,6 +231,8 @@ async function main(): Promise<void> {
   await recoveryService.startTurn("thread-conversation", "send after recovery");
   await recoveryService.interruptTurn("thread-conversation");
   assert.deepEqual(interrupted, { threadId: "thread-conversation", turnId: "turn-recovery-2" });
+  assert.equal((await recoveryService.reconcileThread("thread-conversation")).activity, "idle", "unconfirmed display placeholders must not invent an active writer");
+  assert.equal((await recoveryService.startTurn("thread-conversation", "third accepted message")).turnId, "turn-recovery-3");
 
   assert.deepEqual(toConversationUpdate("turn/completed", { threadId: "thread-conversation", turn: { id: "turn-interrupted", status: "interrupted" } }), { type: "turn/interrupted", threadId: "thread-conversation", turnId: "turn-interrupted" });
   assert.deepEqual(toConversationUpdate("turn/completed", { turn: { id: "turn-completed", status: "completed" } }, "thread-conversation"), { type: "turn/completed", threadId: "thread-conversation", turnId: "turn-completed" });

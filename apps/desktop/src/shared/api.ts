@@ -202,6 +202,28 @@ export interface ThreadDisplayNameUpdate {
   readonly title: string;
 }
 
+/** Local navigation facts; conversation bodies remain owned by Codex. */
+export interface ThreadBranch {
+  readonly threadId: string;
+  readonly sourceThreadId: string;
+  readonly forkTurnId: string;
+  readonly forkLabel: string;
+  readonly createdAt: string;
+  readonly readOnly: true;
+}
+
+export interface ForkConversationResult {
+  readonly threadId: string;
+  readonly branch: ThreadBranch;
+  /** The remote fork succeeded even if its local metadata could not be saved. */
+  readonly persistenceWarning?: string;
+}
+
+export interface ArchiveConversationResult {
+  readonly workspace: WorkspaceState;
+  readonly persistenceWarning?: string;
+}
+
 export interface DesktopApi {
   readonly getAppInfo: () => Promise<AppInfo>;
   readonly setLanguage: (language: Language) => Promise<Language>;
@@ -230,6 +252,7 @@ export interface DesktopApi {
   readonly setThreadHidden: (threadId: string, hidden: boolean) => Promise<WorkspaceState>;
   readonly setThreadsHidden: (threadIds: readonly string[], hidden: boolean) => Promise<WorkspaceState>;
   readonly setThreadFavorite: (threadId: string, favorite: boolean) => Promise<WorkspaceState>;
+  readonly setThreadArchived: (threadId: string, archived: boolean) => Promise<ArchiveConversationResult>;
   readonly readThread: (threadId: string) => Promise<ThreadDetails>;
   readonly refreshThread: (threadId: string) => Promise<ThreadDetails>;
   readonly loadMoreTurns: (threadId: string) => Promise<ThreadDetails>;
@@ -237,5 +260,9 @@ export interface DesktopApi {
   readonly startTurn: (threadId: string, text: string, options?: ComposerOptions) => Promise<StartTurnResult>;
   readonly interruptTurn: (threadId: string) => Promise<void>;
   readonly startNewConversation: (workspacePath: string, text: string, options?: ComposerOptions) => Promise<StartNewConversationResult>;
+  readonly listBranches: () => Promise<readonly ThreadBranch[]>;
+  readonly forkConversation: (threadId: string, turnId: string) => Promise<ForkConversationResult>;
+  readonly getThreadDraft: (threadId: string) => Promise<string>;
+  readonly setThreadDraft: (threadId: string, text: string) => Promise<void>;
   readonly onConversationUpdate: (listener: (update: ConversationUpdate) => void) => () => void;
 }

@@ -14,6 +14,7 @@ export interface HistoryListClientProvider {
 export interface HistoryMirrorStore {
   getHistoryMirror(): ThreadSummary[];
   setHistoryMirror(threads: readonly ThreadSummary[]): Promise<void>;
+  getRetainedThreadIds?(): readonly string[];
 }
 
 export interface HistorySyncResult {
@@ -27,6 +28,7 @@ export class CodexHistorySyncService {
   private readonly visible = new Map<string, ThreadSummary>();
   private snapshot: HistorySyncSnapshot = { state: "idle", threadCount: 0, missingThreadIds: [] };
   private running: Promise<HistorySyncResult> | undefined;
+  private readonly pendingArchiveStates = new Map<string, boolean>();
 
   constructor(provider: HistoryListClientProvider, mirrorStore?: HistoryMirrorStore) {
     this.provider = provider;
@@ -43,6 +45,20 @@ export class CodexHistorySyncService {
   getSnapshot(): HistorySyncSnapshot { return this.snapshot; }
   getMirrorThreads(): ThreadSummary[] { return [...this.mirror.values()]; }
   getCurrentResult(): HistorySyncResult { return { threads: [...this.visible.values()], snapshot: this.snapshot }; }
+
+  async rememberThread(thread: ThreadSummary): Promise<void> {
+    this.mirror.set(thread.id, thread);
+    this.visible.set(thread.id, thread);
+    await this.mirrorStore?.setHistoryMirror([...this.mirror.values()]);
+  }
+
+  /** Called only after Codex accepted archive/unarchive; bridge delayed list indexing. */
+  async confirmArchived(threadId: string, archived: boolean): Promise<void> {
+    const thread = this.visible.get(threadId) ?? this.mirror.get(threadId);
+    if (thread === undefined) throw new Error("Archived thread is not present in history");
+    this.pendingArchiveStates.set(threadId, archived);
+    await this.rememberThread({ ...thread, archived });
+  }
 
   sync(): Promise<HistorySyncResult> {
     if (this.running !== undefined) return this.running;
@@ -65,7 +81,7 @@ export class CodexHistorySyncService {
       for (const archived of [false, true]) {
         try {
           const threads = await client.listThreads({ archived, limit: 100 });
-          for (const thread of threads) current.set(thread.id, thread);
+          for (const thread of threads) current.set(thread.id, facts?.archivedFilter === true ? { ...thread, archived } : thread);
         } catch (error: unknown) {
           if (!archived) throw error;
           partial = true;
@@ -78,12 +94,21 @@ export class CodexHistorySyncService {
       throw error;
     }
 
+    for (const [id, archived] of this.pendingArchiveStates) {
+      const fetched = current.get(id);
+      if (fetched?.archived === archived) this.pendingArchiveStates.delete(id);
+      else {
+        const thread = fetched ?? this.mirror.get(id);
+        if (thread !== undefined) current.set(id, { ...thread, archived });
+      }
+    }
     const missing = [...this.mirror.keys()].filter((id) => !current.has(id));
     for (const thread of current.values()) this.mirror.set(thread.id, thread);
-    if (partial) {
+    const retained = new Set(this.mirrorStore?.getRetainedThreadIds?.() ?? []);
+    if (partial || retained.size > 0) {
       for (const id of missing) {
         const old = this.mirror.get(id);
-        if (old !== undefined) current.set(id, old);
+        if (old !== undefined && (partial || retained.has(id))) current.set(id, old);
       }
     }
     const syncedAt = new Date().toISOString();

@@ -12,6 +12,9 @@ import { MarkdownMessage } from "./markdown.tsx";
 import { filterWorkspaceHistory, replaceThreadTitle, type HistoryViewFilter } from "../shared/workspace-state";
 import { formatElapsedTime, type TurnTiming } from "./turn-timing.ts";
 import { searchHistory, type HistorySearchResult } from "../shared/history-search";
+import type { ThreadBranch } from "../shared/api";
+import { BranchMap } from "./branch-map";
+import { inheritedTurnIds, locateBranchPoint, type BranchPointTarget } from "./branch-navigation";
 
 type LoadState = "idle" | "loading" | "ready" | "empty" | "error";
 type NavigateTurn = (turnId: string) => void;
@@ -122,7 +125,7 @@ function SearchPanel({ query, results, selectedIndex, error, onQueryChange, onKe
   );
 }
 
-function WorkspaceSidebar({ state, loading, listElement, onScroll, onChoose, onSync, onSelectThread, onSetCurrent, onToggle, onRename, onMove, onSetThreadHidden, onSetWorkspaceHidden, onSetThreadFavorite, onSetWorkspaceFavorite, onSetThreadsHidden, onRevealThread, onRevealWorkspace, language, m }: { state: WorkspaceState | undefined; loading: boolean; listElement: React.RefObject<HTMLDivElement | null>; onScroll: (top: number) => void; onChoose: () => void; onSync: () => void; onSelectThread: (threadId: string) => void; onSetCurrent: (path: string) => void; onToggle: (path: string) => void; onRename: (thread: ThreadListItem) => void; onMove: (threadId: string, path: string | null) => void; onSetThreadHidden: (threadId: string, hidden: boolean) => void; onSetWorkspaceHidden: (path: string, hidden: boolean) => void; onSetThreadFavorite: (threadId: string, favorite: boolean) => void; onSetWorkspaceFavorite: (path: string, favorite: boolean) => void; onSetThreadsHidden: (threadIds: readonly string[], hidden: boolean) => Promise<void>; onRevealThread: (threadId: string, workspacePath: string | undefined) => Promise<void>; onRevealWorkspace: (path: string) => Promise<void>; language: Language; m: Messages }): React.JSX.Element {
+function WorkspaceSidebar({ state, loading, listElement, onScroll, onChoose, onSync, onSelectThread, onSetCurrent, onToggle, onRename, onMove, onSetThreadHidden, onSetWorkspaceHidden, onSetThreadFavorite, onSetWorkspaceFavorite, onSetThreadsHidden, onSetArchived, archiveBusy, runningThreadIds, onRevealThread, onRevealWorkspace, language, m }: { state: WorkspaceState | undefined; loading: boolean; listElement: React.RefObject<HTMLDivElement | null>; onScroll: (top: number) => void; onChoose: () => void; onSync: () => void; onSelectThread: (threadId: string) => void; onSetCurrent: (path: string) => void; onToggle: (path: string) => void; onRename: (thread: ThreadListItem) => void; onMove: (threadId: string, path: string | null) => void; onSetThreadHidden: (threadId: string, hidden: boolean) => void; onSetWorkspaceHidden: (path: string, hidden: boolean) => void; onSetThreadFavorite: (threadId: string, favorite: boolean) => void; onSetWorkspaceFavorite: (path: string, favorite: boolean) => void; onSetThreadsHidden: (threadIds: readonly string[], hidden: boolean) => Promise<void>; onSetArchived: (threadId: string, archived: boolean) => void; archiveBusy: boolean; runningThreadIds: readonly string[]; onRevealThread: (threadId: string, workspacePath: string | undefined) => Promise<void>; onRevealWorkspace: (path: string) => Promise<void>; language: Language; m: Messages }): React.JSX.Element {
   const [openMenuThreadId, setOpenMenuThreadId] = useState<string | undefined>();
   const [movingThreadId, setMovingThreadId] = useState<string | undefined>();
   const [openWorkspaceMenuPath, setOpenWorkspaceMenuPath] = useState<string | undefined>();
@@ -163,6 +166,7 @@ function WorkspaceSidebar({ state, loading, listElement, onScroll, onChoose, onS
       <button type="button" role="menuitem" onClick={() => { closeMenus(); onRename(thread); }}>{m.rename}</button>
       <button type="button" role="menuitem" onClick={() => { closeMenus(); onSetThreadFavorite(thread.id, !thread.favorite); }}>{thread.favorite ? m.unfavoriteConversation : m.favoriteConversation}</button>
       <button type="button" role="menuitem" onClick={() => { setOpenMenuThreadId(undefined); setMovingThreadId(thread.id); }}>{m.moveToWorkspace}</button>
+      <button type="button" role="menuitem" disabled={archiveBusy || runningThreadIds.includes(thread.id)} onClick={() => { closeMenus(); onSetArchived(thread.id, !thread.archived); }}>{thread.archived ? m.restoreConversation : m.archiveConversation}</button>
       <button type="button" role="menuitem" onClick={() => { closeMenus(); onSetThreadHidden(thread.id, !thread.hidden); }}>{thread.hidden ? m.showConversation : m.hideConversation}</button>
     </div> : null}
     {movingThreadId === thread.id ? <div className="thread-actions-menu workspace-choice-menu" role="menu" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") closeMenus(); }}>
@@ -212,14 +216,14 @@ function WorkspaceSidebar({ state, loading, listElement, onScroll, onChoose, onS
   </div>;
 }
 
-function ThreadDirectory({ thread, hidden, workspacePath, workspaceState, activeTurnId, query, results, selectedIndex, error, onQueryChange, onSearchKeyDown, onNavigate, onBack, onRename, onMove, onSetHidden, setOutlineButton, m }: { thread: ConversationThreadView | undefined; hidden: boolean; workspacePath: string | undefined; workspaceState: WorkspaceState | undefined; activeTurnId: string | undefined; query: string; results: readonly SearchResult[]; selectedIndex: number; error: string | undefined; onQueryChange: (query: string) => void; onSearchKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void; onNavigate: (turnId: string) => void; onBack: () => void; onRename: () => void; onMove: (threadId: string, path: string | null) => void; onSetHidden: (threadId: string, hidden: boolean) => void; setOutlineButton: (turnId: string, element: HTMLButtonElement | null) => void; m: Messages }): React.JSX.Element {
+function ThreadDirectory({ thread, archived, archiveDisabled, onSetArchived, hidden, workspacePath, workspaceState, activeTurnId, query, results, selectedIndex, error, onQueryChange, onSearchKeyDown, onNavigate, onBack, onRename, onMove, onSetHidden, setOutlineButton, m }: { thread: ConversationThreadView | undefined; archived: boolean; archiveDisabled: boolean; onSetArchived: (threadId: string, archived: boolean) => void; hidden: boolean; workspacePath: string | undefined; workspaceState: WorkspaceState | undefined; activeTurnId: string | undefined; query: string; results: readonly SearchResult[]; selectedIndex: number; error: string | undefined; onQueryChange: (query: string) => void; onSearchKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void; onNavigate: (turnId: string) => void; onBack: () => void; onRename: () => void; onMove: (threadId: string, path: string | null) => void; onSetHidden: (threadId: string, hidden: boolean) => void; setOutlineButton: (turnId: string, element: HTMLButtonElement | null) => void; m: Messages }): React.JSX.Element {
   const [actionsOpen, setActionsOpen] = useState(false);
   const [moving, setMoving] = useState(false);
   const closeActions = (): void => { setActionsOpen(false); setMoving(false); };
   return (
     <div className="thread-directory">
       <button className="back-history" type="button" onClick={onBack}>← {m.backToHistory}</button>
-      <div className="directory-title-row"><h2 className="directory-title" title={thread?.title}>{thread?.title ?? m.loadingConversation}</h2>{thread === undefined ? null : <div className="directory-actions"><button className="directory-rename" type="button" onClick={() => { setMoving(false); setActionsOpen((open) => !open); }} onKeyDown={(event) => { if (event.key === "Escape") closeActions(); }} aria-label={`${m.threadActions}: ${thread.title}`} aria-expanded={actionsOpen} aria-haspopup="menu">···</button>{actionsOpen ? <div className="thread-actions-menu directory-actions-menu" role="menu" onKeyDown={(event) => { if (event.key === "Escape") closeActions(); }}><button type="button" role="menuitem" onClick={() => { closeActions(); onRename(); }}>{m.rename}</button><button type="button" role="menuitem" onClick={() => { setActionsOpen(false); setMoving(true); }}>{m.moveToWorkspace}</button><button type="button" role="menuitem" onClick={() => { closeActions(); onSetHidden(thread.id, !hidden); }}>{hidden ? m.showConversation : m.hideConversation}</button></div> : null}{moving ? <div className="thread-actions-menu directory-actions-menu workspace-choice-menu" role="menu" onKeyDown={(event) => { if (event.key === "Escape") closeActions(); }}>{workspaceState?.directories.filter((directory) => !directory.hidden).map((directory) => <button key={directory.path} type="button" role="menuitem" className={workspacePath === directory.path ? "selected" : ""} onClick={() => { closeActions(); onMove(thread.id, directory.path); }}>📁 {directory.name}{workspacePath === directory.path ? " ✓" : ""}</button>)}<button type="button" role="menuitem" className={workspacePath === undefined ? "selected" : ""} onClick={() => { closeActions(); onMove(thread.id, null); }}>{m.noWorkspace}{workspacePath === undefined ? " ✓" : ""}</button></div> : null}</div>}</div>
+      <div className="directory-title-row"><h2 className="directory-title" title={thread?.title}>{thread?.title ?? m.loadingConversation}</h2>{thread === undefined ? null : <div className="directory-actions"><button className="directory-rename" type="button" onClick={() => { setMoving(false); setActionsOpen((open) => !open); }} onKeyDown={(event) => { if (event.key === "Escape") closeActions(); }} aria-label={`${m.threadActions}: ${thread.title}`} aria-expanded={actionsOpen} aria-haspopup="menu">···</button>{actionsOpen ? <div className="thread-actions-menu directory-actions-menu" role="menu" onKeyDown={(event) => { if (event.key === "Escape") closeActions(); }}><button type="button" role="menuitem" onClick={() => { closeActions(); onRename(); }}>{m.rename}</button><button type="button" role="menuitem" onClick={() => { setActionsOpen(false); setMoving(true); }}>{m.moveToWorkspace}</button><button type="button" role="menuitem" disabled={archiveDisabled} onClick={() => { closeActions(); onSetArchived(thread.id, !archived); }}>{archived ? m.restoreConversation : m.archiveConversation}</button><button type="button" role="menuitem" onClick={() => { closeActions(); onSetHidden(thread.id, !hidden); }}>{hidden ? m.showConversation : m.hideConversation}</button></div> : null}{moving ? <div className="thread-actions-menu directory-actions-menu workspace-choice-menu" role="menu" onKeyDown={(event) => { if (event.key === "Escape") closeActions(); }}>{workspaceState?.directories.filter((directory) => !directory.hidden).map((directory) => <button key={directory.path} type="button" role="menuitem" className={workspacePath === directory.path ? "selected" : ""} onClick={() => { closeActions(); onMove(thread.id, directory.path); }}>📁 {directory.name}{workspacePath === directory.path ? " ✓" : ""}</button>)}<button type="button" role="menuitem" className={workspacePath === undefined ? "selected" : ""} onClick={() => { closeActions(); onMove(thread.id, null); }}>{m.noWorkspace}{workspacePath === undefined ? " ✓" : ""}</button></div> : null}</div>}</div>
       <SearchPanel query={query} results={results} selectedIndex={selectedIndex} error={error} onQueryChange={onQueryChange} onKeyDown={onSearchKeyDown} onNavigate={onNavigate} m={m} />
       <div className="directory-heading"><p className="eyebrow">{m.questionOutline}</p><span>{m.turns(thread?.outline.length ?? 0)}</span></div>
       {thread?.outline.length === 0 ? <p className="panel-note">{m.noQuestions}</p> : <ol className="outline-list directory-list">
@@ -229,12 +233,15 @@ function ThreadDirectory({ thread, hidden, workspacePath, workspaceState, active
   );
 }
 
-function Conversation({ thread, activeTurnId, loadingMore, loadMoreError, onLoadMore, onNavigate, onVisibleTurn, onUserScroll, m, onNavigateReady, onRefreshStatus, scrollToLatest, onScrollToLatestHandled, newContent, onNewContentHandled, turnTimings, now }: { thread: ConversationThreadView; activeTurnId: string | undefined; loadingMore: boolean; loadMoreError: string | undefined; onLoadMore: () => void; onNavigate: (turnId: string) => void; onVisibleTurn: (turnId: string | undefined) => void; onUserScroll: () => void; m: Messages; onNavigateReady: (navigate: NavigateTurn | undefined) => void; onRefreshStatus: () => void; scrollToLatest: boolean; onScrollToLatestHandled: () => void; newContent: boolean; onNewContentHandled: () => void; turnTimings: Readonly<Record<string, TurnTiming>>; now: number }): React.JSX.Element {
+function Conversation({ thread, activeTurnId, loadingMore, loadMoreError, onLoadMore, onNavigate, onVisibleTurn, onUserScroll, m, onNavigateReady, onRefreshStatus, scrollToLatest, onScrollToLatestHandled, newContent, onNewContentHandled, turnTimings, now, onFork, forkDisabled, forkingTurnId, branch, onShowBoundary }: { thread: ConversationThreadView; activeTurnId: string | undefined; loadingMore: boolean; loadMoreError: string | undefined; onLoadMore: () => void; onNavigate: (turnId: string) => void; onVisibleTurn: (turnId: string | undefined) => void; onUserScroll: () => void; m: Messages; onNavigateReady: (navigate: NavigateTurn | undefined) => void; onRefreshStatus: () => void; scrollToLatest: boolean; onScrollToLatestHandled: () => void; newContent: boolean; onNewContentHandled: () => void; turnTimings: Readonly<Record<string, TurnTiming>>; now: number; onFork: (turnId: string) => void; forkDisabled: boolean; forkingTurnId: string | undefined; branch: ThreadBranch | undefined; onShowBoundary: () => void }): React.JSX.Element {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const scroller = useRef<HTMLElement | null>(null);
   const lastTurnId = thread.turns[thread.turns.length - 1]?.id;
   const lastAutoScrolledTurnId = useRef<string | undefined>(undefined);
   const turnIndexById = new Map(thread.turns.map((turn, index) => [turn.id, index]));
+  const initialItemIndex = useRef(turnIndexById.get(activeTurnId ?? ""));
+  const inherited = branch === undefined ? undefined : inheritedTurnIds(thread, branch.forkTurnId);
+  const firstIndependentId = inherited === undefined ? undefined : thread.turns.find((turn) => !inherited.has(turn.id))?.id;
   const navigate = (turnId: string): void => {
     const index = turnIndexById.get(turnId);
     if (index === undefined) return;
@@ -274,12 +281,14 @@ function Conversation({ thread, activeTurnId, loadingMore, loadMoreError, onLoad
           {thread.paging.hasMore ? <button type="button" onClick={onLoadMore} disabled={loadingMore}>{loadingMore ? m.loadingEarlier : m.loadEarlier}</button> : <span className="panel-note">{m.noMore}</span>}
           {loadMoreError === undefined ? null : <p className="error-summary">{loadMoreError}</p>}
         </div>
+        {branch !== undefined && inherited === undefined ? <div className="branch-boundary-notice"><span>{m.unloadedBranchBoundary}</span><button type="button" onClick={onShowBoundary}>{m.showBranchBoundary}</button></div> : null}
         {thread.turns.length === 0 ? <div className="conversation-empty"><p className="empty-kicker">{m.conversation}</p><h2>{m.noReadableTurns}</h2><p>{m.noConversationContent}</p></div> : null}
         {thread.turns.length === 0 ? null : <Virtuoso<ConversationThreadView["turns"][number]>
           ref={virtuosoRef}
           data={thread.turns}
           computeItemKey={(_, turn) => turn.id}
           firstItemIndex={thread.paging.firstItemIndex}
+          initialTopMostItemIndex={initialItemIndex.current}
           increaseViewportBy={{ top: 600, bottom: 600 }}
           rangeChanged={onRangeChanged}
           scrollerRef={setScroller}
@@ -289,12 +298,15 @@ function Conversation({ thread, activeTurnId, loadingMore, loadMoreError, onLoad
             const timingLabel = timing === undefined ? undefined : timing.finishedAt === undefined
               ? m.thinkingElapsed(formatElapsedTime(timing.startedAt, now))
               : m.responseElapsed(formatElapsedTime(timing.startedAt, timing.finishedAt));
-            return <article className="turn-card" data-turn-id={turn.id} key={turn.id}>
+            return <article className="turn-card" data-turn-id={turn.id} data-history-kind={inherited === undefined ? undefined : inherited.has(turn.id) ? "inherited" : "branch"} key={turn.id}>
+              {turn.id === firstIndependentId ? <p className="branch-discussion-label">{m.independentDiscussion}</p> : null}
               <header className="turn-heading">
                 <div><span className="turn-index">{m.turn(turn.index)}</span><span className="turn-status">{turn.status}</span></div>
+                {["completed", "failed", "interrupted"].includes(turn.status) ? <button className="fork-turn" type="button" onClick={() => onFork(turn.id)} disabled={forkDisabled} aria-label={m.branchFromTurn(turn.index)}>{forkingTurnId === turn.id ? m.forking : m.forkHere}</button> : null}
                 {turn.createdAt === undefined ? null : <time dateTime={turn.createdAt}>{turn.createdAt}</time>}
               </header>
               {turn.items.length === 0 ? <p className="partial-note">{m.noReadableItems}</p> : <TurnItems items={turn.items} timingLabel={timingLabel} m={m} />}
+              {branch?.forkTurnId === turn.id ? <div className="branch-history-boundary" role="note" data-cutoff-turn-id={turn.id}><strong>{m.inheritedHistoryEnds}</strong>{firstIndependentId === undefined ? <span>{m.startIndependentDiscussion}</span> : null}</div> : null}
             </article>;
           }}
         />}
@@ -344,8 +356,18 @@ function App(): React.JSX.Element {
   const [selectedSearchIndex, setSelectedSearchIndex] = useState(-1);
   const [searchError, setSearchError] = useState<string | undefined>();
   const [draftByThreadId, setDraftByThreadId] = useState<Record<string, string>>({});
+  const [branches, setBranches] = useState<readonly ThreadBranch[]>([]);
+  const [forkingTurnId, setForkingTurnId] = useState<string | undefined>();
+  const [branchError, setBranchError] = useState<string | undefined>();
+  const [branchPointTarget, setBranchPointTarget] = useState<BranchPointTarget | undefined>();
+  const [branchPointLoading, setBranchPointLoading] = useState(false);
+  const [branchPointError, setBranchPointError] = useState<"missing" | "failed" | undefined>();
+  const [draftSaveErrors, setDraftSaveErrors] = useState<Record<string, boolean>>({});
   const [sendErrorByThreadId, setSendErrorByThreadId] = useState<Record<string, string | undefined>>({});
   const [startingTurn, setStartingTurn] = useState(false);
+  const [archivingThreadId, setArchivingThreadId] = useState<string | undefined>();
+  const archiveBusyRef = useRef(false);
+  const [archiveError, setArchiveError] = useState<string | undefined>();
   const [interruptingThreadId, setInterruptingThreadId] = useState<string | undefined>();
   const [runningTurnByThreadId, setRunningTurnByThreadId] = useState<Record<string, string | undefined>>({});
   const [turnTimings, setTurnTimings] = useState<Record<string, TurnTiming>>({});
@@ -366,6 +388,11 @@ function App(): React.JSX.Element {
   const threadListElement = useRef<HTMLDivElement | null>(null);
   const threadListScrollTop = useRef(0);
   const inputElement = useRef<HTMLTextAreaElement | null>(null);
+  const selectedIdRef = useRef(selectedThreadId);
+  const pendingBranchJump = useRef<BranchPointTarget | undefined>(undefined);
+  const navigateReadyThreadId = useRef<string | undefined>(undefined);
+  selectedIdRef.current = selectedThreadId;
+  const selectedBranch = branches.find((branch) => branch.threadId === selectedThreadId);
   const m = messages[language];
   const selectedModel = modelOptions.find((model) => model.id === modelSelection);
   const reasoningOptions = selectedModel?.supportedReasoningEfforts ?? [];
@@ -375,6 +402,8 @@ function App(): React.JSX.Element {
   };
   const selectedListThread = selectedThreadId === undefined ? undefined : threads.find((thread) => thread.id === selectedThreadId);
   const currentWorkspacePath = selectedThreadId === undefined ? workspaceState?.currentPath : selectedListThread?.workspacePath;
+  const currentWorkspaceName = workspaceState?.directories.find((directory) => directory.path === currentWorkspacePath)?.name ?? currentWorkspacePath?.replace(/[\\/]+$/, "").split(/[\\/]/).at(-1) ?? currentWorkspacePath;
+  const selectedArchived = selectedListThread?.archived === true;
   const selectedThreadWorkspacePath = selectedThreadId === undefined ? undefined : selectedListThread?.workspacePath;
   const historyMode = connectionState.mode === "history";
   const showWorkspacePicker = historyMode || selectedThreadId === undefined || selectedThreadWorkspacePath === undefined;
@@ -385,13 +414,45 @@ function App(): React.JSX.Element {
   const canInterruptLocalTurn = localRunningTurnId !== undefined && interruptingThreadId !== selectedThreadId;
   const writeState = selectedThread?.writeState;
   const remoteActive = selectedThreadId !== undefined && (remoteActiveByThreadId[selectedThreadId] === true || selectedThread?.remoteActive === true || writeState === "externalThreadWriter");
-  const inputUnavailable = historyMode || newConversationWorkspaceRequired || selectedThread?.canAcceptDirectInput === false || writeState === "inputUnavailable" || writeState === "stateUnknown" || writeState === "workspaceLocked";
-  const turnIsRunning = startingTurn || localRunningTurnId !== undefined || remoteActive || writeState === "localTurnRunning";
+  const inputUnavailable = selectedArchived || historyMode || newConversationWorkspaceRequired || (selectedThreadId !== undefined && (selectedThread?.id !== selectedThreadId || selectedThreadState === "loading" || selectedThreadState === "error")) || selectedThread?.canAcceptDirectInput === false || writeState === "inputUnavailable" || writeState === "stateUnknown" || writeState === "workspaceLocked";
+  const turnIsRunning = archivingThreadId !== undefined || startingTurn || forkingTurnId !== undefined || localRunningTurnId !== undefined || remoteActive || writeState === "localTurnRunning";
   const hasRunningTimer = Object.values(turnTimings).some((timing) => timing.finishedAt === undefined);
 
+  const saveDraft = (threadId: string, text: string): void => {
+    void window.threadPath.setThreadDraft(threadId, text).then(() => setDraftSaveErrors((current) => ({ ...current, [threadId]: false })))
+      .catch(() => setDraftSaveErrors((current) => ({ ...current, [threadId]: true })));
+  };
   const setInputText = (text: string): void => {
     if (selectedThreadId === undefined) setNewDraft(text);
-    else setDraftByThreadId((current) => ({ ...current, [selectedThreadId]: text }));
+    else { setDraftByThreadId((current) => ({ ...current, [selectedThreadId]: text })); saveDraft(selectedThreadId, text); }
+  };
+
+  const showBranchPoint = (threadId: string, turnId: string): void => {
+    setBranchPointError(undefined);
+    setBranchPointTarget({ threadId, turnId });
+    setSelectedThreadId(threadId);
+  };
+  const selectRoute = (threadId: string): void => {
+    pendingBranchJump.current = undefined;
+    setBranchPointTarget(undefined);
+    setBranchPointError(undefined);
+    if (threadId === selectedThreadId) void handleRefreshStatus();
+    else setSelectedThreadId(threadId);
+  };
+
+  const handleFork = async (turnId: string): Promise<void> => {
+    const sourceId = selectedThreadId;
+    if (sourceId === undefined || turnIsRunning || inputUnavailable) return;
+    setForkingTurnId(turnId);
+    setBranchError(undefined);
+    try {
+      const result = await window.threadPath.forkConversation(sourceId, turnId);
+      setBranches((current) => [...current.filter((branch) => branch.threadId !== result.threadId), result.branch]);
+      if (result.persistenceWarning !== undefined) setBranchError(m.branchSaveFailed);
+      await refreshWorkspaceState();
+      setSelectedThreadId((current) => current === sourceId ? result.threadId : current);
+    } catch (error: unknown) { setBranchError(errorMessage(error)); }
+    finally { setForkingTurnId(undefined); }
   };
 
   const loadThreads = useCallback(async (): Promise<void> => {
@@ -404,7 +465,8 @@ function App(): React.JSX.Element {
       setThreads(nextThreads);
       setWorkspaceState(nextWorkspaceState);
       setThreadLoadState(nextThreads.length === 0 ? "empty" : "ready");
-      setSelectedThreadId((current) => current !== undefined && nextThreads.some((thread) => thread.id === current) ? current : undefined);
+      // thread/list can lag a successful thread/start. Listing is not evidence
+      // that the selected conversation disappeared; read it by its returned ID.
     } catch (error: unknown) {
       setThreadLoadState("error");
       setThreadError(errorMessage(error));
@@ -571,6 +633,20 @@ function App(): React.JSX.Element {
     } catch (error: unknown) { setThreadError(errorMessage(error)); }
   };
 
+  const handleSetThreadArchived = async (threadId: string, archived: boolean): Promise<void> => {
+    if (archiveBusyRef.current) return;
+    archiveBusyRef.current = true;
+    setArchivingThreadId(threadId);
+    setArchiveError(undefined);
+    try {
+      const result = await window.threadPath.setThreadArchived(threadId, archived);
+      applyWorkspaceState(result.workspace);
+      if (result.persistenceWarning !== undefined) setArchiveError(m.archiveSaveFailed);
+      if (archived) setSelectedThreadId((current) => current === threadId ? undefined : current);
+    } catch (error: unknown) { setArchiveError(errorMessage(error)); }
+    finally { archiveBusyRef.current = false; setArchivingThreadId(undefined); }
+  };
+
   const handleSetThreadHidden = async (threadId: string, hidden: boolean): Promise<void> => {
     try {
       const nextState = await window.threadPath.setThreadHidden(threadId, hidden);
@@ -655,6 +731,15 @@ function App(): React.JSX.Element {
     }
   }, [connectionState.state, loadModels]);
 
+  useEffect(() => {
+    if (connectionState.state !== "ready") return;
+    let active = true;
+    void window.threadPath.listBranches().then((saved) => {
+      if (active) setBranches((current) => [...new Map([...saved, ...current].map((branch) => [branch.threadId, branch])).values()]);
+    }).catch((error: unknown) => { if (active) setBranchError(errorMessage(error)); });
+    return () => { active = false; };
+  }, [connectionState.state]);
+
   useEffect(() => window.threadPath.onWorkspaceStateChanged((state) => {
     setWorkspaceState(state);
     setThreads([...state.directories.flatMap((directory) => directory.threads), ...state.unclassifiedThreads]);
@@ -673,10 +758,24 @@ function App(): React.JSX.Element {
       setLoadingMore(false);
       setLoadMoreError(undefined);
       setNavigateToTurn(() => undefined);
+      setBranchPointTarget(undefined);
+      setBranchPointLoading(false);
+      setBranchPointError(undefined);
+      pendingBranchJump.current = undefined;
       return;
     }
+    if (branchPointTarget !== undefined && branchPointTarget.threadId !== selectedThreadId) {
+      setBranchPointTarget(undefined);
+      setBranchPointError(undefined);
+    }
+    const target = branchPointTarget?.threadId === selectedThreadId ? branchPointTarget : undefined;
     let active = true;
+    pendingBranchJump.current = undefined;
+    setBranchPointLoading(target !== undefined);
     seenUpdateKeys.current.clear();
+    void window.threadPath.getThreadDraft(selectedThreadId).then((text) => {
+      if (active) setDraftByThreadId((current) => Object.prototype.hasOwnProperty.call(current, selectedThreadId) ? current : { ...current, [selectedThreadId]: text });
+    }).catch(() => { if (active) setDraftSaveErrors((current) => ({ ...current, [selectedThreadId]: true })); });
     setSearchQuery("");
     setSearchResults([]);
     setSelectedSearchIndex(-1);
@@ -687,9 +786,24 @@ function App(): React.JSX.Element {
     setLoadMoreError(undefined);
     setSelectedThreadState("loading");
     setSelectedThreadError(undefined);
-    setScrollToLatest(true);
+    setScrollToLatest(target === undefined);
     setNewContentAvailable(false);
-    void window.threadPath.readThread(selectedThreadId).then((thread) => {
+    let loaded: ConversationThreadView | undefined;
+    const load = async (): Promise<ConversationThreadView> => {
+      loaded = await window.threadPath.readThread(selectedThreadId);
+      if (loaded.id !== selectedThreadId) throw new Error("Conversation response belongs to another thread");
+      if (target === undefined || !active) return loaded;
+      const result = await locateBranchPoint(loaded, target.turnId, async () => {
+        loaded = await window.threadPath.loadMoreTurns(selectedThreadId);
+        return loaded;
+      }, () => active);
+      if (active) {
+        if (result.outcome === "found") { pendingBranchJump.current = target; setActiveTurnId(target.turnId); }
+        else { setBranchPointError("missing"); setBranchPointLoading(false); }
+      }
+      return result.thread;
+    };
+    void load().then((thread) => {
       if (!active) return;
       setSelectedThread(thread);
       setRemoteActiveByThreadId((current) => ({ ...current, [thread.id]: thread.remoteActive === true }));
@@ -697,11 +811,30 @@ function App(): React.JSX.Element {
       setSelectedThreadState(thread.turns.length === 0 ? "empty" : "ready");
     }).catch((error: unknown) => {
       if (!active) return;
-      setSelectedThreadState("error");
-      setSelectedThreadError(errorMessage(error));
+      setBranchPointLoading(false);
+      if (target !== undefined) setBranchPointError("failed");
+      if (target !== undefined && loaded !== undefined && loaded.id === selectedThreadId) {
+        setSelectedThread(loaded);
+        setSelectedThreadState(loaded.turns.length === 0 ? "empty" : "ready");
+      } else {
+        setSelectedThreadState("error");
+        setSelectedThreadError(errorMessage(error));
+      }
     });
     return () => { active = false; };
-  }, [selectedThreadId]);
+  }, [selectedThreadId, branchPointTarget]);
+
+  useEffect(() => {
+    const target = pendingBranchJump.current;
+    if (target === undefined || selectedThread?.id !== target.threadId || navigateReadyThreadId.current !== target.threadId || navigateToTurn === undefined) return;
+    const frame = window.requestAnimationFrame(() => {
+      if (selectedIdRef.current !== target.threadId || pendingBranchJump.current !== target) return;
+      navigateToTurn(target.turnId);
+      pendingBranchJump.current = undefined;
+      setBranchPointLoading(false);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [selectedThread, navigateToTurn, selectedThreadId]);
 
   useEffect(() => {
     if (selectedThreadId === undefined && threadListElement.current !== null) threadListElement.current.scrollTop = threadListScrollTop.current;
@@ -830,7 +963,8 @@ function App(): React.JSX.Element {
         setRunningTurnByThreadId((current) => ({ ...current, [result.threadId]: result.turnId }));
         setTurnTimings((current) => ({ ...current, [result.turnId]: { threadId: result.threadId, startedAt: Date.now() } }));
       }
-      setDraftByThreadId((current) => { const next = { ...current }; delete next[threadId]; return next; });
+      setDraftByThreadId((current) => ({ ...current, [threadId]: "" }));
+      saveDraft(threadId, "");
     } catch (error: unknown) {
       const currentThreadId = selectedThreadId;
       if (currentThreadId !== undefined && isConfirmedActiveTurnMessage(error)) {
@@ -901,8 +1035,9 @@ function App(): React.JSX.Element {
   }, []);
 
   const handleNavigateReady = useCallback((navigate: NavigateTurn | undefined): void => {
+    navigateReadyThreadId.current = navigate === undefined ? undefined : selectedThreadId;
     setNavigateToTurn(() => navigate);
-  }, []);
+  }, [selectedThreadId]);
 
   const handleReconnect = async (): Promise<void> => {
     setReconnecting(true);
@@ -929,7 +1064,10 @@ function App(): React.JSX.Element {
     try {
       const previousLatestTurnId = selectedThread?.turns.at(-1)?.id;
       const refreshed = await window.threadPath.refreshThread(selectedThreadId);
+      if (selectedIdRef.current !== selectedThreadId) return;
       setSelectedThread(refreshed);
+      setSelectedThreadState(refreshed.turns.length === 0 ? "empty" : "ready");
+      setSelectedThreadError(undefined);
       setScrollToLatest(false);
       setNewContentAvailable(previousLatestTurnId !== undefined && refreshed.turns.at(-1)?.id !== previousLatestTurnId);
       setRemoteActiveByThreadId((current) => ({ ...current, [refreshed.id]: refreshed.remoteActive === true }));
@@ -965,17 +1103,23 @@ function App(): React.JSX.Element {
       </header>
       <section className="workspace" aria-label={m.workspace}>
         <aside className="thread-panel">
-          {selectedThreadId !== undefined ? <ThreadDirectory thread={selectedThread} hidden={selectedListThread?.hidden === true} workspacePath={selectedThreadWorkspacePath} workspaceState={workspaceState} activeTurnId={activeTurnId} query={searchQuery} results={searchResults} selectedIndex={selectedSearchIndex} error={searchError} onQueryChange={setSearchQuery} onSearchKeyDown={(event) => handleSearchKeyDown(event, (turnId) => navigateToTurn?.(turnId))} onNavigate={(turnId) => navigateToTurn?.(turnId)} onBack={() => setSelectedThreadId(undefined)} onRename={() => { const current = threads.find((thread) => thread.id === selectedThreadId); if (current !== undefined) beginRename(current); }} onMove={(threadId, path) => void moveThreadToWorkspace(threadId, path)} onSetHidden={(threadId, hidden) => void handleSetThreadHidden(threadId, hidden)} setOutlineButton={setOutlineButton} m={m} /> : <WorkspaceSidebar state={workspaceState} loading={workspaceLoading || threadLoadState === "loading"} listElement={threadListElement} onScroll={(top) => { threadListScrollTop.current = top; }} onChoose={() => void handleChooseWorkspaceDirectory()} onSync={() => void syncHistory()} onSelectThread={setSelectedThreadId} onSetCurrent={(path) => void handleSetCurrentWorkspace(path)} onToggle={(path) => void handleToggleWorkspace(path)} onRename={beginRename} onMove={(threadId, path) => void moveThreadToWorkspace(threadId, path)} onSetThreadHidden={(threadId, hidden) => void handleSetThreadHidden(threadId, hidden)} onSetWorkspaceHidden={(path, hidden) => void handleSetWorkspaceHidden(path, hidden)} onSetThreadFavorite={(threadId, favorite) => void handleSetThreadFavorite(threadId, favorite)} onSetWorkspaceFavorite={(path, favorite) => void handleSetWorkspaceFavorite(path, favorite)} onSetThreadsHidden={handleSetThreadsHidden} onRevealThread={handleRevealThread} onRevealWorkspace={handleRevealWorkspace} language={language} m={m} />}
+          {selectedThreadId !== undefined ? <ThreadDirectory thread={selectedThread} archived={selectedArchived} archiveDisabled={turnIsRunning} onSetArchived={(threadId, archived) => void handleSetThreadArchived(threadId, archived)} hidden={selectedListThread?.hidden === true} workspacePath={selectedThreadWorkspacePath} workspaceState={workspaceState} activeTurnId={activeTurnId} query={searchQuery} results={searchResults} selectedIndex={selectedSearchIndex} error={searchError} onQueryChange={setSearchQuery} onSearchKeyDown={(event) => handleSearchKeyDown(event, (turnId) => navigateToTurn?.(turnId))} onNavigate={(turnId) => navigateToTurn?.(turnId)} onBack={() => setSelectedThreadId(undefined)} onRename={() => { const current = threads.find((thread) => thread.id === selectedThreadId); if (current !== undefined) beginRename(current); }} onMove={(threadId, path) => void moveThreadToWorkspace(threadId, path)} onSetHidden={(threadId, hidden) => void handleSetThreadHidden(threadId, hidden)} setOutlineButton={setOutlineButton} m={m} /> : <WorkspaceSidebar state={workspaceState} loading={workspaceLoading || threadLoadState === "loading"} listElement={threadListElement} onScroll={(top) => { threadListScrollTop.current = top; }} onChoose={() => void handleChooseWorkspaceDirectory()} onSync={() => void syncHistory()} onSelectThread={setSelectedThreadId} onSetCurrent={(path) => void handleSetCurrentWorkspace(path)} onToggle={(path) => void handleToggleWorkspace(path)} onRename={beginRename} onMove={(threadId, path) => void moveThreadToWorkspace(threadId, path)} onSetThreadHidden={(threadId, hidden) => void handleSetThreadHidden(threadId, hidden)} onSetWorkspaceHidden={(path, hidden) => void handleSetWorkspaceHidden(path, hidden)} onSetThreadFavorite={(threadId, favorite) => void handleSetThreadFavorite(threadId, favorite)} onSetWorkspaceFavorite={(path, favorite) => void handleSetWorkspaceFavorite(path, favorite)} onSetThreadsHidden={handleSetThreadsHidden} onSetArchived={(threadId, archived) => void handleSetThreadArchived(threadId, archived)} archiveBusy={archivingThreadId !== undefined || startingTurn || forkingTurnId !== undefined} runningThreadIds={[...Object.keys(runningTurnByThreadId).filter((id) => runningTurnByThreadId[id] !== undefined), ...Object.keys(remoteActiveByThreadId).filter((id) => remoteActiveByThreadId[id])]} onRevealThread={handleRevealThread} onRevealWorkspace={handleRevealWorkspace} language={language} m={m} />}
         </aside>
         <section className="details-panel" aria-label={m.selectedConversation}>
+          {selectedThreadId === undefined ? null : <BranchMap branches={branches} threads={threads} selectedId={selectedThreadId} selectedThread={selectedThread} disabled={forkingTurnId !== undefined} onSelect={selectRoute} onSource={(branch) => showBranchPoint(branch.sourceThreadId, branch.forkTurnId)} m={m} />}
+          {archiveError === undefined ? null : <div className="error-summary archive-error" role="alert"><span>{archiveError}</span><button type="button" onClick={() => setArchiveError(undefined)} aria-label={m.close}>×</button></div>}
+          {branchError === undefined ? null : <p className="error-summary branch-error" role="alert">{branchError}</p>}
+          {branchPointLoading ? <p className="panel-note branch-point-loading" role="status">{m.locatingBranchPoint}</p> : null}
+          {branchPointError === undefined ? null : <div className="branch-point-error" role="alert"><span>{branchPointError === "missing" ? m.branchPointMissing : m.branchPointLoadFailed}</span>{branchPointTarget === undefined ? null : <button type="button" onClick={() => showBranchPoint(branchPointTarget.threadId, branchPointTarget.turnId)}>{m.retryBranchPoint}</button>}</div>}
           <div className="details-content">
             {selectedThreadState === "idle" && selectedThreadId !== undefined ? <div className="details-empty"><p className="empty-kicker">{m.conversation}</p><h2>{m.selectThread}</h2><p>{m.chooseThread}</p></div> : null}
             {selectedThreadState === "loading" ? <p className="panel-note">{m.loadingConversation}</p> : null}
             {selectedThreadState === "error" ? <p className="error-summary">{selectedThreadError}</p> : null}
-            {(selectedThreadState === "empty" || selectedThreadState === "ready") && selectedThread !== undefined ? <Conversation thread={selectedThread} activeTurnId={activeTurnId} loadingMore={loadingMore} loadMoreError={loadMoreError} onLoadMore={() => void handleLoadMore()} onNavigate={handleNavigate} onVisibleTurn={handleVisibleTurn} onUserScroll={handleUserScroll} m={m} onNavigateReady={handleNavigateReady} onRefreshStatus={() => void handleRefreshStatus()} scrollToLatest={scrollToLatest} onScrollToLatestHandled={() => setScrollToLatest(false)} newContent={newContentAvailable} onNewContentHandled={() => setNewContentAvailable(false)} turnTimings={turnTimings} now={clock} /> : null}
+            {(selectedThreadState === "empty" || selectedThreadState === "ready") && selectedThread !== undefined && selectedThread.id === selectedThreadId ? <Conversation thread={selectedThread} activeTurnId={activeTurnId} loadingMore={loadingMore} loadMoreError={loadMoreError} onLoadMore={() => void handleLoadMore()} onNavigate={handleNavigate} onVisibleTurn={handleVisibleTurn} onUserScroll={handleUserScroll} m={m} onNavigateReady={handleNavigateReady} onRefreshStatus={() => void handleRefreshStatus()} scrollToLatest={scrollToLatest} onScrollToLatestHandled={() => setScrollToLatest(false)} newContent={newContentAvailable} onNewContentHandled={() => setNewContentAvailable(false)} turnTimings={turnTimings} now={clock} onFork={(turnId) => void handleFork(turnId)} forkDisabled={selectedArchived || turnIsRunning || inputUnavailable || writeState !== "available"} forkingTurnId={forkingTurnId} branch={selectedBranch} onShowBoundary={() => { if (selectedBranch !== undefined) showBranchPoint(selectedBranch.threadId, selectedBranch.forkTurnId); }} /> : null}
             {selectedThreadId === undefined ? <div className="new-conversation-space"><p>{m.welcome}</p></div> : null}
           </div>
           <form className="turn-composer" onSubmit={(event) => { event.preventDefault(); void handleStartTurn(); }}>
+              {selectedThreadId === undefined ? null : <div className="composer-route" aria-live="polite">{selectedArchived ? <><small>{m.archivedReadOnly}</small><button type="button" disabled={turnIsRunning} onClick={() => void handleSetThreadArchived(selectedThreadId, false)}>{m.restoreConversation}</button></> : null}<span>{m.continuingIn(selectedListThread?.title ?? (selectedThread?.id === selectedThreadId ? selectedThread.title : m.loadingConversation))}</span>{branches.some((branch) => branch.threadId === selectedThreadId) ? <small>{m.readOnlyDiscussion} · {m.sharedDirectory}</small> : null}</div>}
               <div className="composer-input">
                 {workspaceMenuOpen ? <div className="workspace-menu" role="menu"><strong>{m.workspace}</strong>{workspaceState?.directories.map((directory) => <button key={directory.path} type="button" role="menuitem" className={directory.path === currentWorkspacePath ? "selected" : ""} onClick={() => void handleSetCurrentWorkspace(directory.path)} title={directory.path}>📁 {directory.name}</button>)}<button type="button" role="menuitem" onClick={() => void handleChooseWorkspaceForComposer()}>＋ {m.addWorkspace}</button></div> : null}
                 <div className="composer-toolbar">
@@ -983,15 +1127,16 @@ function App(): React.JSX.Element {
                     <label title={selectedModel?.displayName ?? (modelOptions.length === 0 ? m.modelUnavailable : m.model)}><span className="sr-only">{m.model}</span><select id="composer-model" value={modelSelection} onChange={(event) => { const nextModel = modelOptions.find((model) => model.id === event.target.value); setModelSelection(event.target.value); setReasoningSelection(preferredReasoningEffort(nextModel)); }} disabled={modelOptions.length === 0 || turnIsRunning} aria-label={m.model}>{modelOptions.map((model) => <option key={model.id} value={model.id}>{model.displayName}</option>)}</select></label>
                     <label title={selectedModel === undefined || reasoningOptions.length === 0 ? m.reasoningUnavailable : m.reasoning}><span className="sr-only">{m.reasoning}</span><select id="composer-reasoning" value={reasoningSelection} onChange={(event) => setReasoningSelection(event.target.value)} disabled={selectedModel === undefined || reasoningOptions.length === 0 || turnIsRunning} aria-label={m.reasoning}>{reasoningOptions.map((effort) => <option key={effort.id} value={effort.id} title={effort.description}>{effort.id}</option>)}</select></label>
                   </div>
-                  <span className="composer-status" aria-live="polite">{interruptingThreadId !== undefined && interruptingThreadId === selectedThreadId ? m.stopping : startingTurn ? m.starting : historyMode ? m.confirmWorkspaceToSend : newConversationWorkspaceRequired ? m.chooseWorkspace : remoteActive ? m.remoteTurnRunning : inputUnavailable ? m.inputUnavailable : localRunningTurnId === undefined ? null : m.turnRunning}</span>
-                  <button className="composer-send" type={canInterruptLocalTurn ? "button" : "submit"} onClick={canInterruptLocalTurn ? () => void handleInterruptTurn() : undefined} aria-label={canInterruptLocalTurn ? m.stopTurn : turnIsRunning ? m.pauseUnavailable : historyMode ? m.confirmWorkspaceToSend : newConversationWorkspaceRequired ? m.chooseWorkspace : inputUnavailable ? m.inputUnavailable : m.send} title={canInterruptLocalTurn ? m.stopTurn : turnIsRunning ? m.pauseUnavailable : historyMode ? m.confirmWorkspaceToSend : newConversationWorkspaceRequired ? m.chooseWorkspace : inputUnavailable ? m.inputUnavailable : m.send} disabled={canInterruptLocalTurn ? interruptingThreadId !== undefined : connectionState.state !== "ready" || inputText.trim() === "" || turnIsRunning || inputUnavailable}><span aria-hidden="true">{turnIsRunning ? "Ⅱ" : "➤"}</span><span className="sr-only">{canInterruptLocalTurn ? m.stopTurn : turnIsRunning ? m.pauseUnavailable : historyMode ? m.confirmWorkspaceToSend : inputUnavailable ? m.inputUnavailable : m.send}</span></button>
+                  <span className="composer-status" aria-live="polite">{interruptingThreadId !== undefined && interruptingThreadId === selectedThreadId ? m.stopping : startingTurn ? m.starting : selectedArchived ? m.archivedReadOnly : historyMode ? m.confirmWorkspaceToSend : newConversationWorkspaceRequired ? m.chooseWorkspace : remoteActive ? m.remoteTurnRunning : inputUnavailable ? m.inputUnavailable : localRunningTurnId === undefined ? null : m.turnRunning}</span>
+                  <button className="composer-send" type={canInterruptLocalTurn ? "button" : "submit"} onClick={canInterruptLocalTurn ? () => void handleInterruptTurn() : undefined} aria-label={canInterruptLocalTurn ? m.stopTurn : turnIsRunning ? m.pauseUnavailable : selectedArchived ? m.archivedReadOnly : historyMode ? m.confirmWorkspaceToSend : newConversationWorkspaceRequired ? m.chooseWorkspace : inputUnavailable ? m.inputUnavailable : m.send} title={canInterruptLocalTurn ? m.stopTurn : turnIsRunning ? m.pauseUnavailable : selectedArchived ? m.archivedReadOnly : historyMode ? m.confirmWorkspaceToSend : newConversationWorkspaceRequired ? m.chooseWorkspace : inputUnavailable ? m.inputUnavailable : m.send} disabled={canInterruptLocalTurn ? interruptingThreadId !== undefined : connectionState.state !== "ready" || inputText.trim() === "" || turnIsRunning || inputUnavailable}><span aria-hidden="true">{turnIsRunning ? "Ⅱ" : "➤"}</span><span className="sr-only">{canInterruptLocalTurn ? m.stopTurn : turnIsRunning ? m.pauseUnavailable : selectedArchived ? m.archivedReadOnly : historyMode ? m.confirmWorkspaceToSend : inputUnavailable ? m.inputUnavailable : m.send}</span></button>
                 </div>
                 <div className="composer-textarea-row">
-                  {showWorkspacePicker ? <button className="composer-workspace-picker" type="button" onClick={() => setWorkspaceMenuOpen((open) => !open)} aria-label={m.addWorkspace} title={currentWorkspacePath ?? m.chooseWorkspace}>＋</button> : null}
+                  {showWorkspacePicker ? <button className="composer-workspace-picker" type="button" onClick={() => setWorkspaceMenuOpen((open) => !open)} aria-label={currentWorkspacePath === undefined ? m.addWorkspace : `${m.workingDirectory}: ${currentWorkspacePath}`} aria-expanded={workspaceMenuOpen} aria-haspopup="menu" title={currentWorkspacePath ?? m.chooseWorkspace}><span aria-hidden="true">{currentWorkspacePath === undefined ? "＋" : "📁"}</span>{currentWorkspacePath === undefined ? null : <span className="composer-workspace-name">{currentWorkspaceName}</span>}</button> : null}
                   <textarea ref={inputElement} id="turn-input" aria-label={m.sendMessage} value={inputText} onChange={(event) => setInputText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void handleStartTurn(); } }} placeholder={m.inputPlaceholder} rows={1} disabled={connectionState.state !== "ready" || turnIsRunning || inputUnavailable} />
                 </div>
               </div>
               {sendError === undefined ? null : <p className="error-summary">{sendError}</p>}
+              {selectedThreadId !== undefined && draftSaveErrors[selectedThreadId] ? <p className="error-summary" role="alert">{m.draftSaveFailed}</p> : null}
           </form>
         </section>
       </section>

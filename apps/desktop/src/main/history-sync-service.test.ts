@@ -51,6 +51,67 @@ async function main(): Promise<void> {
   resolveSync?.();
   await firstSync;
   assert.equal(concurrentCalls, 2, "concurrent sync calls must share one two-scan operation");
+  const branch: ThreadSummary = { id: "local-branch", forkedFromId: first.id };
+  const completeWithoutBranches = new CodexHistorySyncService({ getReadyClient: () => concurrentClient }, {
+    getHistoryMirror: () => [first, old],
+    getRetainedThreadIds: () => [first.id, branch.id],
+    setHistoryMirror: async () => undefined,
+  });
+  const scanning = completeWithoutBranches.sync();
+  await completeWithoutBranches.rememberThread(branch);
+  const withBranch = await scanning;
+  assert.ok(withBranch.threads.some((thread) => thread.id === branch.id), "a local fork created during scanning must remain navigable");
+  assert.ok(!withBranch.threads.some((thread) => thread.id === old.id), "unrelated missing threads still follow complete-sync rules");
+  const created: ThreadSummary = { id: "created-not-indexed", title: "Created locally" };
+  let saved: readonly ThreadSummary[] = [];
+  const newConversation = new CodexHistorySyncService({ getReadyClient: () => client }, {
+    getHistoryMirror: () => [], getRetainedThreadIds: () => [created.id], setHistoryMirror: async (threads) => { saved = threads; },
+  });
+  await newConversation.rememberThread(created);
+  const indexedLater = await newConversation.sync();
+  assert.ok(indexedLater.threads.some((thread) => thread.id === created.id));
+  assert.ok(indexedLater.snapshot.missingThreadIds.includes(created.id));
+  assert.ok(saved.some((thread) => thread.id === created.id));
+  const restartedCreated = new CodexHistorySyncService({ getReadyClient: () => client }, { getHistoryMirror: () => [...saved], getRetainedThreadIds: () => [created.id], setHistoryMirror: async () => undefined });
+  assert.ok((await restartedCreated.sync()).threads.some((thread) => thread.id === created.id));
+  let archivedIndex = false;
+  const archiveClient: HistoryListClient = {
+    threadListFacts: { archivedFilter: true, pagination: true },
+    listThreads: async (options) => options?.archived === archivedIndex ? [{ id: "archive-target", title: "No archived field" }] : [],
+  };
+  let archiveSaved: readonly ThreadSummary[] = [];
+  const archiveSync = new CodexHistorySyncService({ getReadyClient: () => archiveClient }, {
+    getHistoryMirror: () => [], setHistoryMirror: async (threads) => { archiveSaved = threads; },
+  });
+  assert.equal((await archiveSync.sync()).threads[0]?.archived, false);
+  await archiveSync.confirmArchived("archive-target", true);
+  assert.equal(archiveSaved[0]?.archived, true);
+  assert.equal((await archiveSync.sync()).threads[0]?.archived, true, "a delayed ordinary list must not undo accepted archival");
+  archivedIndex = true;
+  assert.equal((await archiveSync.sync()).threads[0]?.archived, true, "archived filter supplies missing metadata");
+  archivedIndex = false;
+  assert.equal((await archiveSync.sync()).threads[0]?.archived, false, "external changes are authoritative after index confirmation");
+  await archiveSync.confirmArchived("archive-target", true);
+  archivedIndex = true;
+  await archiveSync.sync();
+  await archiveSync.confirmArchived("archive-target", false);
+  assert.equal((await archiveSync.sync()).threads[0]?.archived, false, "delayed archived list must not undo restoration");
+  let releaseScan: (() => void) | undefined;
+  const scanGate = new Promise<void>((resolve) => { releaseScan = resolve; });
+  const racingArchive = new CodexHistorySyncService({ getReadyClient: () => ({
+    threadListFacts: { archivedFilter: true, pagination: true },
+    listThreads: async (options) => { await scanGate; return options?.archived ? [] : [{ id: "racing", title: "Old list" }]; },
+  }) });
+  await racingArchive.rememberThread({ id: "racing" });
+  const oldScan = racingArchive.sync();
+  await racingArchive.confirmArchived("racing", true);
+  releaseScan?.();
+  assert.equal((await oldScan).threads[0]?.archived, true, "an in-flight scan must not overwrite an accepted operation");
+  const unsavedArchive = new CodexHistorySyncService({ getReadyClient: () => archiveClient }, {
+    getHistoryMirror: () => [{ id: "unsaved" }], setHistoryMirror: async () => { throw new Error("synthetic write failure"); },
+  });
+  await assert.rejects(unsavedArchive.confirmArchived("unsaved", true));
+  assert.equal(unsavedArchive.getCurrentResult().threads[0]?.archived, true, "failed mirror persistence cannot undo successful remote archival");
   console.log("[desktop-test] history sync checks passed");
 }
 

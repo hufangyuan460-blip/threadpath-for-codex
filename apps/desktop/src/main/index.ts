@@ -11,8 +11,8 @@ import { UserPreferencesService, firstReadableUserText } from "./user-preference
 import { WorkspaceService, validateWorkspacePath } from "./workspace-service";
 import { CodexHistorySyncService } from "./history-sync-service";
 import { WorkspaceLockService } from "./workspace-lock-service";
-import { AppServerError, ProcessError, ThreadUnavailableError } from "../../../../threadpath-protocol/src/protocol.ts";
-import type { AppInfo, AppRunMode, ConnectionStateSnapshot, ConversationThreadView, Language, ModelOption, OnboardingSnapshot, Theme, ThreadDisplayNameUpdate, ThreadWriteState } from "../shared/api";
+import { ActiveTurnError, AppServerError, ProcessError, ThreadUnavailableError } from "../../../../threadpath-protocol/src/protocol.ts";
+import type { AppInfo, AppRunMode, ConnectionStateSnapshot, ConversationThreadView, ForkConversationResult, Language, ModelOption, OnboardingSnapshot, Theme, ThreadBranch, ThreadDisplayNameUpdate, ThreadWriteState } from "../shared/api";
 
 if (process.env.THREADPATH_E2E === "1") app.disableHardwareAcceleration();
 
@@ -322,13 +322,67 @@ function registerApi(): void {
     await preferencesService.setThreadFavorite(validThreadId, favorite);
     return getWorkspaceState();
   });
+  ipcMain.handle("threads:set-archived", async (_event, threadId: unknown, archived: unknown) => withReadyConnection(async () => {
+    const id = validateThreadId(threadId);
+    if (typeof archived !== "boolean") throw new ProcessError("thread archive request is invalid");
+    const existing = historySyncService.getCurrentResult().threads.find((thread) => thread.id === id);
+    if (existing === undefined) throw new ThreadUnavailableError();
+    const path = preferencesService.getThreadWorkingDirectory(id) ?? existing.cwd;
+    const key = path === undefined ? undefined : (await workspaceService.identityResolver.resolve(path))?.key;
+    // Lock before the asynchronous read so a local send cannot race archival.
+    workspaceLockService.acquire(id, key);
+    try {
+      const current = await conversationService.reconcileThread(id);
+      if (current.activity !== "idle") throw new ActiveTurnError("Wait for the running conversation before archiving");
+      const client = processManager.getReadyClient();
+      if (archived) await client.archiveThread(id);
+      else await client.unarchiveThread(id);
+      let persistenceWarning: string | undefined;
+      try { await historySyncService.confirmArchived(id, archived); }
+      catch { persistenceWarning = "Codex accepted the archive change, but its local history metadata could not be saved"; }
+      return { workspace: await getWorkspaceState(), ...(persistenceWarning === undefined ? {} : { persistenceWarning }) };
+    } finally { workspaceLockService.release(id); }
+  }));
   ipcMain.handle("threads:read", async (_event, threadId: unknown) => withReadyConnection(async () => localizeThreadView(await conversationService.readThread(threadId))));
   ipcMain.handle("threads:refresh", async (_event, threadId: unknown) => withReadyConnection(async () => reconcileThread(validateThreadId(threadId))));
+  ipcMain.handle("branches:list", () => preferencesService.getBranches());
+  ipcMain.handle("drafts:get", (_event, threadId: unknown) => preferencesService.getThreadDraft(validateThreadId(threadId)));
+  ipcMain.handle("drafts:set", async (_event, threadId: unknown, text: unknown) => {
+    if (typeof text !== "string") throw new ProcessError("Draft must be plain text");
+    await preferencesService.setThreadDraft(validateThreadId(threadId), text);
+  });
+  ipcMain.handle("conversation:fork", async (_event, threadId: unknown, turnId: unknown): Promise<ForkConversationResult> => withReadyConnection(async () => {
+    if (appRunMode !== "workspace") throw new ProcessError("Confirm a working directory before branching");
+    const sourceId = validateThreadId(threadId);
+    if (historySyncService.getCurrentResult().threads.find((thread) => thread.id === sourceId)?.archived) throw new ProcessError("Restore the archived conversation before branching");
+    const cutoffId = validateThreadId(turnId);
+    const source = await reconcileThread(sourceId);
+    const path = await validateWorkspacePath(source.workspacePath, workspaceService.identityResolver);
+    const key = (await workspaceService.identityResolver.resolve(path))?.key;
+    if (key === undefined) throw new ProcessError("Workspace state is unknown; refresh before branching");
+    workspaceLockService.acquire(sourceId, key);
+    try {
+      const fork = await conversationService.forkConversation(sourceId, cutoffId, path);
+      const cutoff = source.outline.find((entry) => entry.turnId === cutoffId);
+      const branch: ThreadBranch = { threadId: fork.id, sourceThreadId: sourceId, forkTurnId: cutoffId, forkLabel: cutoff?.label ?? cutoffId, createdAt: new Date().toISOString(), readOnly: true };
+      const count = preferencesService.getBranches().length + 1;
+      const name = `${preferencesService.getLanguage() === "zh-CN" ? "分支" : "Branch"} ${count}`;
+      // Persist only safe metadata, never fork.turns or complete conversation bodies.
+      const summary = { id: fork.id, title: name, cwd: fork.cwd ?? path, forkedFromId: sourceId, ...(fork.sessionId === undefined ? {} : { sessionId: fork.sessionId }), createdAt: branch.createdAt };
+      let persistenceWarning: string | undefined;
+      try { await preferencesService.recordBranch(branch, summary, name); }
+      catch { persistenceWarning = "Branch created; its local navigation data could not be saved"; }
+      try { await historySyncService.rememberThread(summary); }
+      catch { persistenceWarning = "Branch created; its local navigation data could not be saved"; }
+      return { threadId: fork.id, branch, ...(persistenceWarning === undefined ? {} : { persistenceWarning }) };
+    } finally { workspaceLockService.release(sourceId); }
+  }));
   ipcMain.handle("conversation:load-more", async (_event, threadId: unknown) => withReadyConnection(async () => localizeThreadView(await conversationService.loadMoreTurns(threadId))));
   ipcMain.handle("search:turns", async (_event, threadId: unknown, query: unknown) => withReadyConnection(() => conversationService.searchTurns(threadId, query)));
   ipcMain.handle("conversation:start-turn", async (_event, threadId: unknown, text: unknown, options: unknown) => withReadyConnection(async () => {
     if (appRunMode !== "workspace") throw new ProcessError("Confirm a working directory before sending.");
     const validThreadId = validateThreadId(threadId);
+    if (historySyncService.getCurrentResult().threads.find((thread) => thread.id === validThreadId)?.archived) throw new ProcessError("Restore the archived conversation before sending");
     const refreshed = await reconcileThread(validThreadId);
     if (refreshed.remoteActive) {
       workspaceLockService.markExternal(validThreadId);
@@ -366,7 +420,11 @@ function registerApi(): void {
     workspaceLockService.transfer(reservationId, result.threadId);
     await workspaceService.associateThread(result.threadId, path);
     const loaded = conversationService.getLoadedThread(result.threadId);
-    return { ...result, workspacePath: path, displayName: preferencesService.getThreadDisplayName(result.threadId, loaded?.title, firstReadableUserText(loaded?.turns) ?? (typeof text === "string" ? text : undefined)) };
+    const displayName = preferencesService.getThreadDisplayName(result.threadId, loaded?.title, firstReadableUserText(loaded?.turns) ?? (typeof text === "string" ? text : undefined));
+    // A successful turn/start is authoritative even before Codex indexes the
+    // new thread in thread/list. Remember safe metadata before replying.
+    await historySyncService.rememberThread({ id: result.threadId, title: displayName, cwd: path, createdAt: new Date().toISOString() }).catch(() => undefined);
+    return { ...result, workspacePath: path, displayName };
   }));
   conversationService.onConversationUpdate((update) => {
     const loaded = conversationService.getLoadedThread(update.threadId);
@@ -461,7 +519,7 @@ app.whenReady().then(async () => {
     });
   });
   threadService = new ThreadService(processManager, preferencesService);
-  conversationService = new ConversationService(processManager);
+  conversationService = new ConversationService(processManager, (threadId) => preferencesService.getBranch(threadId)?.readOnly === true);
   historySyncService = new CodexHistorySyncService(processManager, preferencesService);
   workspaceLockService = new WorkspaceLockService();
   registerApi();
@@ -481,5 +539,5 @@ app.on("before-quit", (event) => {
   if (isQuitting) return;
   event.preventDefault();
   isQuitting = true;
-  void processManager.disconnect().finally(() => app.quit());
+  void Promise.all([processManager.disconnect(), preferencesService.flush()]).catch(() => undefined).finally(() => app.quit());
 });

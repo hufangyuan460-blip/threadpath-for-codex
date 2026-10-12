@@ -11,10 +11,11 @@ export interface HistoryWorkspaceView {
 export function filterWorkspaceHistory(state: WorkspaceState, filter: HistoryViewFilter): HistoryWorkspaceView {
   const visibleThread = (thread: ThreadListItem, workspaceHidden: boolean): boolean => {
     const hidden = workspaceHidden || thread.hidden === true;
+    if (filter === "archived") return thread.archived === true;
     if (filter === "hidden") return hidden;
     if (hidden) return false;
+    if (thread.archived === true) return false;
     if (filter === "favorites") return thread.favorite === true;
-    if (filter === "archived") return thread.archived === true;
     return true;
   };
   const directories = state.directories.flatMap((directory) => {
@@ -26,7 +27,7 @@ export function filterWorkspaceHistory(state: WorkspaceState, filter: HistoryVie
             : threads.length > 0;
     if (!visible) return [];
     const displayThreads = filter === "favorites" && directory.favorite === true && directory.hidden !== true
-      ? directory.threads.filter((thread) => thread.hidden !== true)
+      ? directory.threads.filter((thread) => thread.hidden !== true && thread.archived !== true)
       : threads;
     return [{ ...directory, threads: displayThreads }];
   });

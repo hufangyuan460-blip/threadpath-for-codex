@@ -1,7 +1,9 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { ConfiguredWorkspace, Language, Theme } from "../shared/api";
+import type { ConfiguredWorkspace, Language, Theme, ThreadBranch } from "../shared/api";
 import type { ThreadSummary } from "../../../../threadpath-protocol/src/protocol.ts";
+import { ConfigurationError } from "../../../../threadpath-protocol/src/protocol.ts";
+import { validateThreadId } from "./thread-service.ts";
 
 const MAX_THREAD_NAME_LENGTH = 72;
 
@@ -19,6 +21,8 @@ export interface UserPreferencesFile {
   readonly favoriteThreads?: Readonly<Record<string, boolean>>;
   readonly historyMirror?: Readonly<Record<string, ThreadSummary>>;
   readonly configuredWorkspaces?: Readonly<Record<string, ConfiguredWorkspace>>;
+  readonly threadBranches?: Readonly<Record<string, ThreadBranch>>;
+  readonly threadDrafts?: Readonly<Record<string, string>>;
 }
 
 export interface ThreadNameParts {
@@ -58,6 +62,7 @@ export class UserPreferencesService {
   private readonly configPath: string;
   private readonly defaultLanguage: Language;
   private data: UserPreferencesFile = {};
+  private writes: Promise<void> = Promise.resolve();
 
   constructor(configPath: string, defaultLanguage: Language) {
     this.configPath = configPath;
@@ -67,7 +72,7 @@ export class UserPreferencesService {
   async load(): Promise<void> {
     try {
       const raw = JSON.parse(await readFile(this.configPath, "utf8")) as unknown;
-      this.data = isPreferencesFile(raw) ? raw : {};
+      this.data = isPreferencesFile(raw) ? { ...raw, threadBranches: validBranches(raw.threadBranches), threadDrafts: validDrafts(raw.threadDrafts) } : {};
     } catch (error: unknown) {
       if (isMissingFile(error)) return;
       this.data = {};
@@ -119,6 +124,38 @@ export class UserPreferencesService {
   isThreadFavorite(threadId: string): boolean { return this.data.favoriteThreads?.[threadId] === true; }
   getHistoryMirror(): ThreadSummary[] { return Object.values(this.data.historyMirror ?? {}); }
   getConfiguredWorkspaces(): ConfiguredWorkspace[] { return Object.values(this.data.configuredWorkspaces ?? {}); }
+  getBranches(): ThreadBranch[] { return Object.values(this.data.threadBranches ?? {}); }
+  getBranch(threadId: string): ThreadBranch | undefined { return this.data.threadBranches?.[threadId]; }
+  getRetainedThreadIds(): string[] {
+    // Explicit local workspace associations include newly created conversations
+    // that may not be visible in Codex's history index yet.
+    return [...new Set([...Object.keys(this.data.threadWorkingDirectories ?? {}), ...this.getBranches().flatMap((branch) => [branch.threadId, branch.sourceThreadId])])];
+  }
+  getThreadDraft(threadId: string): string { return this.data.threadDrafts?.[threadId] ?? ""; }
+
+  async setThreadDraft(threadId: string, text: string): Promise<void> {
+    validateThreadId(threadId);
+    if (typeof text !== "string" || text.length > 100_000) throw new ConfigurationError("Draft must be text of at most 100000 characters");
+    const drafts = { ...(this.data.threadDrafts ?? {}) };
+    if (text === "") delete drafts[threadId];
+    else drafts[threadId] = text;
+    this.data = { ...this.data, threadDrafts: drafts };
+    await this.persist();
+  }
+
+  async recordBranch(branch: ThreadBranch, thread: ThreadSummary, name: string): Promise<void> {
+    if (!isBranch(branch) || branch.threadId !== thread.id) throw new ConfigurationError("Invalid branch relationship");
+    this.data = {
+      ...this.data,
+      threadBranches: { ...(this.data.threadBranches ?? {}), [branch.threadId]: branch },
+      historyMirror: { ...(this.data.historyMirror ?? {}), [thread.id]: thread },
+      threadNames: { ...(this.data.threadNames ?? {}), [thread.id]: sanitizeThreadDisplayName(name) },
+      threadWorkingDirectories: { ...(this.data.threadWorkingDirectories ?? {}), ...(thread.cwd === undefined ? {} : { [thread.id]: thread.cwd }) },
+    };
+    await this.persist();
+  }
+
+  async flush(): Promise<void> { await this.writes; }
 
   async setHistoryMirror(threads: readonly ThreadSummary[]): Promise<void> {
     const historyMirror = Object.fromEntries(threads.map((thread) => [thread.id, thread]));
@@ -195,9 +232,34 @@ export class UserPreferencesService {
   }
 
   private async persist(): Promise<void> {
-    await mkdir(dirname(this.configPath), { recursive: true });
-    await writeFile(this.configPath, `${JSON.stringify(this.data, null, 2)}\n`, "utf8");
+    const snapshot = this.data;
+    const write = this.writes.catch(() => undefined).then(async () => {
+      await mkdir(dirname(this.configPath), { recursive: true });
+      const temporary = `${this.configPath}.tmp`;
+      await writeFile(temporary, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
+      await rename(temporary, this.configPath);
+    });
+    this.writes = write;
+    await write;
   }
+}
+
+function validId(value: unknown): value is string {
+  try { validateThreadId(value); return true; } catch { return false; }
+}
+function isBranch(value: unknown): value is ThreadBranch {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const branch = value as Record<string, unknown>;
+  return validId(branch.threadId) && validId(branch.sourceThreadId) && branch.threadId !== branch.sourceThreadId && validId(branch.forkTurnId)
+    && typeof branch.forkLabel === "string" && branch.forkLabel.length <= 200 && typeof branch.createdAt === "string" && Number.isFinite(Date.parse(branch.createdAt)) && branch.readOnly === true;
+}
+function validBranches(value: unknown): Record<string, ThreadBranch> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter(([id, branch]) => isBranch(branch) && branch.threadId === id));
+}
+function validDrafts(value: unknown): Record<string, string> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter(([id, text]) => validId(id) && typeof text === "string" && text.length <= 100_000));
 }
 
 function isPreferencesFile(value: unknown): value is UserPreferencesFile {
