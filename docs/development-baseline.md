@@ -48,7 +48,7 @@
 - 真实 smoke 观察到 Responses WebSocket 超时重试后回退到 HTTP，随后回合成功；不要把等待网络的时间当作握手失败。
 - `ad92ccd`（延长真实回合等待超时）及当前 smoke 默认值说明真实测试需要容纳工具启动和传输回退；不为加快测试修改用户认证或持久配置。
 - fork 的历史上下文与工作目录中的文件状态独立。产品新增讨论分支使用只读策略，共用源目录；代码隔离与历史文件快照尚未实现或验收。
-- Windows 临时目录可能使用短路径，服务层会规范为实际路径；测试须使用 `realpath` 对齐，不硬编码本地仓库文件夹名称。证据：`workspace-service.test.ts`、`workspace-archive.e2e.ts` 及 Quality 工作流。
+- Windows 临时目录可能使用短路径，服务层会规范为实际路径；测试须使用原生 `realpath` 对齐，不硬编码本地仓库文件夹名称。同步的 `realpathSync` 不展开所有 8.3 别名，构建来源核对使用 `realpathSync.native`。证据：`workspace-service.test.ts`、`workspace-archive.e2e.ts`、`build-info.ts` 及 Quality 工作流。
 - Beta.1 曾更新同名安装包，与旧版本标签的源码不能视为严格对应；Beta.2 起按独立版本标签发布，保留旧发布而不移动标签。不同机器的 NSIS 安装器可能因构建时间而产生不同字节，以该版公开构建清单为准。
 
 ## 验证记录与待确认事项
