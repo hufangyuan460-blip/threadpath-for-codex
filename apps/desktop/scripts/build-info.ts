@@ -16,7 +16,8 @@ export function readBuildInfo(repo: string): BuildInfo {
     throw new Error("Desktop package version is invalid");
   }
   const root = git(repo, ["rev-parse", "--show-toplevel"]);
-  const canonical = (path: string): string => process.platform === "win32" ? realpathSync(path).toLowerCase() : realpathSync(path);
+  // Native resolution expands Windows 8.3 aliases as well as symlinks.
+  const canonical = (path: string): string => process.platform === "win32" ? realpathSync.native(path).toLowerCase() : realpathSync.native(path);
   const ownRepository = root !== null && canonical(root) === canonical(repo);
   const commit = ownRepository ? git(repo, ["rev-parse", "HEAD"]) : null;
   const status = ownRepository ? git(repo, ["status", "--porcelain", "--untracked-files=normal"]) : null;
