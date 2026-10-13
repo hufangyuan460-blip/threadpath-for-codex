@@ -14,8 +14,8 @@
 4. 在实际发布提交创建同名标签，例如：
 
    ```powershell
-   git tag -a v0.1.0-beta.2 -m "发布 Beta.2 / Release Beta.2"
-   git push origin v0.1.0-beta.2
+   git tag -a v0.1.0-beta.3 -m "发布 Beta.3 / Release Beta.3"
+   git push origin v0.1.0-beta.3
    ```
 
 5. 标签触发 `Release`：重新检查类型、离线测试和桌面 E2E，执行 `package:release`，测试实际打包 EXE，然后发布独立安装包、构建清单与 SHA-256 校验文件。
@@ -51,4 +51,4 @@ pnpm --filter @threadpath/desktop verify:release
 
 ## 兼容与回退
 
-Beta.2 不变更会话、草稿或工作区存储格式。Beta.1 的历史发布保留原样；不把其过去更新过的安装包误称为严格按标签构建。当前发布流程不提供自动更新或代码签名；回退时可手动使用旧版安装包。
+Beta.3 不变更会话、草稿或工作区存储格式。Beta.1 的历史发布保留原样；不把其过去更新过的安装包误称为严格按标签构建。当前发布流程不提供自动更新或代码签名；回退时可手动使用旧版安装包。

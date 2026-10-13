@@ -36,6 +36,7 @@
 | UI-003 | 首页工作区入口显示现有 Git 根归组后的目录名称和完整路径；已归档历史可读，恢复后续聊；主进程锁和只读核对先于归档，草稿与分支关系保留 | `main.tsx`、`threads:set-archived`、`WorkspaceService`；目录切换、最小窗口、活动拒绝与重启 E2E | 离线验证 / 高 |
 | BUILD-001 | Windows 图标需同时配置主 EXE 资源编辑、NSIS 图标和 BrowserWindow 运行时资源；仅设置 `win.icon` 而禁用 `signAndEditExecutable` 不足以更新主 EXE | `electron-builder.yml`、electron-builder 26.0.12 的 `winPackager.signApp`；实际 PE 资源与 ICO 对照 | 产物验证 / 高 |
 | BUILD-002 | 应用版本、源码提交和未提交状态在构建时固定，经已有 IPC 提供给「关于」；运行时不依赖 Git；源码归档不能借用上级仓库提交 | `scripts/build-info.ts`、`electron.vite.config.ts`、`app:get-info`；Git 临时仓库 guard 测试和 About E2E | 离线及开发产物验证 / 高 |
+| BUILD-005 | electron-vite 的 ESM 配置加载会在源码目录生成 `electron.vite.config.<timestamp>.mjs`；精确忽略该生成文件，E2E 另以实际 Git 状态核对构建信息 | electron-vite 4.0.0 配置加载器、`.gitignore`、`about.e2e.ts`；Beta.2 的 Release 工作流阻止了误标 dirty 的安装包 | 本机及线上失败路径验证 / 高 |
 | BUILD-003 | 正式构建必须来自干净源码且 `v<package.version>` 指向 HEAD；打包前后比较元数据，核对 ASAR 和安装器压缩内容；每版生成清单与 SHA-256 | `package-windows.ts`、`release-artifacts.ts`、`verify-release.ts`；缺失/错位标签、未提交文件测试与开发安装器逐字节对照 | 离线及开发产物验证 / 高 |
 | BUILD-004 | 发布工作流从版本标签构建，源码及打包 EXE 测试通过后才上传；远程标签须与产物提交一致，已有 release 不替换；上传先保留草稿再核对大小与摘要 | `.github/workflows/release.yml`、`publish-release.ts`；每个版本的线上验证结果见其工作流与公开清单 | 代码核对 / 高；线上结果按版本核对 |
 
@@ -85,3 +86,5 @@
 - 2026-10-12：发布前整合远程初始化和 CLI 自动发现，适配弹窗重试 E2E；复验全部静态/离线/桌面检查及最终安装器，按中英文 Conventional Commits 分层提交。
 
 - 2026-10-13：扩展版本与发布基线，记录冻结构建信息、干净标签检查、安装器内容对照、实际打包程序验收和独立发布约束；保留首次线上工作流验证边界。
+
+- 2026-10-13：Beta.2 正式检查发现构建器临时文件导致 dirty 误报并阻止发布，工作流 `38331407343` 未公开安装包；保留候选标签，修正精确忽略规则与独立 E2E 核对后使用 Beta.3 接续发布。
