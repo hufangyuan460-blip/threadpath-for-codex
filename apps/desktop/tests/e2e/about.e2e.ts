@@ -3,6 +3,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron } from "playwright-core";
+import { readBuildInfo } from "../../scripts/build-info.ts";
 
 const desktop = fileURLToPath(new URL("../../", import.meta.url));
 const repo = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -13,6 +14,7 @@ const manifest: unknown = JSON.parse(await readFile(join(desktop, "package.json"
 assert.ok(manifest !== null && typeof manifest === "object" && "version" in manifest);
 assert.ok(expected !== null && typeof expected === "object" && "version" in expected && "commit" in expected && "dirty" in expected && "tag" in expected);
 assert.equal(expected.version, manifest.version);
+assert.deepEqual(expected, readBuildInfo(repo), "Build metadata must match actual source, including clean/dirty state");
 await mkdir(userData, { recursive: true });
 const packaged = process.env.THREADPATH_PACKAGED_EXE;
 const app = await electron.launch({

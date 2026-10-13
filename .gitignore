@@ -9,3 +9,4 @@ release/
 packaging-logs/
 .electron-builder/
 *.blockmap
+apps/desktop/electron.vite.config.[0-9]*.mjs
