@@ -4,7 +4,7 @@
 > A desktop companion for browsing and organizing Codex history and workspaces alongside the official client.
 
 [![Status: Beta](https://img.shields.io/badge/status-beta-64748b.svg)](https://github.com/hufangyuan460-blip/threadpath-for-codex)
-[![Windows](https://img.shields.io/badge/platform-Windows-64748b.svg)](https://github.com/hufangyuan460-blip/threadpath-for-codex/releases/tag/v0.1.0-beta.1)
+[![Windows](https://img.shields.io/badge/platform-Windows-64748b.svg)](https://github.com/hufangyuan460-blip/threadpath-for-codex/releases/tag/v0.1.0-beta.2)
 
 ## 产品定位
 
@@ -17,7 +17,7 @@ ThreadPath 不替代 Codex 官方客户端，而是它的本地历史管理伴�
 - 仅在确认工作目录且服务器确认线程可写时允许发起或续聊，避免与其他客户端争用写入；
 - 收藏、隐藏、命名等整理偏好保存在 ThreadPath 本地；归档和恢复通过 Codex 协议同步实际会话状态。
 
-当前为 `v0.1.0-beta.1`。需要已安装并完成认证的 Codex CLI；安装包不包含 CLI、未签名，也暂未提供自动更新。
+当前为 `v0.1.0-beta.2`。点击左上角产品名可在「关于」查看应用版本、源码提交号和构建状态。需要已安装并完成认证的 Codex CLI；安装包不包含 CLI、未签名，也暂未提供自动更新。
 
 ## 界面预览
 
@@ -42,7 +42,7 @@ ThreadPath 不替代 Codex 官方客户端，而是它的本地历史管理伴�
 
 ## 获取与运行
 
-从 [GitHub Releases](https://github.com/hufangyuan460-blip/threadpath-for-codex/releases/tag/v0.1.0-beta.1) 下载最新 Windows 安装包。首次启动时，应用会自动发现已安装的 Codex CLI；找不到时可手动选择 `codex.exe` 与工作目录。
+从 [GitHub Releases](https://github.com/hufangyuan460-blip/threadpath-for-codex/releases/tag/v0.1.0-beta.2) 下载最新 Windows 安装包。首次启动时，应用会自动发现已安装的 Codex CLI；找不到时可手动选择 `codex.exe` 与工作目录。
 
 开发环境：
 
@@ -62,6 +62,8 @@ pnpm smoke
 
 ## 当前 Beta 功能与后续展望
 
+Beta.2 增加版本识别与发布核对：每个版本都有独立安装包、构建清单和 SHA-256 校验文件。发布前核对源码标签并在实际打包程序上执行固定验收；维护者操作见 [发布流程](docs/release-process.md)。
+
 2026-10-12 更新的 Beta 安装包包含分支讨论闭环：在已结束回合点击「从这里分支」，得到继承至该回合的新对话；通过卡片与连线切换原路线、同级分支和嵌套分支。输入区显示当前续聊对象，各会话草稿与分支关系在重启后恢复。
 
 卡片显示来源会话与源问题，点击来源直接回到分叉回合；分支正文标出继承历史和新增讨论的分界。分叉点位于更早页面时会自动加载，缺失或读取失败会明确提示并允许重试。
@@ -78,7 +80,7 @@ pnpm smoke
 
 ThreadPath is a local companion to the official Codex client, not a replacement. Use the official client for day-to-day coding and approvals; use ThreadPath to synchronize, search, read, and organize Codex history and workspaces.
 
-It connects to the local Codex CLI `app-server`, keeps workspace organization preferences locally, and allows sending only after a working directory and a writable thread have been confirmed. The current `v0.1.0-beta.1` Windows installer requires an installed and authenticated Codex CLI; it does not bundle the CLI, include code signing, or provide auto-updates yet.
+It connects to the local Codex CLI `app-server`, keeps workspace organization preferences locally, and allows sending only after a working directory and a writable thread have been confirmed. The current `v0.1.0-beta.2` Windows installer requires an installed and authenticated Codex CLI; it does not bundle the CLI, include code signing, or provide auto-updates yet. Click the product name at the top left for the app version and source commit. Each release includes a build manifest and SHA-256 checksum file and is verified against its source tag and packaged-app tests.
 
 The stack is Electron, Vite, React, TypeScript, the Codex `app-server` over stdio JSONL/JSON-RPC, `react-virtuoso`, pnpm, NSIS, and GitHub Actions. Near-term work focuses on reliability, complete history synchronization, performance, and accessibility before advanced workspace and conversation views.
 

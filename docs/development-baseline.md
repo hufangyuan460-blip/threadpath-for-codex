@@ -1,8 +1,8 @@
 # 开发基线
 
-基线状态：`BASELINE_PARTIAL`；最后核对：2026-10-12。
+基线状态：`BASELINE_PARTIAL`；最后核对：2026-10-13。
 
-基线范围为根目录工作区配置、`threadpath-protocol` 的共享客户端、桌面端调用边界，以及随后获授权的分支导航、逐会话草稿、偏好写入、锁检查和会话归档。未扫描完整 UI、打包、安全审查或全部历史；不得将本文件作为这些领域的验收结论。适用的用户指令与 `AGENTS.md` 优先，任务专项证据见 [分支协议验证](protocol-fork-verification.md) 和 [分支讨论闭环](branch-conversation.md)。
+基线范围为根目录工作区配置、`threadpath-protocol` 的共享客户端、桌面端调用边界，以及随后获授权的分支导航、逐会话草稿、偏好写入、锁检查、会话归档和构建版本追溯。打包领域仅核对图标、源码标签、安装器内容和校验文件；未扫描完整 UI、安全审查或全部历史。适用的用户指令与 `AGENTS.md` 优先，任务专项证据见 [分支协议验证](protocol-fork-verification.md)、[分支讨论闭环](branch-conversation.md) 和 [发布流程](release-process.md)。
 
 ## 指令与工具链
 
@@ -35,6 +35,9 @@
 | DATA-009 | Codex 归档与本地隐藏分开；已核实筛选能力时由查询补全 archived；成功操作在历史索引确认前不能被迟到扫描撤销，确认后接受外部变更 | `AppServerClient.archiveThread/unarchiveThread`、`CodexHistorySyncService.confirmArchived`；两类列表及并发扫描测试、真实专用会话归档/恢复 | 本机及离线验证 / 高 |
 | UI-003 | 首页工作区入口显示现有 Git 根归组后的目录名称和完整路径；已归档历史可读，恢复后续聊；主进程锁和只读核对先于归档，草稿与分支关系保留 | `main.tsx`、`threads:set-archived`、`WorkspaceService`；目录切换、最小窗口、活动拒绝与重启 E2E | 离线验证 / 高 |
 | BUILD-001 | Windows 图标需同时配置主 EXE 资源编辑、NSIS 图标和 BrowserWindow 运行时资源；仅设置 `win.icon` 而禁用 `signAndEditExecutable` 不足以更新主 EXE | `electron-builder.yml`、electron-builder 26.0.12 的 `winPackager.signApp`；实际 PE 资源与 ICO 对照 | 产物验证 / 高 |
+| BUILD-002 | 应用版本、源码提交和未提交状态在构建时固定，经已有 IPC 提供给「关于」；运行时不依赖 Git；源码归档不能借用上级仓库提交 | `scripts/build-info.ts`、`electron.vite.config.ts`、`app:get-info`；Git 临时仓库 guard 测试和 About E2E | 离线及开发产物验证 / 高 |
+| BUILD-003 | 正式构建必须来自干净源码且 `v<package.version>` 指向 HEAD；打包前后比较元数据，核对 ASAR 和安装器压缩内容；每版生成清单与 SHA-256 | `package-windows.ts`、`release-artifacts.ts`、`verify-release.ts`；缺失/错位标签、未提交文件测试与开发安装器逐字节对照 | 离线及开发产物验证 / 高 |
+| BUILD-004 | 发布工作流从版本标签构建，源码及打包 EXE 测试通过后才上传；远程标签须与产物提交一致，已有 release 不替换；上传先保留草稿再核对大小与摘要 | `.github/workflows/release.yml`、`publish-release.ts`；每个版本的线上验证结果见其工作流与公开清单 | 代码核对 / 高；线上结果按版本核对 |
 
 接口使用 stdio JSONL 的 `method/id/params`，并非 HTTP Controller；不额外引入 HTTP 请求约定。
 
@@ -45,6 +48,8 @@
 - 真实 smoke 观察到 Responses WebSocket 超时重试后回退到 HTTP，随后回合成功；不要把等待网络的时间当作握手失败。
 - `ad92ccd`（延长真实回合等待超时）及当前 smoke 默认值说明真实测试需要容纳工具启动和传输回退；不为加快测试修改用户认证或持久配置。
 - fork 的历史上下文与工作目录中的文件状态独立。产品新增讨论分支使用只读策略，共用源目录；代码隔离与历史文件快照尚未实现或验收。
+- Windows 临时目录可能使用短路径，服务层会规范为实际路径；测试须使用 `realpath` 对齐，不硬编码本地仓库文件夹名称。证据：`workspace-service.test.ts`、`workspace-archive.e2e.ts` 及 Quality 工作流。
+- Beta.1 曾更新同名安装包，与旧版本标签的源码不能视为严格对应；Beta.2 起按独立版本标签发布，保留旧发布而不移动标签。不同机器的 NSIS 安装器可能因构建时间而产生不同字节，以该版公开构建清单为准。
 
 ## 验证记录与待确认事项
 
@@ -65,6 +70,8 @@
 
 本文件的持久基线状态保持部分就绪，因为完整桌面 UI、打包和跨版本兼容不在扫描范围。全局机制变化后应重新核对对应编号，而非覆盖无关规则。
 
+2026-10-13 增量验证：类型检查、全部离线测试、原有桌面 E2E 和最终 About 增量测试通过；Beta.2 开发包通过五组实际打包程序 E2E，应用与安装器的 7 种图标资源均匹配。开发包明确记录未提交状态；正式干净标签的线上结果由 Release 工作流与公开构建清单提供，不把开发包当作正式发布结果。
+
 ## 变更记录
 
 - 2026-10-12：首次建立受范围限制的基线，记录普通 fork 会话身份差异、真实运行环境约束与最终验证结果。
@@ -76,3 +83,5 @@
 - 2026-10-12：补记 Codex 归档/恢复与列表筛选补全，核对迟到扫描、只读活动检查、目录标签及实际打包程序验收；详见 [工作区与归档验收](workspace-archive.md)。
 
 - 2026-10-12：发布前整合远程初始化和 CLI 自动发现，适配弹窗重试 E2E；复验全部静态/离线/桌面检查及最终安装器，按中英文 Conventional Commits 分层提交。
+
+- 2026-10-13：扩展版本与发布基线，记录冻结构建信息、干净标签检查、安装器内容对照、实际打包程序验收和独立发布约束；保留首次线上工作流验证边界。
