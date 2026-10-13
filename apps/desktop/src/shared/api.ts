@@ -1,10 +1,11 @@
+import type { BuildInfo } from "./build-info";
+
 export type ConnectionState = "idle" | "connecting" | "ready" | "error" | "stopped";
 export type AppRunMode = "setup" | "history" | "workspace";
 export type Language = "zh-CN" | "en-US";
 export type Theme = "graphite" | "black" | "light";
 
-export interface AppInfo {
-  readonly version: string;
+export interface AppInfo extends BuildInfo {
   readonly language: Language;
   readonly theme: Theme;
 }

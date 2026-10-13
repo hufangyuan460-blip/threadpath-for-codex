@@ -14,6 +14,7 @@ import { formatElapsedTime, type TurnTiming } from "./turn-timing.ts";
 import { searchHistory, type HistorySearchResult } from "../shared/history-search";
 import type { ThreadBranch } from "../shared/api";
 import { BranchMap } from "./branch-map";
+import { About } from "./about";
 import { inheritedTurnIds, locateBranchPoint, type BranchPointTarget } from "./branch-navigation";
 
 type LoadState = "idle" | "loading" | "ready" | "empty" | "error";
@@ -331,6 +332,7 @@ function RenameModal({ name, onChange, onCancel, onSave, m }: { name: string; on
 
 function App(): React.JSX.Element {
   const [appInfo, setAppInfo] = useState<AppInfo | undefined>();
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [language, setLanguage] = useState<Language>("en-US");
   const [theme, setTheme] = useState<Theme>("graphite");
   const [onboardingState, setOnboardingState] = useState<OnboardingSnapshot>({ state: "detecting" });
@@ -1098,7 +1100,7 @@ function App(): React.JSX.Element {
   return (
     <main className="shell">
       <header className="topbar">
-        <div><h1>ThreadPath for Codex</h1></div>
+        <div><h1><button className="about-button" type="button" onClick={() => setAboutOpen(true)} disabled={appInfo === undefined} aria-label={m.about} title={m.about}>ThreadPath for Codex</button></h1></div>
         <div className="topbar-actions"><div className="status" aria-label={m.connectionStatus}><span className={`status-dot status-${connectionState.state}`} />{m.connectionState(connectionState.state)}{connectionState.serverVersion === undefined ? null : <span className="status-meta">{m.server} {connectionState.serverVersion}</span>}</div><select className="theme-switch" value={theme} onChange={(event) => void handleThemeChange(event.target.value as Theme)} aria-label={m.theme}><option value="graphite">{m.themeGraphite}</option><option value="black">{m.themeBlack}</option><option value="light">{m.themeLight}</option></select><button className="language-switch" type="button" onClick={() => void handleLanguageChange()} aria-label={m.language}>{language === "zh-CN" ? "EN" : "中文"}</button></div>
       </header>
       <section className="workspace" aria-label={m.workspace}>
@@ -1141,6 +1143,7 @@ function App(): React.JSX.Element {
         </section>
       </section>
       <Onboarding snapshot={onboardingState} onRediscover={() => void handleRediscover()} onChooseExecutable={() => void handleChooseExecutable()} onChooseDirectory={() => void handleChooseDirectory()} onConnect={() => void handleOnboardingConnect()} m={m} />
+      {aboutOpen && appInfo !== undefined ? <About info={appInfo} m={m} onClose={() => setAboutOpen(false)} /> : null}
       {editingThreadId === undefined ? null : <RenameModal name={editingThreadName} onChange={setEditingThreadName} onCancel={() => setEditingThreadId(undefined)} onSave={() => void saveThreadName(editingThreadId, editingThreadName)} m={m} />}
       <footer className={`footer${connectionState.state === "error" || connectionState.state === "stopped" || connectionState.error !== undefined ? " visible" : ""}`}><span>{appInfo === undefined ? "ThreadPath" : `ThreadPath ${appInfo.version}`}</span>{connectionState.state === "error" || connectionState.state === "stopped" ? <button type="button" onClick={() => void handleReconnect()} disabled={reconnecting}>{reconnecting ? m.reconnecting : m.reconnect}</button> : null}{connectionState.error === undefined ? null : <span className="footer-error">{connectionState.error}</span>}</footer>
     </main>

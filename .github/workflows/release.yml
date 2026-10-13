@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Check out the exact release tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check the selected version tag
+        shell: pwsh
+        run: |
+          $releaseVersion = (Get-Content apps/desktop/package.json -Raw | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_NAME -ne "v$releaseVersion") { throw 'Select the exact version tag for release' }
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Install dependencies
+        shell: pwsh
+        run: pnpm.cmd install --frozen-lockfile
+      - name: Typecheck
+        shell: pwsh
+        run: pnpm.cmd typecheck
+      - name: Test fixtures and release guards
+        shell: pwsh
+        run: pnpm.cmd test
+      - name: Test the desktop app
+        shell: pwsh
+        run: pnpm.cmd test:e2e
+      - name: Build and verify the release installer
+        shell: pwsh
+        run: pnpm.cmd --filter @threadpath/desktop package:release
+      - name: Test the actual packaged executable
+        shell: pwsh
+        run: |
+          $env:THREADPATH_PACKAGED_EXE = Join-Path $env:GITHUB_WORKSPACE 'release/win-unpacked/ThreadPath for Codex.exe'
+          pnpm.cmd --filter @threadpath/desktop test:packaged
+      - name: Publish a new release after all checks pass
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node --experimental-strip-types apps/desktop/scripts/publish-release.ts
+      - name: Keep build and test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ github.ref_name }}
+          path: |
+            artifacts/e2e/*.png
+            artifacts/e2e/*.json
+            apps/desktop/out/**
+            release/*.exe
+            release/*.json
+            release/*SHA256SUMS.txt
+          if-no-files-found: ignore

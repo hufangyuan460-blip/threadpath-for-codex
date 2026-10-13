@@ -3,6 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CodexProcessManager, type ConnectionStateSnapshot as ManagerConnectionState } from "./codex-process-manager";
+import { buildInfo } from "./build-info";
 import { CodexDiscoveryService, selectedDialogPath, type CodexDiscoveryResult } from "./codex-discovery";
 import { ThreadService } from "./thread-service";
 import { ConversationService } from "./conversation-service";
@@ -199,7 +200,7 @@ async function getWorkspaceState() {
 }
 
 function registerApi(): void {
-  ipcMain.handle("app:get-info", (): AppInfo => ({ version: app.getVersion(), language: preferencesService.getLanguage(), theme: preferencesService.getTheme() }));
+  ipcMain.handle("app:get-info", (): AppInfo => ({ ...buildInfo, language: preferencesService.getLanguage(), theme: preferencesService.getTheme() }));
   ipcMain.handle("app:set-language", async (_event, language: unknown): Promise<Language> => {
     if (language !== "zh-CN" && language !== "en-US") throw new ProcessError("language must be zh-CN or en-US");
     return preferencesService.setLanguage(language);
