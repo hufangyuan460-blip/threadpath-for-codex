@@ -117,8 +117,20 @@ async function runCompletedPath(): Promise<void> {
     await page.locator("[data-turn-id]").first().waitFor({ state: "visible" });
     const renderedCount = await page.locator("[data-turn-id]").count();
     assert.ok(renderedCount > 0 && renderedCount < 24, `expected virtualized DOM, got ${renderedCount} turn nodes`);
-    await page.getByRole("button", { name: "Go to turn 1: User turn 1", exact: true }).click();
+    assert.equal(await page.locator('.outline-entry[data-outline-role="user"]').count(), 24);
+    assert.equal(await page.locator('.outline-entry[data-outline-role="assistant"]').count(), 24);
+    await page.getByRole("button", { name: "Go to turn 1: User input: User turn 1", exact: true }).click();
     await page.locator('[data-turn-id="e2e-turn-1"] .markdown-message h1').waitFor({ state: "visible" });
+    await page.locator('.outline-entry[data-outline-role="assistant"]').filter({ hasText: "Assistant reply 16" }).click();
+    await page.waitForFunction(() => {
+      const message = document.querySelector('[data-turn-id="e2e-turn-16"] .role-assistant');
+      const list = document.querySelector('.turn-virtual-list');
+      if (message === null || list === null) return false;
+      const rect = message.getBoundingClientRect();
+      const viewport = list.getBoundingClientRect();
+      return rect.top >= viewport.top - 2 && rect.top < viewport.bottom;
+    });
+    assert.equal(await page.locator('.outline-entry.active').getAttribute('data-outline-role'), 'assistant');
 
     await page.locator('.outline-entry').filter({ hasText: "User turn 16" }).click();
     await page.locator('[data-turn-id="e2e-turn-16"]').waitFor({ state: "visible" });
@@ -133,13 +145,25 @@ async function runCompletedPath(): Promise<void> {
     await search.press("Enter");
     await page.locator('[data-turn-id="e2e-turn-12"]').waitFor({ state: "visible" });
 
-    await page.locator("#turn-input").fill("E2E message");
+    await page.locator("#turn-input").fill(`E2E message\n${"Long user input before the model reply.\n".repeat(120)}`);
     await page.locator(".turn-composer button[type=submit]").click();
     const liveTurn = page.locator('[data-turn-id="e2e-live-turn"]');
     await liveTurn.waitFor({ state: "visible" });
     await liveTurn.getByText("streamed fake reply").waitFor({ state: "visible" });
     await liveTurn.locator(".markdown-message strong").getByText("streamed fake reply", { exact: true }).waitFor({ state: "visible" });
     await liveTurn.getByText("completed", { exact: true }).waitFor({ state: "visible" });
+    const replyEntry = page.locator('.outline-entry[data-outline-role="assistant"]').filter({ hasText: "streamed fake reply" });
+    await replyEntry.waitFor();
+    await page.getByRole("button", { name: "Go to turn 1: User input: User turn 1", exact: true }).click();
+    await replyEntry.click();
+    await page.waitForFunction(() => {
+      const message = document.querySelector('[data-turn-id="e2e-live-turn"] .role-assistant');
+      const list = document.querySelector('.turn-virtual-list');
+      if (message === null || list === null) return false;
+      const rect = message.getBoundingClientRect();
+      const viewport = list.getBoundingClientRect();
+      return rect.top >= viewport.top - 2 && rect.top < viewport.bottom;
+    });
 
     const threadActionsButton = page.getByRole("button", { name: /Thread actions:/ }).first();
     await threadActionsButton.click();
@@ -174,6 +198,9 @@ async function runCompletedPath(): Promise<void> {
     await page.locator("#turn-input").fill("keep input while switching language");
     await page.getByRole("button", { name: "Switch language" }).click();
     await page.getByRole("button", { name: "返回会话历史" }).waitFor({ state: "visible" });
+    await page.locator('.outline-role').getByText('用户输入', { exact: true }).first().waitFor();
+    await page.locator('.outline-role').getByText('模型回复', { exact: true }).first().waitFor();
+    await page.screenshot({ path: join(artifactDirectory, "message-outline-zh.png") });
     assert.equal(await page.locator("#turn-input").inputValue(), "keep input while switching language");
   });
 }

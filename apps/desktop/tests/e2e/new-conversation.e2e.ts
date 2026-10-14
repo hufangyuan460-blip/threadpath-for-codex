@@ -32,7 +32,7 @@ async function main(): Promise<void> {
     const listBounds = await page.locator(".turn-virtual-list").boundingBox();
     assert.ok(bounds !== null && listBounds !== null && bounds.y < listBounds.y + listBounds.height && bounds.y + bounds.height > listBounds.y, "the user's first message must be in the visible conversation area");
     await page.screenshot({ path: join(artifacts, "new-conversation-first-message.png"), fullPage: true });
-    await page.getByText("Reply in the newly created conversation.", { exact: true }).waitFor();
+    await page.locator(".role-assistant").getByText("Reply in the newly created conversation.", { exact: true }).waitFor();
     await page.waitForTimeout(600);
     assert.equal(await page.locator(".conversation-heading").count(), 1, "the empty history snapshot must not clear selection");
     assert.equal(await firstUser.count(), 1, "model completion must not remove the user's bubble");

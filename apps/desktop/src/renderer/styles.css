@@ -171,6 +171,9 @@ h1 { margin-bottom: 0; overflow: hidden; font-size: 13px; line-height: 1; letter
 .outline-copy { display: grid; min-width: 0; gap: 4px; }
 .outline-copy strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .outline-copy small { overflow: hidden; color: #718095; text-overflow: ellipsis; white-space: nowrap; }
+.outline-role { font-weight: 700; }
+.outline-assistant .outline-index { border-radius: 50%; }
+.outline-assistant .outline-copy { border-left: 2px solid var(--tp-border-strong); padding-left: 7px; }
 .conversation { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; }
 .turn-virtual-list { height: auto !important; min-height: 0; flex: 1; }
 .pagination-controls { display: grid; justify-items: start; gap: 4px; margin-bottom: 4px; }
