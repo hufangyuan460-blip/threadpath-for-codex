@@ -116,6 +116,8 @@ export interface ConfiguredWorkspace {
 
 export interface WorkspaceState {
   readonly currentPath?: string;
+  /** App-managed working directory for conversations outside project workspaces. */
+  readonly standalonePath?: string;
   readonly directories: readonly WorkingDirectoryView[];
   readonly unclassifiedThreads: readonly ThreadListItem[];
   readonly configuredWorkspaces: readonly ConfiguredWorkspace[];
@@ -244,7 +246,7 @@ export interface DesktopApi {
   readonly getWorkspaceState: () => Promise<WorkspaceState>;
   readonly onWorkspaceStateChanged: (listener: (state: WorkspaceState) => void) => () => void;
   readonly chooseWorkspaceDirectory: () => Promise<WorkspaceState>;
-  readonly setCurrentWorkspace: (path: string) => Promise<WorkspaceState>;
+  readonly setCurrentWorkspace: (path: string | null) => Promise<WorkspaceState>;
   readonly toggleWorkspace: (path: string) => Promise<WorkspaceState>;
   readonly setWorkspaceHidden: (path: string, hidden: boolean) => Promise<WorkspaceState>;
   readonly setWorkspaceFavorite: (path: string, favorite: boolean) => Promise<WorkspaceState>;
@@ -260,7 +262,7 @@ export interface DesktopApi {
   readonly searchTurns: (threadId: string, query: string) => Promise<SearchResult[]>;
   readonly startTurn: (threadId: string, text: string, options?: ComposerOptions) => Promise<StartTurnResult>;
   readonly interruptTurn: (threadId: string) => Promise<void>;
-  readonly startNewConversation: (workspacePath: string, text: string, options?: ComposerOptions) => Promise<StartNewConversationResult>;
+  readonly startNewConversation: (workspacePath: string | null, text: string, options?: ComposerOptions) => Promise<StartNewConversationResult>;
   readonly listBranches: () => Promise<readonly ThreadBranch[]>;
   readonly forkConversation: (threadId: string, turnId: string) => Promise<ForkConversationResult>;
   readonly getThreadDraft: (threadId: string) => Promise<string>;

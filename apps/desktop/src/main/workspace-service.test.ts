@@ -45,6 +45,24 @@ async function main(): Promise<void> {
   await service.toggle(first);
   assert.equal((await service.getState(threads)).directories[0]?.expanded, false);
   assert.equal(workspaceDisplayName(`${first}\\`), "threadPath");
+  const standalone = join(root, "standalone-runtime");
+  await mkdir(standalone);
+  const standaloneService = new WorkspaceService({ preferences, standaloneDirectory: standalone, identityResolver: service.identityResolver });
+  await standaloneService.setCurrent(null);
+  assert.equal(await standaloneService.resolveSelection(standalone), standalone);
+  await standaloneService.associateThread("thread-b", standalone);
+  const standaloneState = await standaloneService.getState(threads);
+  assert.equal(standaloneState.currentPath, standalone);
+  assert.equal(standaloneState.standalonePath, standalone);
+  assert.equal(standaloneState.directories.some((directory) => directory.path === standalone), false);
+  assert.equal(standaloneState.configuredWorkspaces.some((workspace) => workspace.primaryDirectory === standalone), false);
+  assert.deepEqual(standaloneState.unclassifiedThreads.map((thread) => thread.id), ["thread-b"]);
+  const restoredPreferences = new UserPreferencesService(join(root, "preferences.json"), "en-US");
+  await restoredPreferences.load();
+  const restoredService = new WorkspaceService({ preferences: restoredPreferences, standaloneDirectory: standalone });
+  assert.equal((await restoredService.getState(threads)).currentPath, standalone);
+  await restoredService.setCurrent(first);
+  assert.equal((await restoredService.getState(threads)).currentPath, first);
   console.log("[desktop-test] workspace service checks passed");
 }
 

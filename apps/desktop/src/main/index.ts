@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu } from "electron";
-import { mkdir } from "node:fs/promises";
+import { mkdir, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CodexProcessManager, type ConnectionStateSnapshot as ManagerConnectionState } from "./codex-process-manager";
@@ -30,6 +30,7 @@ let historySyncService: CodexHistorySyncService;
 let workspaceLockService: WorkspaceLockService;
 let appRunMode: AppRunMode = "setup";
 let historyRuntimeDirectory: string;
+let standaloneDirectory: string;
 
 function publicConnectionState(snapshot: ManagerConnectionState): ConnectionStateSnapshot {
   return {
@@ -67,6 +68,7 @@ function publicDiscoveryResult(result: CodexDiscoveryResult, state: OnboardingSn
 }
 
 async function applyDiscoveryResult(result: CodexDiscoveryResult): Promise<OnboardingSnapshot> {
+  if (preferencesService.getCurrentWorkingDirectory() === standaloneDirectory) result = { ...result, cwd: standaloneDirectory };
   const cwd = result.cwd ?? historyRuntimeDirectory;
   await mkdir(cwd, { recursive: true });
   processManager.configure({ cwd, executable: result.executablePath });
@@ -144,6 +146,7 @@ async function chooseWorkingDirectory(): Promise<OnboardingSnapshot> {
   if (selectedPath === undefined) return onboardingSnapshot;
   try {
     const cwd = await discoveryService.selectWorkingDirectory(selectedPath);
+    await workspaceService.setCurrent(cwd);
     const executablePath = onboardingSnapshot.executablePath;
     if (executablePath === undefined) throw new ProcessError("Choose a Codex CLI before selecting a working directory");
     return await applyDiscoveryResult({ executablePath, version: onboardingSnapshot.version ?? "unknown", source: onboardingSnapshot.source ?? "manual", cwd });
@@ -247,8 +250,8 @@ function registerApi(): void {
   });
   ipcMain.handle("workspace:get-state", async () => getWorkspaceState());
   ipcMain.handle("workspace:set-current", async (_event, path: unknown) => {
-    const validPath = await validateWorkspacePath(path, workspaceService.identityResolver);
-    await workspaceService.setCurrent(validPath);
+    const validPath = await workspaceService.resolveSelection(path);
+    await workspaceService.setCurrent(path);
     if (appRunMode === "history") await activateWorkspace(validPath);
     return getWorkspaceState();
   });
@@ -358,7 +361,7 @@ function registerApi(): void {
     if (historySyncService.getCurrentResult().threads.find((thread) => thread.id === sourceId)?.archived) throw new ProcessError("Restore the archived conversation before branching");
     const cutoffId = validateThreadId(turnId);
     const source = await reconcileThread(sourceId);
-    const path = await validateWorkspacePath(source.workspacePath, workspaceService.identityResolver);
+    const path = await workspaceService.resolveSelection(source.workspacePath);
     const key = (await workspaceService.identityResolver.resolve(path))?.key;
     if (key === undefined) throw new ProcessError("Workspace state is unknown; refresh before branching");
     workspaceLockService.acquire(sourceId, key);
@@ -409,8 +412,8 @@ function registerApi(): void {
   }));
   ipcMain.handle("conversation:start-new", async (_event, workspacePath: unknown, text: unknown, options: unknown) => withReadyConnection(async () => {
     if (appRunMode !== "workspace") throw new ProcessError("Confirm a working directory before sending.");
-    const path = await validateWorkspacePath(workspacePath, workspaceService.identityResolver);
-    await workspaceService.setCurrent(path);
+    const path = await workspaceService.resolveSelection(workspacePath);
+    await workspaceService.setCurrent(workspacePath);
     const workspaceKey = (await workspaceService.identityResolver.resolve(path))?.key;
     if (workspaceKey === undefined) throw new ProcessError("Workspace state is unknown; refresh before sending.");
     const reservationId = `new-conversation:${workspaceKey}`;
@@ -500,6 +503,9 @@ function createWindow(): void {
 app.whenReady().then(async () => {
   if (process.platform !== "darwin") Menu.setApplicationMenu(null);
   historyRuntimeDirectory = join(app.getPath("userData"), "history-runtime");
+  const standalonePath = join(app.getPath("userData"), "standalone-runtime");
+  await mkdir(standalonePath, { recursive: true });
+  standaloneDirectory = await realpath(standalonePath);
   discoveryService = new CodexDiscoveryService({
     configPath: join(app.getPath("userData"), "threadpath-config.json"),
     env: process.env,
@@ -513,7 +519,7 @@ app.whenReady().then(async () => {
   const locale = process.env.THREADPATH_E2E_LANGUAGE ?? app.getLocale();
   preferencesService = new UserPreferencesService(join(app.getPath("userData"), "threadpath-ui.json"), locale.toLowerCase().startsWith("zh") ? "zh-CN" : "en-US");
   await preferencesService.load();
-  workspaceService = new WorkspaceService({ preferences: preferencesService });
+  workspaceService = new WorkspaceService({ preferences: preferencesService, standaloneDirectory });
   workspaceService.identityResolver.onResolved(() => {
     void getWorkspaceState().then((state) => {
       for (const window of BrowserWindow.getAllWindows()) window.webContents.send("workspace:state-changed", state);

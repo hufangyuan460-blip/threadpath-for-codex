@@ -7,15 +7,18 @@ import type { HistorySyncSnapshot } from "../shared/api";
 export interface WorkspaceServiceOptions {
   readonly preferences: UserPreferencesService;
   readonly identityResolver?: WorkspaceIdentityResolver;
+  readonly standaloneDirectory?: string;
 }
 
 export class WorkspaceService {
   private readonly preferences: UserPreferencesService;
   readonly identityResolver: WorkspaceIdentityResolver;
+  private readonly standaloneDirectory: string | undefined;
 
   constructor(options: WorkspaceServiceOptions) {
     this.preferences = options.preferences;
     this.identityResolver = options.identityResolver ?? new WorkspaceIdentityResolver();
+    this.standaloneDirectory = options.standaloneDirectory;
   }
 
   async getState(threads: readonly ThreadListItem[], sync: HistorySyncSnapshot = { state: "idle", threadCount: threads.length, missingThreadIds: [] }): Promise<WorkspaceState> {
@@ -25,9 +28,9 @@ export class WorkspaceService {
       const path = rawPath === undefined ? undefined : this.cachedRoot(rawPath);
       if (path !== undefined) directorySet.add(path);
     }
-    const directories = [...directorySet];
+    const directories = [...directorySet].filter((path) => path !== this.standaloneDirectory);
     const userDirectories = new Set(this.preferences.getWorkingDirectories());
-    const configured = new Map(this.preferences.getConfiguredWorkspaces().map((workspace) => [workspace.primaryDirectory, workspace]));
+    const configured = new Map(this.preferences.getConfiguredWorkspaces().filter((workspace) => workspace.primaryDirectory !== this.standaloneDirectory).map((workspace) => [workspace.primaryDirectory, workspace]));
     for (const path of directories) {
       if (configured.has(path)) continue;
       configured.set(path, {
@@ -45,12 +48,13 @@ export class WorkspaceService {
       const path = rawPath === undefined ? undefined : this.cachedRoot(rawPath);
       const target = path === undefined ? undefined : grouped.get(path);
       const view = { ...thread, ...(this.preferences.isThreadHidden(thread.id) ? { hidden: true } : {}), ...(this.preferences.isThreadFavorite(thread.id) ? { favorite: true } : {}) };
-      if (target === undefined) unclassifiedThreads.push(view);
+      if (target === undefined) unclassifiedThreads.push(path === this.standaloneDirectory && path !== undefined ? { ...view, workspacePath: path } : view);
       else target.push({ ...view, workspacePath: path });
     }
     const currentPath = this.cachedRoot(this.preferences.getCurrentWorkingDirectory() ?? "");
     return {
       ...(currentPath === undefined ? {} : { currentPath }),
+      ...(this.standaloneDirectory === undefined ? {} : { standalonePath: this.standaloneDirectory }),
       directories: directories.map((path) => ({ path, name: workspaceDisplayName(path), expanded: this.preferences.getWorkspaceExpanded(path), ...(this.preferences.isWorkspaceHidden(path) ? { hidden: true } : {}), ...(this.preferences.isWorkspaceFavorite(path) ? { favorite: true } : {}), threads: grouped.get(path) ?? [] })),
       unclassifiedThreads,
       configuredWorkspaces: [...configured.values()] as readonly ConfiguredWorkspace[],
@@ -64,8 +68,17 @@ export class WorkspaceService {
   }
 
   async setCurrent(path: unknown): Promise<void> {
-    const validPath = await validateWorkspacePath(path, this.identityResolver);
+    const validPath = await this.resolveSelection(path);
     await this.preferences.setCurrentWorkingDirectory(validPath);
+  }
+
+  async resolveSelection(path: unknown): Promise<string> {
+    if (path === null) {
+      if (this.standaloneDirectory === undefined) throw new ConfigurationError("Standalone working directory is unavailable");
+      return this.standaloneDirectory;
+    }
+    if (this.standaloneDirectory !== undefined && typeof path === "string" && this.isStandalone(path)) return this.standaloneDirectory;
+    return validateWorkspacePath(path, this.identityResolver);
   }
 
   async toggle(path: unknown): Promise<void> {
@@ -86,15 +99,20 @@ export class WorkspaceService {
       await this.preferences.setThreadWorkingDirectory(threadId, undefined);
       return;
     }
-    const validPath = await validateWorkspacePath(path, this.identityResolver);
+    const validPath = await this.resolveSelection(path);
     await this.preferences.setThreadWorkingDirectory(threadId, validPath);
   }
   private cachedRoot(path: string): string | undefined {
+    if (this.isStandalone(path)) return this.standaloneDirectory;
     const identity = this.identityResolver.getCached(path);
     if (identity !== undefined) return identity.root;
     const key = preliminaryWorkspaceKey(path);
     if (key !== undefined) void this.identityResolver.resolve(path);
     return undefined;
+  }
+
+  private isStandalone(path: string): boolean {
+    return this.standaloneDirectory !== undefined && preliminaryWorkspaceKey(path) === preliminaryWorkspaceKey(this.standaloneDirectory);
   }
 }
 

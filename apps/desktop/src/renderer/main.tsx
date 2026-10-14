@@ -404,7 +404,8 @@ function App(): React.JSX.Element {
   };
   const selectedListThread = selectedThreadId === undefined ? undefined : threads.find((thread) => thread.id === selectedThreadId);
   const currentWorkspacePath = selectedThreadId === undefined ? workspaceState?.currentPath : selectedListThread?.workspacePath;
-  const currentWorkspaceName = workspaceState?.directories.find((directory) => directory.path === currentWorkspacePath)?.name ?? currentWorkspacePath?.replace(/[\\/]+$/, "").split(/[\\/]/).at(-1) ?? currentWorkspacePath;
+  const outsideWorkspace = currentWorkspacePath !== undefined && currentWorkspacePath === workspaceState?.standalonePath;
+  const currentWorkspaceName = outsideWorkspace ? m.workOutsideWorkspace : workspaceState?.directories.find((directory) => directory.path === currentWorkspacePath)?.name ?? currentWorkspacePath?.replace(/[\\/]+$/, "").split(/[\\/]/).at(-1) ?? currentWorkspacePath;
   const selectedArchived = selectedListThread?.archived === true;
   const selectedThreadWorkspacePath = selectedThreadId === undefined ? undefined : selectedListThread?.workspacePath;
   const historyMode = connectionState.mode === "history";
@@ -598,12 +599,12 @@ function App(): React.JSX.Element {
     finally { setWorkspaceMenuOpen(false); }
   };
 
-  const handleSetCurrentWorkspace = async (path: string): Promise<void> => {
+  const handleSetCurrentWorkspace = async (path: string | null): Promise<void> => {
     try {
       if (selectedThreadId !== undefined && selectedThreadWorkspacePath === undefined) {
         const nextState = await window.threadPath.associateThreadWorkspace(selectedThreadId, path);
         setWorkspaceState(nextState);
-        setThreads((current) => current.map((thread) => thread.id === selectedThreadId ? { ...thread, workspacePath: path } : thread));
+        setThreads((current) => current.map((thread) => thread.id === selectedThreadId ? { ...thread, workspacePath: path ?? undefined } : thread));
       } else setWorkspaceState(await window.threadPath.setCurrentWorkspace(path));
     }
     catch (error: unknown) { setNewSendError(errorMessage(error)); }
@@ -928,7 +929,7 @@ function App(): React.JSX.Element {
       setNewSendError(undefined);
       setStartingTurn(true);
       try {
-        const result = await window.threadPath.startNewConversation(currentWorkspacePath, text, composerOptions);
+        const result = await window.threadPath.startNewConversation(outsideWorkspace ? null : currentWorkspacePath, text, composerOptions);
         setNewDraft("");
         setNewSendError(undefined);
         setSelectedThreadId(result.threadId);
@@ -1123,7 +1124,7 @@ function App(): React.JSX.Element {
           <form className="turn-composer" onSubmit={(event) => { event.preventDefault(); void handleStartTurn(); }}>
               {selectedThreadId === undefined ? null : <div className="composer-route" aria-live="polite">{selectedArchived ? <><small>{m.archivedReadOnly}</small><button type="button" disabled={turnIsRunning} onClick={() => void handleSetThreadArchived(selectedThreadId, false)}>{m.restoreConversation}</button></> : null}<span>{m.continuingIn(selectedListThread?.title ?? (selectedThread?.id === selectedThreadId ? selectedThread.title : m.loadingConversation))}</span>{branches.some((branch) => branch.threadId === selectedThreadId) ? <small>{m.readOnlyDiscussion} · {m.sharedDirectory}</small> : null}</div>}
               <div className="composer-input">
-                {workspaceMenuOpen ? <div className="workspace-menu" role="menu"><strong>{m.workspace}</strong>{workspaceState?.directories.map((directory) => <button key={directory.path} type="button" role="menuitem" className={directory.path === currentWorkspacePath ? "selected" : ""} onClick={() => void handleSetCurrentWorkspace(directory.path)} title={directory.path}>📁 {directory.name}</button>)}<button type="button" role="menuitem" onClick={() => void handleChooseWorkspaceForComposer()}>＋ {m.addWorkspace}</button></div> : null}
+                {workspaceMenuOpen ? <div className="workspace-menu" role="menu"><strong>{m.workspace}</strong>{selectedThreadId === undefined ? <button type="button" role="menuitem" className={outsideWorkspace ? "selected" : ""} onClick={() => void handleSetCurrentWorkspace(null)}>{m.workOutsideWorkspace}</button> : null}{workspaceState?.directories.map((directory) => <button key={directory.path} type="button" role="menuitem" className={directory.path === currentWorkspacePath ? "selected" : ""} onClick={() => void handleSetCurrentWorkspace(directory.path)} title={directory.path}>📁 {directory.name}</button>)}<button type="button" role="menuitem" onClick={() => void handleChooseWorkspaceForComposer()}>＋ {m.addWorkspace}</button></div> : null}
                 <div className="composer-toolbar">
                   <div className="composer-options">
                     <label title={selectedModel?.displayName ?? (modelOptions.length === 0 ? m.modelUnavailable : m.model)}><span className="sr-only">{m.model}</span><select id="composer-model" value={modelSelection} onChange={(event) => { const nextModel = modelOptions.find((model) => model.id === event.target.value); setModelSelection(event.target.value); setReasoningSelection(preferredReasoningEffort(nextModel)); }} disabled={modelOptions.length === 0 || turnIsRunning} aria-label={m.model}>{modelOptions.map((model) => <option key={model.id} value={model.id}>{model.displayName}</option>)}</select></label>
@@ -1133,7 +1134,7 @@ function App(): React.JSX.Element {
                   <button className="composer-send" type={canInterruptLocalTurn ? "button" : "submit"} onClick={canInterruptLocalTurn ? () => void handleInterruptTurn() : undefined} aria-label={canInterruptLocalTurn ? m.stopTurn : turnIsRunning ? m.pauseUnavailable : selectedArchived ? m.archivedReadOnly : historyMode ? m.confirmWorkspaceToSend : newConversationWorkspaceRequired ? m.chooseWorkspace : inputUnavailable ? m.inputUnavailable : m.send} title={canInterruptLocalTurn ? m.stopTurn : turnIsRunning ? m.pauseUnavailable : selectedArchived ? m.archivedReadOnly : historyMode ? m.confirmWorkspaceToSend : newConversationWorkspaceRequired ? m.chooseWorkspace : inputUnavailable ? m.inputUnavailable : m.send} disabled={canInterruptLocalTurn ? interruptingThreadId !== undefined : connectionState.state !== "ready" || inputText.trim() === "" || turnIsRunning || inputUnavailable}><span aria-hidden="true">{turnIsRunning ? "Ⅱ" : "➤"}</span><span className="sr-only">{canInterruptLocalTurn ? m.stopTurn : turnIsRunning ? m.pauseUnavailable : selectedArchived ? m.archivedReadOnly : historyMode ? m.confirmWorkspaceToSend : inputUnavailable ? m.inputUnavailable : m.send}</span></button>
                 </div>
                 <div className="composer-textarea-row">
-                  {showWorkspacePicker ? <button className="composer-workspace-picker" type="button" onClick={() => setWorkspaceMenuOpen((open) => !open)} aria-label={currentWorkspacePath === undefined ? m.addWorkspace : `${m.workingDirectory}: ${currentWorkspacePath}`} aria-expanded={workspaceMenuOpen} aria-haspopup="menu" title={currentWorkspacePath ?? m.chooseWorkspace}><span aria-hidden="true">{currentWorkspacePath === undefined ? "＋" : "📁"}</span>{currentWorkspacePath === undefined ? null : <span className="composer-workspace-name">{currentWorkspaceName}</span>}</button> : null}
+                  {showWorkspacePicker ? <button className="composer-workspace-picker" type="button" onClick={() => setWorkspaceMenuOpen((open) => !open)} aria-label={outsideWorkspace ? m.workOutsideWorkspace : currentWorkspacePath === undefined ? m.addWorkspace : `${m.workingDirectory}: ${currentWorkspacePath}`} aria-expanded={workspaceMenuOpen} aria-haspopup="menu" title={outsideWorkspace ? m.workOutsideWorkspace : currentWorkspacePath ?? m.chooseWorkspace}><span aria-hidden="true">{outsideWorkspace ? "○" : currentWorkspacePath === undefined ? "＋" : "📁"}</span>{currentWorkspacePath === undefined ? null : <span className="composer-workspace-name">{currentWorkspaceName}</span>}</button> : null}
                   <textarea ref={inputElement} id="turn-input" aria-label={m.sendMessage} value={inputText} onChange={(event) => setInputText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void handleStartTurn(); } }} placeholder={m.inputPlaceholder} rows={1} disabled={connectionState.state !== "ready" || turnIsRunning || inputUnavailable} />
                 </div>
               </div>
