@@ -1,6 +1,6 @@
 # 开发基线
 
-基线状态：`BASELINE_PARTIAL`；最后核对：2026-10-13。
+基线状态：`BASELINE_PARTIAL`；最后核对：2026-10-14。
 
 基线范围为根目录工作区配置、`threadpath-protocol` 的共享客户端、桌面端调用边界，以及随后获授权的分支导航、逐会话草稿、偏好写入、锁检查、会话归档和构建版本追溯。打包领域仅核对图标、源码标签、安装器内容和校验文件；未扫描完整 UI、安全审查或全部历史。适用的用户指令与 `AGENTS.md` 优先，任务专项证据见 [分支协议验证](protocol-fork-verification.md)、[分支讨论闭环](branch-conversation.md) 和 [发布流程](release-process.md)。
 
@@ -30,6 +30,7 @@
 | DATA-006 | 逐会话草稿本地明文保存，上限 100000 字符；偏好写入通过队列和临时文件替换，正常退出等待队列 | `UserPreferencesService.persist/flush`；并发保存及重启 E2E | 离线验证 / 高 |
 | SAFE-001 | 新讨论分支共用实际目录；每次模型续聊前用只读 resume 并检查响应策略，未确认则不发起回合 | `AppServerClient.resumeThread`、`ConversationService.startTurn`；错误策略测试及真实重启续聊 | 本机及离线验证 / 高 |
 | UI-002 | 来源导航按稳定回合 ID 查找，分页完成后同时设置列表初始位置；定位取消须阻止迟到响应应用到新路线；分界未知时不猜测继承区间 | `branch-navigation.ts`、`Conversation`、`branch-points.e2e.ts`；正文视口与只读请求断言 | 离线验证 / 高 |
+| UI-004 | 会话目录从已加载正文按消息顺序派生，以回合 ID 和消息 ID 定位；角色文字区分用户与模型，虚拟列表挂载后对齐消息；搜索和分支摘要继续复用回合级大纲 | `buildMessageOutline`、`ThreadDirectory`、`Conversation.navigate`；目录单元测试、长输入后的回复定位与全部桌面 E2E | 2026-10-14 离线验证 / 高 |
 | DATA-007 | 成功创建的会话 ID 不因历史列表暂缺而取消选择；安全元数据立即进入镜像，显式本地工作目录关联参与遗漏保留，仍标记本次快照缺失 | `conversation:start-new`、`loadThreads`、`getRetainedThreadIds`；空历史列表的新建与重启 E2E | 离线验证 / 高 |
 | DATA-008 | 服务器返回回合 ID 不代表用户正文已可用；本地已接受输入保留至历史包含原输入，服务器消息 ID 与本地占位 ID 不同也必须去重 | `ConversationService.rememberAcceptedInput/preserveAcceptedInput`；完成前后稀疏历史、正文视口与重启 E2E | 离线验证 / 高 |
 | DATA-009 | Codex 归档与本地隐藏分开；已核实筛选能力时由查询补全 archived；成功操作在历史索引确认前不能被迟到扫描撤销，确认后接受外部变更 | `AppServerClient.archiveThread/unarchiveThread`、`CodexHistorySyncService.confirmArchived`；两类列表及并发扫描测试、真实专用会话归档/恢复 | 本机及离线验证 / 高 |
@@ -74,6 +75,14 @@
 2026-10-13 增量验证：类型检查、全部离线测试、原有桌面 E2E 和最终 About 增量测试通过；Beta.2 开发包通过五组实际打包程序 E2E，应用与安装器的 7 种图标资源均匹配。开发包明确记录未提交状态；正式干净标签的线上结果由 Release 工作流与公开构建清单提供，不把开发包当作正式发布结果。
 
 ## 变更记录
+
+- 2026-10-14：将同回合多段模型消息合为一个目录入口，使用最后一条非空模型消息作为摘要与定位，不改正文、不跨回合合并。类型、桌面单元测试及重新打包后的目录/新建验收通过；最新安装包校验值见 [打包记录](message-outline.md)。
+
+- 2026-10-14：重新生成包含独立工作目录及消息目录的本地 Beta.3 开发安装包；六组实际 EXE 验收和消息目录专项通过，安装器内容与 ASAR 一致，应用及安装器 7 种图标一致。保留 `dirty: true`，未覆盖 GitHub 发布；校验值见 [打包记录](message-outline.md)。
+
+- 2026-10-14：会话目录同时显示用户输入与模型回复，复核消息定位、虚拟列表、流式更新及搜索/分支兼容。类型、全部离线测试和桌面 E2E 全部场景通过；两个旧断言改为限定回复正文后续跑剩余场景。详见 [消息目录](message-outline.md)。
+
+- 2026-10-13：首页新增“不在工作区工作”；使用应用独立目录，保留选择且不归入项目工作区。核对新建、重启、语言切换、从历史模式开始以及项目切换，详见 [验收记录](outside-workspace.md)。
 
 - 2026-10-12：首次建立受范围限制的基线，记录普通 fork 会话身份差异、真实运行环境约束与最终验证结果。
 - 2026-10-12：依后续授权扩展桌面分支范围，补记 IPC、工作目录锁、只读确认、偏好写入、草稿和路线恢复机制。
