@@ -1,4 +1,5 @@
 import type { BuildInfo } from "./build-info";
+import type { ThreadObservatoryState } from "./observatory";
 
 export type ConnectionState = "idle" | "connecting" | "ready" | "error" | "stopped";
 export type AppRunMode = "setup" | "history" | "workspace";
@@ -142,6 +143,7 @@ export interface ConversationPagingState {
 }
 
 export type ConversationItemView =
+  | { readonly kind: "compaction"; readonly id: string; readonly status: "started" | "completed" | "unknown" }
   | { readonly kind: "text"; readonly id: string; readonly role: "user" | "assistant" | "system"; readonly text: string; readonly phase: "historical" | "streaming" | "final" }
   | { readonly kind: "tool"; readonly id: string; readonly name: string; readonly status: "running" | "completed" | "failed" | "unknown"; readonly summary?: string }
   | { readonly kind: "status"; readonly id: string; readonly text: string };
@@ -228,6 +230,8 @@ export interface ArchiveConversationResult {
 }
 
 export interface DesktopApi {
+  readonly getThreadObservatory: (threadId: string) => Promise<ThreadObservatoryState>;
+  readonly onObservatoryUpdate: (listener: (state: ThreadObservatoryState) => void) => () => void;
   readonly getAppInfo: () => Promise<AppInfo>;
   readonly setLanguage: (language: Language) => Promise<Language>;
   readonly setTheme: (theme: Theme) => Promise<Theme>;

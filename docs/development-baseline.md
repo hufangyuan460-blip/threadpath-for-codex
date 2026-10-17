@@ -1,6 +1,6 @@
 # 开发基线
 
-基线状态：`BASELINE_PARTIAL`；最后核对：2026-10-14。
+基线状态：`BASELINE_PARTIAL`；最后核对：2026-10-17。
 
 基线范围为根目录工作区配置、`threadpath-protocol` 的共享客户端、桌面端调用边界，以及随后获授权的分支导航、逐会话草稿、偏好写入、锁检查、会话归档和构建版本追溯。打包领域仅核对图标、源码标签、安装器内容和校验文件；未扫描完整 UI、安全审查或全部历史。适用的用户指令与 `AGENTS.md` 优先，任务专项证据见 [分支协议验证](protocol-fork-verification.md)、[分支讨论闭环](branch-conversation.md) 和 [发布流程](release-process.md)。
 
@@ -19,6 +19,7 @@
 | INFRA-001 | 所有协议请求复用 `AppServerClient` 的请求 ID、关联表、JSONL 解析、超时和进程生命周期；业务调用使用类型化方法 | `src/app-server-client.ts`；`src/transport-tests.ts` | 离线验证 / 高 |
 | CFG-001 | 默认启动 `codex app-server --stdio`；通用客户端请求超时为 120 秒；真实 smoke 默认请求和终态超时为 300 秒 | `AppServerClient`、`src/app-server-smoke.ts`；复核 `CODEX_EXECUTABLE`、`CODEX_SMOKE_CWD`、`CODEX_SMOKE_TIMEOUT_MS`，不输出秘密值 | 已核对 / 高 |
 | INFRA-002 | 诊断默认关闭，只记录方法、ID、时间、结果与错误分类；不得添加完整参数、响应、对话或原始认证配置 | `DiagnosticRecord`；`verifyDiagnostics` | 离线验证 / 高 |
+| OBS-001 | Usage 经严格 parser 投影后只存内存，按线程替换绝对快照；resume 确认/取消且不累加，断连 stale，重连等新报告；listener 投递异常逐个隔离；total/last 不代表精确上下文或整回合费用；压缩按 thread/turn/item 去重，纯历史状态未知，重读保留已观察强状态 | `token-usage.ts`、`ObservatoryService`、`ConversationService`、类型化 IPC；2026-10-17 parser/主进程专项回归与桌面 E2E，详见 [观测语义与验收](token-usage-observatory.md) | 离线及桌面验证 / 高 |
 | DATA-001 | `thread/read` 读取历史；`thread/resume` 激活历史线程以便续聊；空线程列表有效 | 客户端和 smoke；`thread-resume.jsonl`；transport tests | 离线及本机 smoke 验证 / 高 |
 | DATA-002 | 只有服务器明确给出能力集合时才做调用前拒绝；缺省集合不能当作完整能力发现。未知方法仍须处理真实 RPC 错误 | `requireCapability`、`supports`；fork/transport tests | 离线验证 / 高 |
 | DATA-003 | 普通 fork 来源使用 `forkedFromId`；协议 `parentThreadId` 是子代理关系；保留 `sessionId`，但不能用其相等推断普通 fork 关系 | 本机生成的 `Thread.ts`；2026-10-12 专用线程实际 fork/read；fork tests | 本机及离线验证 / 高 |
@@ -75,6 +76,10 @@
 2026-10-13 增量验证：类型检查、全部离线测试、原有桌面 E2E 和最终 About 增量测试通过；Beta.2 开发包通过五组实际打包程序 E2E，应用与安装器的 7 种图标资源均匹配。开发包明确记录未提交状态；正式干净标签的线上结果由 Release 工作流与公开构建清单提供，不把开发包当作正式发布结果。
 
 ## 变更记录
+
+- 2026-10-17：局部修复 Observatory 投递隔离、resume 确认/取消和正文重读压缩状态保护；专项回归覆盖三个原始复现、真实分支元数据登记、断连及完整 identity。复用现有 transport、IPC 和内存观测，无新增依赖或持久化。
+
+- 2026-10-15：增量核对 Token Usage 与压缩观测数据流；复用 transport 和 IPC，保留原有 resume/fork 策略。类型、离线测试、全部桌面 E2E、构建与正常本地环境 smoke 通过；受限环境主目录错误和 WebSocket 回退单独记录，不修改无关基线。
 
 - 2026-10-14：将同回合多段模型消息合为一个目录入口，使用最后一条非空模型消息作为摘要与定位，不改正文、不跨回合合并。类型、桌面单元测试及重新打包后的目录/新建验收通过；最新安装包校验值见 [打包记录](message-outline.md)。
 

@@ -14,6 +14,7 @@ import { formatElapsedTime, type TurnTiming } from "./turn-timing.ts";
 import { searchHistory, type HistorySearchResult } from "../shared/history-search";
 import type { ThreadBranch } from "../shared/api";
 import { BranchMap } from "./branch-map";
+import { UsageObservatory } from "./usage-observatory";
 import { About } from "./about";
 import { inheritedTurnIds, locateBranchPoint, type BranchPointTarget } from "./branch-navigation";
 
@@ -90,6 +91,7 @@ function Onboarding({ snapshot, onRediscover, onChooseExecutable, onChooseDirect
 }
 
 function ConversationItem({ item, markdown, m }: { item: ConversationItemView; markdown: boolean; m: Messages }): React.JSX.Element {
+  if (item.kind === "compaction") return <div className="conversation-item status-item compaction-marker" data-compaction-status={item.status}><span className="item-label">{m.contextCompaction}</span><p>{m.compactionStatus(item.status)}</p></div>;
   if (item.kind === "tool") {
     return (
       <div className="conversation-item tool-item">
@@ -1144,6 +1146,7 @@ function App(): React.JSX.Element {
           {selectedThreadId !== undefined ? <ThreadDirectory thread={selectedThread} archived={selectedArchived} archiveDisabled={turnIsRunning} onSetArchived={(threadId, archived) => void handleSetThreadArchived(threadId, archived)} hidden={selectedListThread?.hidden === true} workspacePath={selectedThreadWorkspacePath} workspaceState={workspaceState} activeTurnId={activeTurnId} query={searchQuery} results={searchResults} selectedIndex={selectedSearchIndex} error={searchError} onQueryChange={setSearchQuery} onSearchKeyDown={(event) => handleSearchKeyDown(event, (turnId) => navigateToTurn?.(turnId))} onNavigate={(turnId, itemId) => navigateToTurn?.(turnId, itemId)} onBack={() => setSelectedThreadId(undefined)} onRename={() => { const current = threads.find((thread) => thread.id === selectedThreadId); if (current !== undefined) beginRename(current); }} onMove={(threadId, path) => void moveThreadToWorkspace(threadId, path)} onSetHidden={(threadId, hidden) => void handleSetThreadHidden(threadId, hidden)} setOutlineButton={setOutlineButton} m={m} /> : <WorkspaceSidebar state={workspaceState} loading={workspaceLoading || threadLoadState === "loading"} listElement={threadListElement} onScroll={(top) => { threadListScrollTop.current = top; }} onChoose={() => void handleChooseWorkspaceDirectory()} onSync={() => void syncHistory()} onSelectThread={setSelectedThreadId} onSetCurrent={(path) => void handleSetCurrentWorkspace(path)} onToggle={(path) => void handleToggleWorkspace(path)} onRename={beginRename} onMove={(threadId, path) => void moveThreadToWorkspace(threadId, path)} onSetThreadHidden={(threadId, hidden) => void handleSetThreadHidden(threadId, hidden)} onSetWorkspaceHidden={(path, hidden) => void handleSetWorkspaceHidden(path, hidden)} onSetThreadFavorite={(threadId, favorite) => void handleSetThreadFavorite(threadId, favorite)} onSetWorkspaceFavorite={(path, favorite) => void handleSetWorkspaceFavorite(path, favorite)} onSetThreadsHidden={handleSetThreadsHidden} onSetArchived={(threadId, archived) => void handleSetThreadArchived(threadId, archived)} archiveBusy={archivingThreadId !== undefined || startingTurn || forkingTurnId !== undefined} runningThreadIds={[...Object.keys(runningTurnByThreadId).filter((id) => runningTurnByThreadId[id] !== undefined), ...Object.keys(remoteActiveByThreadId).filter((id) => remoteActiveByThreadId[id])]} onRevealThread={handleRevealThread} onRevealWorkspace={handleRevealWorkspace} language={language} m={m} />}
         </aside>
         <section className="details-panel" aria-label={m.selectedConversation}>
+          {selectedThreadId === undefined ? null : <UsageObservatory key={selectedThreadId} threadId={selectedThreadId} branch={selectedBranch} language={language} />}
           {selectedThreadId === undefined ? null : <BranchMap branches={branches} threads={threads} selectedId={selectedThreadId} selectedThread={selectedThread} disabled={forkingTurnId !== undefined} onSelect={selectRoute} onSource={(branch) => showBranchPoint(branch.sourceThreadId, branch.forkTurnId)} m={m} />}
           {archiveError === undefined ? null : <div className="error-summary archive-error" role="alert"><span>{archiveError}</span><button type="button" onClick={() => setArchiveError(undefined)} aria-label={m.close}>×</button></div>}
           {branchError === undefined ? null : <p className="error-summary branch-error" role="alert">{branchError}</p>}

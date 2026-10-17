@@ -556,4 +556,17 @@ button:hover:not(:disabled) { background: var(--tp-button-hover); }
 .details-card, .empty-card { color: var(--tp-text); }
 dt { color: var(--tp-text-subtle); }
 .footer-error { color: var(--tp-text-danger); }
+.usage-observatory { position: relative; flex: 0 0 auto; margin: 0 16px; border-bottom: 1px solid var(--tp-border); color: var(--tp-text-subtle); font-size: 12px; z-index: 5; }
+.usage-observatory summary { padding: 8px 0; cursor: pointer; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 18px; }
+.usage-observatory summary strong { color: var(--tp-text-muted); font-size: 12px; }
+.usage-observatory summary::before { content: "▸"; }
+.usage-observatory[open] summary::before { content: "▾"; }
+.usage-details { position: absolute; top: 100%; right: 0; width: min(440px, 100%); max-height: min(560px, 65vh); overflow: auto; padding: 14px 18px; border: 1px solid var(--tp-border-strong); border-radius: 8px; background: var(--tp-surface); box-shadow: 0 8px 24px var(--tp-shadow); overflow-wrap: anywhere; }
+.usage-details h3 { margin: 14px 0 6px; font-size: 12px; color: var(--tp-text); }
+.usage-details p { margin: 6px 0; line-height: 1.5; }
+.usage-breakdown { margin: 0; }
+.usage-breakdown > div { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
+.usage-breakdown dd { margin: 0; color: var(--tp-text-muted); text-align: right; font-variant-numeric: tabular-nums; }
+.usage-fork-warning { padding: 8px; background: var(--tp-callout); border-radius: 4px; color: var(--tp-text-accent); }
+.usage-compactions { padding-left: 16px; }
 .error-summary { border-color: var(--tp-error-border); color: var(--tp-text-danger) !important; background: var(--tp-error-surface); }

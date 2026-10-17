@@ -7,6 +7,7 @@ interface FakeThread extends JsonObject { id: string; sessionId: string; forkedF
 interface FakeState { nextThread: number; nextTurn: number; threads: Record<string, FakeThread>; }
 const statePath = process.env.FAKE_FORK_STATE_PATH;
 const mode = process.env.FAKE_FORK_MODE ?? "normal";
+const observatory = process.env.FAKE_OBSERVATORY === "1";
 const capabilityMode = process.env.FAKE_FORK_CAPABILITIES ?? "absent";
 // This file is written only by this fixture; the cast is confined to the fixture boundary.
 const state: FakeState = statePath !== undefined && existsSync(statePath)
@@ -19,6 +20,16 @@ if (process.env.FAKE_FORK_E2E === "1" && Object.keys(state.threads).length === 0
   ] };
 }
 let lastForkParams: JsonObject = {};
+if (observatory && state.threads["fixture-unknown"] === undefined) {
+  state.threads["fixture-unknown"] = { id: "fixture-unknown", sessionId: "fixture-unknown", forkedFromId: null, title: "Unknown usage conversation", cwd: process.cwd(), status: "idle", canAcceptDirectInput: true, turns: [
+    { id: "unknown-turn", status: "completed", items: [{ id: "unknown-user", type: "userMessage", text: "Unknown usage conversation" }, { id: "history-compaction", type: "contextCompaction" }] },
+  ] };
+}
+function usage(threadId: string, turnId: string, totalTokens: number, window: number | null = 475000): void {
+  const total = { totalTokens, inputTokens: 50000, cachedInputTokens: 20000, cacheWriteInputTokens: 1000, outputTokens: 10321, reasoningOutputTokens: 4000 };
+  const last = { totalTokens: 18234, inputTokens: 15000, cachedInputTokens: 5000, cacheWriteInputTokens: 200, outputTokens: 3234, reasoningOutputTokens: 1000 };
+  send({ method: "thread/tokenUsage/updated", params: { threadId, turnId, tokenUsage: { total, last, modelContextWindow: window } } });
+}
 function persist(): void { if (statePath !== undefined) writeFileSync(statePath, JSON.stringify(state)); }
 function send(message: JsonObject): void { process.stdout.write(`${JSON.stringify(message)}\n`); }
 function reply(id: number, result: JsonObject): void { send({ id, result }); }
@@ -75,12 +86,17 @@ createInterface({ input: process.stdin }).on("line", (line: string) => {
     persist();
     reply(id, threadResult(thread));
     send({ method: "thread/started", params: { thread } });
+    if (observatory) usage(newId, String(thread.turns.at(-1)?.id), 60321);
     return;
   }
   if (source === undefined) { reject(id, "thread_not_found", "fixture thread not found"); return; }
   switch (request.method) {
     case "thread/read": reply(id, threadResult(source)); break;
     case "thread/resume": {
+      if (observatory) {
+        usage(threadId, String(source.turns.at(-1)?.id), 60321);
+        usage(threadId, String(source.turns.at(-1)?.id), 60321);
+      }
       if (params.sandbox === "read-only") source.readOnly = mode !== "unsafe-sandbox";
       source.lastResumeSandbox = params.sandbox ?? null;
       persist();
@@ -95,13 +111,26 @@ createInterface({ input: process.stdin }).on("line", (line: string) => {
       source.turns.push(turn);
       persist();
       reply(id, { turn });
+      if (observatory) {
+        const compact = { id: `${newTurnId}-compaction`, type: "contextCompaction" };
+        if (Array.isArray(turn.items)) turn.items.push(compact);
+        send({ method: "item/started", params: { threadId, turnId: newTurnId, item: compact } });
+        send({ method: "item/started", params: { threadId, turnId: newTurnId, item: compact } });
+      }
       if (mode !== "hold") setTimeout(() => {
         turn.status = "completed";
         if (Array.isArray(turn.items)) turn.items.push({ id: `${newTurnId}-answer`, type: "agentMessage", text: `Independent reply: ${text}` });
         persist();
         send({ method: "item/agentMessage/delta", params: { threadId, turnId: newTurnId, itemId: `${newTurnId}-answer`, delta: `Independent reply: ${text}` } });
+        if (observatory) {
+          const compact = { id: `${newTurnId}-compaction`, type: "contextCompaction" };
+          send({ method: "item/completed", params: { threadId, turnId: newTurnId, item: compact } });
+          send({ method: "item/completed", params: { threadId, turnId: newTurnId, item: compact } });
+          usage(threadId, newTurnId, 70000, null);
+          usage(threadId, newTurnId, 70000, null);
+        }
         send({ method: "turn/completed", params: { threadId, turn } });
-      }, 10);
+      }, observatory ? 1500 : 10);
       break;
     }
     default: reject(id, -32601, "Method not found");

@@ -46,6 +46,8 @@ The test suite covers JSONL framing, request ID correlation, server errors, unsu
 
 Representative JSONL messages are versioned under `fixtures/` and checked by the fixture test. Process exit and timeout fixtures intentionally describe the absence of a valid response; their live behavior is exercised by the fake app-server process tests.
 
+`src/token-usage.ts` strictly projects `thread/tokenUsage/updated` using the checked-in v2 schema: all six counters in `total` and `last` are required non-negative safe integers; `modelContextWindow` is an integer or explicit `null`. Missing or invalid fields raise `ProtocolError`; extra fields are discarded, never forwarded. `token-usage-tests.ts` covers valid, null-window, malformed, duplicate and resume-replay fixtures. The desktop rejects invalid snapshots independently of conversation operations. `total` is cumulative usage and `last` is the latest server snapshot, neither is exact context occupancy. See [observatory semantics](../docs/token-usage-observatory.md).
+
 When a supported app-server message changes, update the smallest relevant fixture and its assertions together. Keep request and response IDs matched, keep notification fixtures ID-free, and use redacted stable values. Unknown fields should remain in representative fixtures when they verify forward-compatible parsing; do not add local authentication data, full conversation content, or machine-specific thread IDs.
 
 ## Reusable client API

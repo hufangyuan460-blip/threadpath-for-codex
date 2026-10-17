@@ -31,12 +31,20 @@ export function applyConversationUpdate(thread: ConversationThreadView, update: 
 }
 
 function updateTurn(turn: ConversationTurnView, update: ConversationUpdate): ConversationTurnView {
+  if ((update.type === "item/started" || update.type === "item/completed") && update.itemType === "contextCompaction") {
+    const index = turn.items.findIndex((item) => item.id === update.itemId);
+    const existing = turn.items[index];
+    if (existing?.kind === "compaction" && existing.status === "completed") return turn;
+    const item: ConversationItemView = { kind: "compaction", id: update.itemId, status: update.type === "item/started" ? "started" : "completed" };
+    return index < 0 ? { ...turn, items: [...turn.items, item] } : replaceItem(turn, index, item);
+  }
   if (update.type === "turn/started") return turn.status === "running" ? turn : { ...turn, status: "running" };
   if (update.type === "turn/completed" || update.type === "turn/failed" || update.type === "turn/interrupted") {
     const status = update.type.slice("turn/".length);
     if (turn.status === status) return turn;
     const message = update.message;
-    const items = status === "completed" ? finalizeTextItems(turn.items) : turn.items;
+    const settledItems = turn.items.map((item): ConversationItemView => item.kind === "compaction" && item.status === "started" ? { ...item, status: "unknown" } : item);
+    const items = status === "completed" ? finalizeTextItems(settledItems) : settledItems;
     const withMessage = message === undefined ? items : addStatusItem(items, `${turn.id}:terminal`, message);
     return { ...turn, status, items: withMessage };
   }

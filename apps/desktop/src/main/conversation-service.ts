@@ -4,6 +4,7 @@ import { type ThreadClient, type ThreadClientProvider, validateThreadId } from "
 import { buildTurnOutline } from "../shared/outline.ts";
 import { applyConversationUpdate } from "../shared/conversation-state.ts";
 import { searchLoadedTurns } from "./search-service.ts";
+import { ObservatoryService } from "./observatory-service.ts";
 
 const MAX_DISPLAY_SUMMARY_LENGTH = 500;
 const INITIAL_FIRST_ITEM_INDEX = 1_000_000;
@@ -40,6 +41,7 @@ export interface ConversationReconciliation {
 }
 
 export class ConversationService {
+  readonly observatory = new ObservatoryService();
   private readonly clientProvider: ConversationClientProvider;
   private readonly updateListeners = new Set<ConversationUpdateListener>();
   private boundClient: ConversationClient | undefined;
@@ -74,6 +76,7 @@ export class ConversationService {
     this.bindNotifications(client);
     const thread = await client.readThread(validThreadId);
     const page = await client.listTurns(validThreadId, { limit: 20 });
+    this.observatory.observeHistory(validThreadId, [...(thread.turns ?? []), ...page.turns]);
     this.lastReadActiveTurnIds.set(validThreadId, [...new Set([...(thread.turns ?? []), ...page.turns].filter(isActiveTurn).map((turn) => turn.id))]);
     const readTurns = normalizeTurnCollection(thread.turns ?? [], client.threadReadOrder ?? DEFAULT_THREAD_READ_ORDER);
     const pageTurns = normalizeTurnCollection(page.turns, client.turnPageOrder ?? DEFAULT_TURN_PAGE_ORDER);
@@ -111,6 +114,7 @@ export class ConversationService {
     }
     if (localTurnId !== undefined) this.recentUpdates.delete(validThreadId);
     this.olderCachedTurnIds.set(validThreadId, new Set(cachedOlderTurns.map((turn) => turn.id)));
+    nextView = this.withObservedCompactions(validThreadId, nextView);
     this.loadedThreads.set(validThreadId, nextView);
     return nextView;
   }
@@ -127,6 +131,7 @@ export class ConversationService {
     this.loadedThreads.set(validThreadId, loading);
     try {
       const page = await client.listTurns(validThreadId, { limit: 20, cursor: current.paging.nextCursor });
+      this.observatory.observeHistory(validThreadId, page.turns);
       const parsed = normalizeTurnCollection(page.turns, client.turnPageOrder ?? DEFAULT_TURN_PAGE_ORDER).map((turn, index) => toConversationTurnView(turn, index));
       const incomingTurns = this.preserveAcceptedInput(validThreadId, parsed, current);
       for (const turn of incomingTurns) this.rememberTurn(validThreadId, turn.id);
@@ -137,13 +142,13 @@ export class ConversationService {
       for (const turn of incomingTurns) if (!existingIds.has(turn.id)) olderIds.add(turn.id);
       this.olderCachedTurnIds.set(validThreadId, olderIds);
       const repeatedCursor = page.nextCursor !== undefined && page.nextCursor === current.paging.nextCursor;
-      const next = this.applyObservedActivity(validThreadId, withPaging({ ...current, turns, outline: buildTurnOutline(turns) }, {
+      const next = this.withObservedCompactions(validThreadId, this.applyObservedActivity(validThreadId, withPaging({ ...current, turns, outline: buildTurnOutline(turns) }, {
         nextCursor: page.nextCursor,
         hasMore: page.nextCursor !== undefined && !repeatedCursor,
         isLoadingMore: false,
         loadMoreError: undefined,
         firstItemIndex: Math.max(1, current.paging.firstItemIndex - addedTurnCount),
-      }), page.turns);
+      }), page.turns));
       this.loadedThreads.set(validThreadId, next);
       return next;
     } catch (error: unknown) {
@@ -198,7 +203,10 @@ export class ConversationService {
       // thread/read only reads history. thread/resume is the verified app-server
       // operation that reactivates an existing thread for a subsequent turn.
       try {
+        this.observatory.beginResume(validThreadId);
         const resumedThread = await client.resumeThread(validThreadId, this.isReadOnlyThread(validThreadId) ? { sandbox: "read-only" } : undefined);
+        this.observatory.completeResume(validThreadId);
+        this.observatory.observeHistory(validThreadId, resumedThread.turns ?? []);
         if (resumedThread.canAcceptDirectInput === false) {
           throw new ThreadUnavailableError("This thread cannot accept direct input. Refresh the thread list and choose another thread.");
         }
@@ -208,6 +216,7 @@ export class ConversationService {
           throw new ActiveTurnError("This conversation has a confirmed active turn. Refresh its status before sending another message.");
         }
       } catch (error: unknown) {
+        this.observatory.cancelResume(validThreadId);
         if (error instanceof ActiveTurnError) throw error;
         if (isActiveWriterError(error)) {
           throw new ActiveTurnError("Codex reported an active writer, but no active turn was confirmed. Refresh status and try again.");
@@ -217,6 +226,9 @@ export class ConversationService {
       }
       let turn: Turn;
       try {
+        // After issuing turn/start, an uncorrelated usage notification may
+        // belong to the new turn even before its RPC response arrives.
+        this.observatory.cancelResume(validThreadId);
         turn = await client.startTurn(validThreadId, [{ type: "text", text: text.trim() }], startOptions);
       } catch (error: unknown) {
         if (isActiveWriterError(error)) {
@@ -225,11 +237,15 @@ export class ConversationService {
         throw error;
       }
       this.activeTurn = { threadId: validThreadId, turnId: turn.id };
+      this.observatory.observeLiveTurn(validThreadId, turn.id);
       this.rememberTurn(validThreadId, turn.id);
       this.watchTurnTerminal(client, validThreadId, turn.id);
       this.rememberAcceptedInput(validThreadId, turn.id, text.trim());
       return { threadId: validThreadId, turnId: turn.id };
     } finally {
+      // Success consumes the marker on a snapshot or new turn; every failure
+      // path also clears it, including a rejected turn/start after resume.
+      this.observatory.cancelResume(validThreadId);
       this.startingTurn = false;
     }
   }
@@ -253,11 +269,13 @@ export class ConversationService {
     if (source?.remoteActive || this.startingTurn || this.activeTurn !== undefined) throw new ActiveTurnError("Wait for the running conversation before branching");
     const client = this.clientProvider.getReadyClient();
     if (client.forkThread === undefined) throw new CompatibilityError("This Codex client does not support branching");
+    this.bindNotifications(client);
     this.startingTurn = true;
     try {
       const fork = await client.forkThread(sourceId, { lastTurnId: cutoffId, cwd, ephemeral: false, sandbox: "read-only" });
       if (fork.id === sourceId || fork.forkedFromId !== sourceId) throw new ProtocolError("Codex did not return the expected branch source");
       this.loadedThreads.set(fork.id, toConversationThreadView(fork));
+      this.observatory.observeHistory(fork.id, fork.turns ?? []);
       return fork;
     } finally { this.startingTurn = false; }
   }
@@ -284,6 +302,7 @@ export class ConversationService {
         throw error;
       }
       this.activeTurn = { threadId: thread.id, turnId: turn.id };
+      this.observatory.observeLiveTurn(thread.id, turn.id);
       this.rememberTurn(thread.id, turn.id);
       this.watchTurnTerminal(client, thread.id, turn.id);
       this.rememberAcceptedInput(thread.id, turn.id, validText);
@@ -303,6 +322,7 @@ export class ConversationService {
   }
 
   close(): void {
+    this.observatory.disconnected();
     this.unsubscribeNotifications?.();
     this.unsubscribeNotifications = undefined;
     this.boundClient = undefined;
@@ -351,15 +371,40 @@ export class ConversationService {
     return mergeConversationSources(fresh.map((turn) => byId.get(turn.id) ?? turn), preserved);
   }
 
+  private withObservedCompactions(threadId: string, view: ConversationThreadView): ConversationThreadView {
+    const observations = this.observatory.get(threadId).compactions;
+    if (observations.length === 0) return view;
+    const turns = view.turns.map((turn) => ({ ...turn, items: turn.items.map((item) => {
+      if (item.kind !== "compaction") return item;
+      const observed = observations.find((candidate) => candidate.turnId === turn.id && candidate.itemId === item.id);
+      // Reuse the existing merge rule; historical unknown cannot erase a live
+      // status. The observatory already owns the thread/turn/item identity.
+      return observed === undefined ? item : mergeConversationItem({ kind: "compaction", id: item.id, status: observed.status }, item);
+    }) }));
+    return { ...view, turns };
+  }
+
   private bindNotifications(client: ConversationClient): void {
     if (this.boundClient === client) return;
     this.unsubscribeNotifications?.();
     this.boundClient = client;
     this.unsubscribeNotifications = client.onNotification(({ method, params }) => {
+      this.observatory.observeNotification(method, params, this.threadIdForNotification(params));
       const update = toConversationUpdate(method, params, this.threadIdForNotification(params));
       if (update === undefined) return;
       this.receiveUpdate(update);
     });
+  }
+
+  connectionChanged(state: string): void {
+    if (state === "ready") this.bindNotifications(this.clientProvider.getReadyClient());
+    else {
+      this.unsubscribeNotifications?.();
+      this.unsubscribeNotifications = undefined;
+      this.boundClient = undefined;
+      this.observatory.disconnected();
+      for (const [id, thread] of this.loadedThreads) this.loadedThreads.set(id, { ...thread, turns: thread.turns.map((turn) => ({ ...turn, items: turn.items.map((item) => item.kind === "compaction" && item.status === "started" ? { ...item, status: "unknown" as const } : item) })) });
+    }
   }
 
   private watchTurnTerminal(client: ConversationClient, threadId: string, turnId: string): void {
@@ -571,6 +616,7 @@ function mergeConversationItems(existing: readonly ConversationItemView[], incom
 }
 
 function mergeConversationItem(existing: ConversationItemView, incoming: ConversationItemView): ConversationItemView {
+  if (existing.kind === "compaction" && incoming.kind === "compaction") return existing.status === "completed" || incoming.status === "unknown" ? existing : incoming;
   if (existing.kind === "text" && incoming.kind === "text") {
     const text = incoming.text.length >= existing.text.length ? incoming.text : existing.text;
     const phase = textPhaseRank(incoming.phase) >= textPhaseRank(existing.phase) ? incoming.phase : existing.phase;
@@ -651,6 +697,7 @@ function toConversationTurnView(turn: Turn, index: number): ConversationTurnView
 
 function toConversationItemView(item: TurnItem, turnId: string, itemIndex: number, active = false): ConversationItemView {
   const id = item.id?.trim() || `${turnId}:item-${itemIndex + 1}`;
+  if (item.type === "contextCompaction") return { kind: "compaction", id, status: "unknown" };
   const type = item.type?.trim().toLowerCase() ?? "";
   const text = displayText(item.text ?? item.content);
   const role = textRole(item, type);

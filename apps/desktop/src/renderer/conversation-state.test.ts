@@ -64,6 +64,12 @@ async function main(): Promise<void> {
   assert.equal(interruptedText?.kind === "text" ? interruptedText.phase : undefined, "streaming");
   assert.equal(interruptedThread.turns[0]?.items.some((item) => item.kind === "status" && item.text === "Turn interrupted"), true);
   console.log("[desktop-test] conversation update checks passed");
+  const compactionStarted = applyConversationUpdate(thread, { type: "item/started", threadId: thread.id, turnId: "compaction-turn", itemId: "compact", itemType: "contextCompaction" });
+  const compactionCompleted = applyConversationUpdate(compactionStarted, { type: "item/completed", threadId: thread.id, turnId: "compaction-turn", itemId: "compact", itemType: "contextCompaction", status: "unknown" });
+  const compactionReplayed = applyConversationUpdate(compactionCompleted, { type: "item/started", threadId: thread.id, turnId: "compaction-turn", itemId: "compact", itemType: "contextCompaction" });
+  assert.deepEqual(compactionReplayed.turns.at(-1)?.items, [{ kind: "compaction", id: "compact", status: "completed" }]);
+  const unconfirmedCompaction = applyConversationUpdate(compactionStarted, { type: "turn/failed", threadId: thread.id, turnId: "compaction-turn" });
+  assert.deepEqual(unconfirmedCompaction.turns.at(-1)?.items, [{ kind: "compaction", id: "compact", status: "unknown" }]);
 }
 
 main().catch((error: unknown) => {

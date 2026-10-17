@@ -2,6 +2,12 @@ import { contextBridge, ipcRenderer } from "electron";
 import type { DesktopApi, Language, Theme, WorkspaceState } from "../shared/api";
 
 const desktopApi: DesktopApi = {
+  getThreadObservatory: (threadId) => ipcRenderer.invoke("observatory:get", threadId),
+  onObservatoryUpdate: (listener) => {
+    const handler = (_event: unknown, state: Parameters<typeof listener>[0]): void => listener(state);
+    ipcRenderer.on("observatory:update", handler);
+    return () => ipcRenderer.removeListener("observatory:update", handler);
+  },
   getAppInfo: () => ipcRenderer.invoke("app:get-info"),
   setLanguage: (language: Language) => ipcRenderer.invoke("app:set-language", language),
   setTheme: (theme: Theme) => ipcRenderer.invoke("app:set-theme", theme),

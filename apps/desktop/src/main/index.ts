@@ -347,6 +347,10 @@ function registerApi(): void {
       return { workspace: await getWorkspaceState(), ...(persistenceWarning === undefined ? {} : { persistenceWarning }) };
     } finally { workspaceLockService.release(id); }
   }));
+  ipcMain.handle("observatory:get", (_event, threadId: unknown) => conversationService.observatory.get(validateThreadId(threadId)));
+  conversationService.observatory.subscribe((state) => {
+    for (const window of BrowserWindow.getAllWindows()) window.webContents.send("observatory:update", state);
+  });
   ipcMain.handle("threads:read", async (_event, threadId: unknown) => withReadyConnection(async () => localizeThreadView(await conversationService.readThread(threadId))));
   ipcMain.handle("threads:refresh", async (_event, threadId: unknown) => withReadyConnection(async () => reconcileThread(validateThreadId(threadId))));
   ipcMain.handle("branches:list", () => preferencesService.getBranches());
@@ -514,7 +518,10 @@ app.whenReady().then(async () => {
   processManager = new CodexProcessManager({
     cwd: "",
     executable: undefined,
-    onStateChange: ({ state }) => console.log(`[desktop] connection state: ${state}`),
+    onStateChange: ({ state }) => {
+      console.log(`[desktop] connection state: ${state}`);
+      conversationService?.connectionChanged(state);
+    },
   });
   const locale = process.env.THREADPATH_E2E_LANGUAGE ?? app.getLocale();
   preferencesService = new UserPreferencesService(join(app.getPath("userData"), "threadpath-ui.json"), locale.toLowerCase().startsWith("zh") ? "zh-CN" : "en-US");
