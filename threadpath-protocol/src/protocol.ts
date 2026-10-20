@@ -116,8 +116,9 @@ export interface ThreadSummary {
   forkedFromId?: string | null;
   title?: string; status?: string; turnCount?: number; createdAt?: string; updatedAt?: string; preview?: string; name?: string; archived?: boolean; canAcceptDirectInput?: boolean; cwd?: string;
 }
-export interface Thread extends ThreadSummary { turns?: Turn[]; }
-export interface Turn { id: string; status?: string; createdAt?: string; items?: TurnItem[]; }
+export interface Thread extends ThreadSummary { turns?: Turn[]; historyMode?: "legacy" | "paginated"; }
+export type TurnItemsView = "notLoaded" | "summary" | "full";
+export interface Turn { id: string; status?: string; createdAt?: string; itemsView?: TurnItemsView; items?: TurnItem[]; }
 export interface TurnPage {
   turns: Turn[];
   nextCursor?: string;
@@ -254,6 +255,7 @@ export function getThread(value: JsonValue): Thread | undefined {
   return {
     id,
     ...readForkMetadata(source),
+    ...(source.historyMode === "legacy" || source.historyMode === "paginated" ? { historyMode: source.historyMode } : {}),
     ...(readString(source, "title") === undefined ? {} : { title: readString(source, "title") }),
     ...(readString(source, "preview") === undefined ? {} : { preview: readString(source, "preview") }),
     ...(readString(source, "name") === undefined ? {} : { name: readString(source, "name") }),
@@ -281,11 +283,16 @@ function parseTurn(value: JsonObject): Turn | undefined {
   const id = readString(value, "id");
   if (id === undefined) return undefined;
   const status = readStatus(value);
+  const itemsView = value.itemsView;
+  if (itemsView !== undefined && itemsView !== "notLoaded" && itemsView !== "summary" && itemsView !== "full") {
+    throw new CompatibilityError("Unsupported turn itemsView; history completeness cannot be determined");
+  }
   const createdAt = readString(value, "createdAt") ?? readString(value, "timestamp");
   const items = Array.isArray(value.items) ? value.items.flatMap((item) => isJsonObject(item) ? [parseTurnItem(item)] : []) : undefined;
   return {
     id,
     ...(status === undefined ? {} : { status }),
+    ...(itemsView === undefined ? {} : { itemsView }),
     ...(createdAt === undefined ? {} : { createdAt }),
     ...(items === undefined ? {} : { items }),
   };
@@ -375,18 +382,31 @@ export function errorFromServer(value: JsonValue): AppServerError {
   return new AppServerError(message, "server", code);
 }
 
+export const UNCONFIRMED_TURN_STATUS_MESSAGE = "Final turn status could not be confirmed: unknown or missing status. Refresh the conversation before sending again.";
+
+export function knownTerminalStatus(status: string | undefined): TerminalTurnEvent["outcome"] | undefined {
+  const value = status?.trim().toLowerCase();
+  return value === "completed" || value === "failed" || value === "interrupted" ? value : undefined;
+}
+
 export function terminalTurnEvent(method: string, params: JsonObject): TerminalTurnEvent | undefined {
+  if (method !== "turn/completed" && method !== "turn/failed" && method !== "turn/interrupted") return undefined;
   const turn = isJsonObject(params.turn) ? params.turn : undefined;
+  const turnId = turn === undefined ? readString(params, "turnId") : readString(turn, "id");
+  if (turnId === undefined) return undefined;
   const turnStatus = turn === undefined ? undefined : readStatus(turn)?.trim().toLowerCase();
+  // The notification ends the wait, but only a recognized status proves success.
+  // Reuse the existing failed/error path for a client compatibility failure.
+  if (method === "turn/completed" && knownTerminalStatus(turnStatus) === undefined) {
+    return { method, params, turnId, outcome: "failed", error: new CompatibilityError(UNCONFIRMED_TURN_STATUS_MESSAGE) };
+  }
   const outcome = method === "turn/failed" || method === "turn/completed" && turnStatus === "failed"
     ? "failed"
     : method === "turn/interrupted" || method === "turn/completed" && turnStatus === "interrupted"
       ? "interrupted"
       : method === "turn/completed" ? "completed" : undefined;
-  if (outcome === undefined || !isJsonObject(params.turn)) return undefined;
-  const turnId = readString(params.turn, "id");
-  if (turnId === undefined) return undefined;
-  const rawError = isJsonObject(params.error) ? params.error : isJsonObject(params.turn.error) ? params.turn.error : undefined;
+  if (outcome === undefined) return undefined;
+  const rawError = isJsonObject(params.error) ? params.error : turn !== undefined && isJsonObject(turn.error) ? turn.error : undefined;
   return { method, params, turnId, outcome, ...(rawError === undefined ? {} : { error: errorFromServer(rawError) }) };
 }
 

@@ -1,1 +1,1 @@
-{"jsonrpc":"2.0","method":"turn/completed","params":{"turn":{"id":"turn-1","futureField":"ignored"}}}
+{"jsonrpc":"2.0","method":"turn/completed","params":{"turn":{"id":"turn-1","status":"completed","futureField":"ignored"}}}

@@ -55,6 +55,16 @@ async function main(): Promise<void> {
   const failedText = failedThread.turns[0]?.items.find((item) => item.id === "failed-item");
   assert.equal(failedText?.kind === "text" ? failedText.phase : undefined, "streaming");
   assert.equal(failedThread.turns[0]?.items.some((item) => item.kind === "status" && item.text === "Turn failed"), true);
+  for (const status of ["failed", "futureStatus", undefined]) {
+    const pending = applyConversationUpdate(activeThread, { type: "item/agentMessage/delta", threadId: activeThread.id, turnId: "turn-live", itemId: "uncertain-item", delta: "partial" });
+    const update = toConversationUpdate("turn/completed", { threadId: activeThread.id, turn: { id: "turn-live", ...(status === undefined ? {} : { status }) } });
+    assert.equal(update?.type, "turn/failed");
+    const settled = applyConversationUpdate(pending, update!);
+    assert.equal(settled.turns[0]?.status, "failed");
+    assert.equal(settled.remoteActive, undefined);
+    const item = settled.turns[0]?.items.find((entry) => entry.id === "uncertain-item");
+    assert.equal(item?.kind === "text" ? item.phase : undefined, "streaming", "failed or uncertain output must not be finalized as success");
+  }
 
   let interruptedThread: ConversationThreadView = { id: "thread-interrupted", title: "Interrupted thread", status: "active", turns: [], outline: [], paging: { orderedTurnIds: [], firstItemIndex: 1000000, hasMore: false, isLoadingMore: false } };
   interruptedThread = applyConversationUpdate(interruptedThread, { type: "turn/started", threadId: "thread-interrupted", turnId: "turn-interrupted" });

@@ -6,10 +6,13 @@ const hasExistingThread = process.env.FAKE_APP_SERVER_HAS_THREAD === "true";
 const capabilityMode = process.env.FAKE_APP_SERVER_CAPABILITIES ?? "absent";
 const e2eMode = mode.startsWith("e2e-");
 const e2eImplicitThreadId = mode === "e2e-implicit-thread";
-const e2eOutcome = (mode === "e2e-new" || mode === "e2e-models" || e2eImplicitThreadId ? "completed" : mode.slice("e2e-".length)) as "completed" | "failed" | "interrupted";
+const missingStatus = mode === "missing-status" || mode === "e2e-missing-status";
+const unknownStatus = mode === "unknown-status" || mode === "e2e-unknown-status";
+const e2eOutcome = (mode === "e2e-new" || mode === "e2e-models" || e2eImplicitThreadId || missingStatus || unknownStatus ? "completed" : mode.slice("e2e-".length)) as "completed" | "failed" | "interrupted";
 let probeRequestId: number | undefined;
 let serverRequestId: number | string | undefined;
 let existingArchived = false;
+let uncertainHistoryTurn: JsonObject | undefined;
 function send(message: JsonObject): void { process.stdout.write(`${JSON.stringify(message)}\n`); }
 function initializeResult(): JsonObject {
   const result: JsonObject = { serverInfo: { name: "fake-app-server", version: "fixture-1.0" } };
@@ -29,7 +32,7 @@ function initializeResult(): JsonObject {
   return result;
 }
 function e2eTurns(): JsonObject[] {
-  return Array.from({ length: 24 }, (_, index) => ({
+  const turns: JsonObject[] = Array.from({ length: 24 }, (_, index) => ({
     id: `e2e-turn-${index + 1}`,
     status: "completed",
     createdAt: `2026-01-${String(index + 1).padStart(2, "0")}T00:00:00Z`,
@@ -38,6 +41,12 @@ function e2eTurns(): JsonObject[] {
       { id: `e2e-assistant-${index + 1}`, type: "agentMessage", role: "assistant", text: index === 0 ? "# Assistant reply 1\n\n**Formatted** response with `code`." : `Assistant reply ${index + 1}` },
     ],
   }));
+  if (mode === "e2e-history-views") {
+    for (const [index, itemsView] of [[21, "notLoaded"], [22, "summary"], [23, "full"]] as const) {
+      turns[index] = { ...turns[index], itemsView, ...(itemsView === "summary" ? {} : { items: [] }) };
+    }
+  }
+  return uncertainHistoryTurn === undefined ? turns : [...turns, uncertainHistoryTurn];
 }
 function e2eThreadSummaries(): JsonObject[] {
   return Array.from({ length: 24 }, (_, index) => ({ id: index === 0 && mode === "e2e-new" ? "e2e-new-thread" : index === 0 ? "e2e-thread" : `e2e-history-${index + 1}`, title: index === 0 ? "E2E conversation" : `E2E history ${index + 1}`, ...(index === 0 ? { preview: "First E2E user question" } : {}), ...(index === 1 ? { archived: true } : {}), cwd: process.cwd() }));
@@ -104,6 +113,9 @@ lines.on("line", (line: string) => {
         break;
       }
       send({ jsonrpc: "2.0", id, result: { turn: { id: e2eMode ? "e2e-live-turn" : "turn-1" } } });
+      if (e2eMode && (missingStatus || unknownStatus)) {
+        uncertainHistoryTurn = { id: "e2e-live-turn", ...(missingStatus ? {} : { status: "futureStatus" }), itemsView: "full", items: [{ id: "e2e-live-item", type: "agentMessage", text: "**streamed fake reply**" }] };
+      }
       if (mode === "timeout") break;
       setTimeout(() => {
         const turnId = e2eMode ? "e2e-live-turn" : "turn-1";
@@ -114,12 +126,12 @@ lines.on("line", (line: string) => {
           send({ jsonrpc: "2.0", method: "item/agentMessage/delta", params: { threadId: e2eThreadId(), turnId, itemId: "e2e-live-item", delta: "**streamed fake reply**" } });
           send({ jsonrpc: "2.0", method: "item/completed", params: { threadId: e2eThreadId(), turnId, item: { id: "e2e-live-item", type: "agentMessage", role: "assistant", status: "completed" } } });
         }
-        const params: JsonObject = { ...(threadId === undefined ? {} : { threadId }), turn: { id: turnId, ...(e2eMode ? { status: e2eOutcome } : {}) } };
+        const params: JsonObject = { ...(threadId === undefined ? {} : { threadId }), turn: { id: turnId, ...(missingStatus ? {} : { status: unknownStatus ? "futureStatus" : e2eMode ? e2eOutcome : mode }) } };
         if (e2eMode && e2eOutcome === "failed") params.error = { code: "fake_failure", message: "Fake turn failed" };
         if (e2eMode && e2eOutcome === "interrupted") params.error = { code: "interrupted", message: "Fake turn interrupted" };
         if (!e2eMode && mode === "failed") params.error = { code: "network_timeout", message: "Responses connection timed out" };
         if (!e2eMode && mode === "interrupted") params.error = { code: "interrupted", message: "Turn was interrupted" };
-        send({ jsonrpc: "2.0", method: `turn/${e2eMode ? e2eOutcome : mode}`, params });
+        send({ jsonrpc: "2.0", method: `turn/${unknownStatus || missingStatus ? "completed" : e2eMode ? e2eOutcome : mode}`, params });
       }, 10);
       break;
     case "turn/interrupt":

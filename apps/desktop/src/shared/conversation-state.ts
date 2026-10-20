@@ -41,12 +41,14 @@ function updateTurn(turn: ConversationTurnView, update: ConversationUpdate): Con
   if (update.type === "turn/started") return turn.status === "running" ? turn : { ...turn, status: "running" };
   if (update.type === "turn/completed" || update.type === "turn/failed" || update.type === "turn/interrupted") {
     const status = update.type.slice("turn/".length);
-    if (turn.status === status) return turn;
+    if (turn.status === status && turn.terminalIssue === update.terminalIssue) return turn;
     const message = update.message;
-    const settledItems = turn.items.map((item): ConversationItemView => item.kind === "compaction" && item.status === "started" ? { ...item, status: "unknown" } : item);
+    const sourceItems = turn.terminalIssue === "compatibility" ? turn.items.filter((item) => item.id !== `${turn.id}:terminal`) : turn.items;
+    const settledItems = sourceItems.map((item): ConversationItemView => item.kind === "compaction" && item.status === "started" ? { ...item, status: "unknown" } : item);
     const items = status === "completed" ? finalizeTextItems(settledItems) : settledItems;
     const withMessage = message === undefined ? items : addStatusItem(items, `${turn.id}:terminal`, message);
-    return { ...turn, status, items: withMessage };
+    const { terminalIssue: _previousIssue, ...base } = turn;
+    return { ...base, status, ...(update.terminalIssue === undefined ? {} : { terminalIssue: update.terminalIssue }), items: withMessage };
   }
   if (update.type === "item/agentMessage/delta") {
     if (update.delta === "") return turn;

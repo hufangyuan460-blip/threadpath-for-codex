@@ -16,6 +16,23 @@ function asObject(value: unknown): JsonObject {
 }
 
 async function main(): Promise<void> {
+  const terminalCases = await readJsonLines("terminal-statuses.jsonl");
+  for (const [index, expected] of ["completed", "failed", "interrupted", "failed", "failed"].entries()) {
+    const message = asObject(terminalCases[index]);
+    const terminal = terminalTurnEvent(String(message.method), asObject(message.params));
+    assert.equal(terminal?.outcome, expected, `terminal case ${index}`);
+    if (index >= 3) assert.equal(terminal?.error?.name, "CompatibilityError");
+  }
+  const history = await readJsonLines("history-items-view.jsonl");
+  for (const turns of [getThread(asObject(history[0]).result)?.turns, getTurnPage(asObject(history[1]).result).turns]) {
+    assert.deepEqual(turns?.map((turn) => turn.itemsView), ["notLoaded", "full", "summary", "full", undefined]);
+    assert.deepEqual(turns?.[0]?.items, []);
+    assert.deepEqual(turns?.[1]?.items, []);
+  }
+  assert.equal(getThread({ thread: { id: "paginated", historyMode: "paginated", turns: [] } })?.historyMode, "paginated");
+  for (const itemsView of ["futureView", null, 1]) {
+    assert.throws(() => getTurnPage({ data: [{ id: "unsupported-view", itemsView, items: [] }] }), /completeness cannot be determined/);
+  }
   const initialize = await readJsonLines("initialize-success.jsonl");
   assert.equal(initialize.length, 2);
   assert.equal(asObject(initialize[0]).method, "initialize");

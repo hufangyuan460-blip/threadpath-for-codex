@@ -130,6 +130,9 @@ export interface ConversationTurnView {
   readonly index: number;
   readonly status: string;
   readonly createdAt?: string;
+  /** Omitted for legacy responses; never infer completeness from items.length. */
+  readonly itemsView?: "notLoaded" | "summary" | "full";
+  readonly terminalIssue?: "compatibility";
   readonly items: readonly ConversationItemView[];
 }
 
@@ -142,11 +145,12 @@ export interface ConversationPagingState {
   readonly loadMoreError?: string;
 }
 
-export type ConversationItemView =
+export type ConversationItemView = (
   | { readonly kind: "compaction"; readonly id: string; readonly status: "started" | "completed" | "unknown" }
   | { readonly kind: "text"; readonly id: string; readonly role: "user" | "assistant" | "system"; readonly text: string; readonly phase: "historical" | "streaming" | "final" }
   | { readonly kind: "tool"; readonly id: string; readonly name: string; readonly status: "running" | "completed" | "failed" | "unknown"; readonly summary?: string }
-  | { readonly kind: "status"; readonly id: string; readonly text: string };
+  | { readonly kind: "status"; readonly id: string; readonly text: string }
+) & { readonly bodyCompleteness?: "summary" | "full" };
 
 export interface ConversationThreadView {
   readonly id: string;
@@ -190,7 +194,7 @@ export type ConversationUpdate =
   | { readonly type: "item/started"; readonly threadId: string; readonly turnId: string; readonly itemId: string; readonly itemType?: string; readonly itemName?: string }
   | { readonly type: "item/agentMessage/delta"; readonly threadId: string; readonly turnId: string; readonly itemId: string; readonly delta: string }
   | { readonly type: "item/completed"; readonly threadId: string; readonly turnId: string; readonly itemId: string; readonly status: "running" | "completed" | "failed" | "unknown"; readonly itemType?: string; readonly itemName?: string; readonly summary?: string }
-  | { readonly type: "turn/completed" | "turn/failed" | "turn/interrupted"; readonly threadId: string; readonly turnId: string; readonly message?: string };
+  | { readonly type: "turn/completed" | "turn/failed" | "turn/interrupted"; readonly threadId: string; readonly turnId: string; readonly message?: string; readonly terminalIssue?: "compatibility" };
 
 export interface StartTurnResult {
   readonly threadId: string;

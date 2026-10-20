@@ -1,0 +1,5 @@
+{"method":"turn/completed","params":{"threadId":"terminal-thread","turn":{"id":"terminal-turn","status":"completed"}}}
+{"method":"turn/completed","params":{"threadId":"terminal-thread","turn":{"id":"terminal-turn","status":"failed","error":{"message":"Synthetic failure"}}}}
+{"method":"turn/completed","params":{"threadId":"terminal-thread","turn":{"id":"terminal-turn","status":"interrupted"}}}
+{"method":"turn/completed","params":{"threadId":"terminal-thread","turn":{"id":"terminal-turn","status":"futureStatus"}}}
+{"method":"turn/completed","params":{"threadId":"terminal-thread","turn":{"id":"terminal-turn"}}}

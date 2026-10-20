@@ -339,11 +339,12 @@ function Conversation({ thread, activeTurnId, loadingMore, loadMoreError, onLoad
             return <article className="turn-card" data-turn-id={turn.id} data-history-kind={inherited === undefined ? undefined : inherited.has(turn.id) ? "inherited" : "branch"} key={turn.id}>
               {turn.id === firstIndependentId ? <p className="branch-discussion-label">{m.independentDiscussion}</p> : null}
               <header className="turn-heading">
-                <div><span className="turn-index">{m.turn(turn.index)}</span><span className="turn-status">{turn.status}</span></div>
-                {["completed", "failed", "interrupted"].includes(turn.status) ? <button className="fork-turn" type="button" onClick={() => onFork(turn.id)} disabled={forkDisabled} aria-label={m.branchFromTurn(turn.index)}>{forkingTurnId === turn.id ? m.forking : m.forkHere}</button> : null}
+                <div><span className="turn-index">{m.turn(turn.index)}</span><span className="turn-status">{turn.terminalIssue === "compatibility" ? m.turnStatusUnconfirmed : turn.status}</span></div>
+                {turn.terminalIssue === undefined && ["completed", "failed", "interrupted"].includes(turn.status) ? <button className="fork-turn" type="button" onClick={() => onFork(turn.id)} disabled={forkDisabled} aria-label={m.branchFromTurn(turn.index)}>{forkingTurnId === turn.id ? m.forking : m.forkHere}</button> : null}
                 {turn.createdAt === undefined ? null : <time dateTime={turn.createdAt}>{turn.createdAt}</time>}
               </header>
-              {turn.items.length === 0 ? <p className="partial-note">{m.noReadableItems}</p> : <TurnItems items={turn.items} timingLabel={timingLabel} m={m} />}
+              {turn.itemsView === "notLoaded" || turn.itemsView === "summary" ? <p className="partial-note">{turn.itemsView === "notLoaded" ? m.turnBodyNotLoaded : m.turnBodySummary}</p> : null}
+              {turn.items.length === 0 ? turn.itemsView === "notLoaded" || turn.itemsView === "summary" ? null : <p className="partial-note">{m.noReadableItems}</p> : <TurnItems items={turn.items} timingLabel={timingLabel} m={m} />}
               {branch?.forkTurnId === turn.id ? <div className="branch-history-boundary" role="note" data-cutoff-turn-id={turn.id}><strong>{m.inheritedHistoryEnds}</strong>{firstIndependentId === undefined ? <span>{m.startIndependentDiscussion}</span> : null}</div> : null}
             </article>;
           }}

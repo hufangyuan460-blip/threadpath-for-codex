@@ -247,6 +247,20 @@ async function verifyArchival(): Promise<void> {
   } finally { await unsupported.close(); }
 }
 async function main(): Promise<void> {
+  for (const mode of ["unknown-status", "missing-status"]) {
+    await withClient(mode, false, async (client) => {
+      await client.initialize();
+      let received: (() => void) | undefined;
+      const notification = new Promise<void>((resolve) => { received = resolve; });
+      client.onNotification(({ method }) => { if (method === "turn/completed") received?.(); });
+      const thread = await client.startThread({ cwd, ephemeral: true });
+      const turn = await client.startTurn(thread.id, [{ type: "text", text: "synthetic" }]);
+      if (mode === "missing-status") await notification;
+      const terminal = await client.waitForTurnTerminal(turn.id);
+      assert.equal(terminal.outcome, "failed");
+      assert.ok(terminal.error instanceof CompatibilityError);
+    });
+  }
   await verifyArchival();
   await verifyHappyPath(true, "completed");
   await verifyHappyPath(false, "completed");

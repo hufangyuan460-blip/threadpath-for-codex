@@ -151,6 +151,9 @@ export interface Messages {
   readonly loadingEarlier: string;
   readonly noMore: string;
   readonly noReadableItems: string;
+  readonly turnBodyNotLoaded: string;
+  readonly turnBodySummary: string;
+  readonly turnStatusUnconfirmed: string;
   readonly tool: string;
   readonly status: string;
   readonly sendMessage: string;
@@ -356,6 +359,9 @@ const chineseWorkspaceMessages = {
 export const messages: Record<Language, Messages> = {
   "en-US": { ...englishWorkspaceMessages,
     contextCompaction: "Context compaction",
+    turnBodyNotLoaded: "The body of this turn has not been loaded.",
+    turnBodySummary: "Only a summary of this turn is loaded; the body may be incomplete.",
+    turnStatusUnconfirmed: "Final turn status could not be confirmed.",
     compactionStatus: (status) => ({ started: "Started", completed: "Completed", unknown: "Status unknown" }[status]),
     workOutsideWorkspace: "Work outside a workspace",
     about: "About ThreadPath", appVersion: "App version", buildCommit: "Source commit", buildStatus: "Build", buildDirty: "Development build · uncommitted changes", buildDevelopment: "Development build", buildUnknown: "Source unavailable",
@@ -364,6 +370,9 @@ export const messages: Record<Language, Messages> = {
   },
   "zh-CN": { ...chineseWorkspaceMessages,
     contextCompaction: "上下文压缩",
+    turnBodyNotLoaded: "该回合的正文尚未加载。",
+    turnBodySummary: "当前仅加载该回合的摘要，正文可能不完整。",
+    turnStatusUnconfirmed: "无法确认该回合的最终状态。",
     compactionStatus: (status) => ({ started: "进行中", completed: "已完成", unknown: "状态未知" }[status]),
     workOutsideWorkspace: "不在工作区工作",
     about: "关于 ThreadPath", appVersion: "应用版本", buildCommit: "源码提交", buildStatus: "构建", buildDirty: "开发构建 · 含未提交改动", buildDevelopment: "开发构建", buildUnknown: "无法识别源码",

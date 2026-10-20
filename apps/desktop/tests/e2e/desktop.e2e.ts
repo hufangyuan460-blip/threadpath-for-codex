@@ -465,6 +465,35 @@ async function main(): Promise<void> {
   await runModelSelectorPath();
   await runTerminalPath("e2e-failed", "failed");
   await runTerminalPath("e2e-interrupted", "interrupted");
+  for (const mode of ["e2e-unknown-status", "e2e-missing-status"]) {
+    await runScenario(mode, mode, async (page) => {
+      await openThread(page);
+      await page.locator("#turn-input").fill("synthetic uncertain terminal");
+      await page.locator(".turn-composer button[type=submit]").click();
+      await scrollListToBottom(page);
+      const turn = page.locator('[data-turn-id="e2e-live-turn"]');
+      await turn.locator(".turn-status").getByText("Final turn status could not be confirmed.", { exact: true }).waitFor({ state: "visible" });
+      await turn.getByText(/unknown or missing status/).waitFor({ state: "visible" });
+      assert.equal(await turn.locator(".turn-status").textContent(), "Final turn status could not be confirmed.");
+      assert.equal(await turn.locator(".markdown-message").count(), 0, "uncertain output must not use the successful final renderer");
+      assert.equal(await page.getByRole("button", { name: "Stop this turn", exact: true }).count(), 0);
+      assert.equal(await page.locator("#turn-input").isDisabled(), false);
+      await page.getByRole("button", { name: "Back to conversation history" }).click();
+      await openThread(page);
+      await scrollListToBottom(page);
+      await turn.locator(".turn-status").getByText("Final turn status could not be confirmed.", { exact: true }).waitFor({ state: "visible" });
+      assert.equal(await turn.locator(".markdown-message").count(), 0, "full history must not finalize an uncertain terminal");
+    });
+  }
+  await runScenario("history-items-view", "e2e-history-views", async (page) => {
+    await openThread(page);
+    await scrollListToBottom(page);
+    const unloaded = page.locator('[data-turn-id="e2e-turn-22"]');
+    await unloaded.getByText("The body of this turn has not been loaded.", { exact: true }).waitFor({ state: "visible" });
+    assert.equal(await unloaded.getByText("No readable items were provided for this turn.", { exact: true }).count(), 0);
+    await page.locator('[data-turn-id="e2e-turn-23"]').getByText("Only a summary of this turn is loaded; the body may be incomplete.", { exact: true }).waitFor({ state: "visible" });
+    await page.locator('[data-turn-id="e2e-turn-24"]').getByText("No readable items were provided for this turn.", { exact: true }).waitFor({ state: "visible" });
+  });
   await runImplicitThreadIdTerminalPath();
   await runUnavailableExistingThreadPath();
   await runReadOnlyExistingThreadPath();

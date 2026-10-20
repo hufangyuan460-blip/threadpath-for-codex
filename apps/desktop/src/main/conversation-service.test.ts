@@ -20,6 +20,33 @@ async function readFixtureThread(): Promise<Thread> {
 }
 
 async function main(): Promise<void> {
+  await verifyTerminalReread();
+  for (const status of ["completed", "failed", "interrupted", "futureStatus", undefined]) {
+    let emit: ((event: { method: string; params: JsonObject }) => void) | undefined;
+    let sends = 0;
+    const terminalClient: ConversationClient = {
+      listThreads: async () => [], readThread: async () => ({ id: "terminal-thread", turns: [] }),
+      listTurns: async () => ({ turns: [] }), startThread: async () => ({ id: "terminal-thread" }),
+      resumeThread: async () => ({ id: "terminal-thread" }),
+      startTurn: async () => ({ id: `terminal-${++sends}` }), interruptTurn: async () => undefined,
+      onNotification: (listener) => { emit = listener; return () => undefined; },
+    };
+    const terminalService = new ConversationService({ getReadyClient: () => terminalClient });
+    await terminalService.readThread("terminal-thread");
+    await terminalService.startTurn("terminal-thread", "synthetic input");
+    emit?.({ method: "item/agentMessage/delta", params: { threadId: "terminal-thread", turnId: "terminal-1", itemId: "partial", delta: "partial reply" } });
+    emit?.({ method: "turn/completed", params: { threadId: "terminal-thread", turn: { id: "terminal-1", ...(status === undefined ? {} : { status }) } } });
+    const result = terminalService.getLoadedThread("terminal-thread");
+    const expected = status === "completed" || status === "interrupted" ? status : "failed";
+    assert.equal(result?.turns[0]?.status, expected);
+    assert.equal(result?.remoteActive, undefined);
+    const text = result?.turns[0]?.items.find((item) => item.id === "partial");
+    assert.equal(text?.kind === "text" ? text.phase : undefined, expected === "completed" ? "final" : "streaming");
+    if (status === undefined || status === "futureStatus") assert.ok(result?.turns[0]?.items.some((item) => item.kind === "status" && /unknown or missing/i.test(item.text)));
+    assert.equal(sends, 1, "settlement must not trigger another send");
+    await terminalService.startTurn("terminal-thread", "explicit next input");
+    assert.equal(sends, 2, "unknown terminal must release the local running guard");
+  }
   const fixtureThread = await readFixtureThread();
   let notificationListener: ((event: { method: string; params: JsonObject }) => void) | undefined;
   const client: ConversationClient = {
@@ -59,7 +86,7 @@ async function main(): Promise<void> {
   assert.equal((await service.searchTurns("thread-conversation", "contains"))[0]?.turnId, "turn-2");
   assert.deepEqual(view.turns[1]?.items, [
     { kind: "text", id: "item-user-2", role: "user", text: "What did you find?", phase: "historical" },
-    { kind: "text", id: "item-assistant-2", role: "assistant", text: "The project contains a protocol package.", phase: "final" },
+    { kind: "text", id: "item-assistant-2", role: "assistant", text: "The project contains a protocol package.", phase: "streaming" },
   ]);
   assert.deepEqual(toConversationThreadView({ id: "empty", turns: [] }), { id: "empty", title: "Untitled thread", status: "unknown", turns: [], outline: [], paging: { orderedTurnIds: [], firstItemIndex: 1000000, hasMore: false, isLoadingMore: false } });
   const incompleteHistory = toConversationThreadView({
@@ -71,8 +98,9 @@ async function main(): Promise<void> {
   });
   const unknownAssistant = incompleteHistory.turns[0]?.items[0];
   const missingAssistant = incompleteHistory.turns[1]?.items[0];
-  assert.equal(unknownAssistant?.kind === "text" ? unknownAssistant.phase : undefined, "final");
-  assert.equal(missingAssistant?.kind === "text" ? missingAssistant.phase : undefined, "final");
+  assert.equal(unknownAssistant?.kind === "text" ? unknownAssistant.phase : undefined, "streaming");
+  assert.equal(missingAssistant?.kind === "text" ? missingAssistant.phase : undefined, "streaming");
+  assert.ok(incompleteHistory.turns.every((turn) => turn.terminalIssue === "compatibility"));
 
   await assert.rejects(service.readThread(" invalid-id"), (error: unknown) => error instanceof Error && error.name === "ConfigurationError");
   const updates: string[] = [];
@@ -239,6 +267,64 @@ async function main(): Promise<void> {
   const failingProvider: ConversationClientProvider = { getReadyClient: () => ({ ...client, readThread: async () => { throw new ProtocolError("fixture read failed"); } }) };
   await assert.rejects(new ConversationService(failingProvider).readThread("thread-conversation"), ProtocolError);
   console.log("[desktop-test] conversation service checks passed");
+}
+
+async function verifyTerminalReread(): Promise<void> {
+  for (const initialStatus of ["futureStatus", undefined, "completed", "failed", "interrupted"]) {
+    let status = initialStatus;
+    let metadataOnly = false;
+    let emit: ((event: { method: string; params: JsonObject }) => void) | undefined;
+    let sends = 0;
+    const client: ConversationClient = {
+      listThreads: async () => [], readThread: async (id) => ({ id, turns: id === "other-thread" ? [] : [{ id: "reread-turn", status, itemsView: metadataOnly ? "notLoaded" : "full", items: metadataOnly ? [] : [{ id: "reply", type: "agentMessage", text: "partial or complete" }] }] }),
+      listTurns: async () => ({ turns: [] }), startThread: async () => ({ id: "reread-thread" }), resumeThread: async () => ({ id: "reread-thread" }),
+      startTurn: async () => ({ id: `reread-${++sends}` }), interruptTurn: async () => undefined,
+      onNotification: (listener) => { emit = listener; return () => undefined; },
+    };
+    const service = new ConversationService({ getReadyClient: () => client });
+    await service.readThread("reread-thread");
+    emit?.({ method: "turn/completed", params: { threadId: "reread-thread", turn: { id: "reread-turn", ...(status === undefined ? {} : { status }) } } });
+    await service.readThread("other-thread");
+    let result = await service.readThread("reread-thread");
+    const uncertain = initialStatus === "futureStatus" || initialStatus === undefined;
+    assert.equal(result.turns[0]?.terminalIssue, uncertain ? "compatibility" : undefined);
+    const reply = result.turns[0]?.items.find((item) => item.id === "reply");
+    assert.equal(reply?.kind === "text" ? reply.phase : undefined, initialStatus === "completed" ? "final" : "streaming");
+    if (uncertain) assert.ok(result.turns[0]?.items.some((item) => item.kind === "status" && /could not be confirmed/i.test(item.text)));
+    else assert.equal(result.turns[0]?.status, initialStatus);
+    status = "completed";
+    metadataOnly = true;
+    if (uncertain) {
+      emit?.({ method: "turn/completed", params: { threadId: "reread-thread", turn: { id: "reread-turn", status: "completed" } } });
+      assert.equal(service.getLoadedThread("reread-thread")?.turns[0]?.terminalIssue, undefined, "an explicit later terminal notification can refine compatibility uncertainty");
+      assert.equal(service.getLoadedThread("reread-thread")?.turns[0]?.status, "completed");
+    }
+    result = await service.readThread("reread-thread");
+    assert.equal(result.turns[0]?.terminalIssue, undefined);
+    assert.equal(result.turns[0]?.status, "completed");
+    const confirmedReply = result.turns[0]?.items.find((item) => item.id === "reply");
+    assert.equal(confirmedReply?.kind === "text" ? confirmedReply.phase : undefined, "final");
+    assert.equal(sends, 0);
+  }
+  let emit: ((event: { method: string; params: JsonObject }) => void) | undefined;
+  let starts = 0;
+  const early: ConversationClient = {
+    listThreads: async () => [], readThread: async (id) => ({ id, turns: [] }), listTurns: async () => ({ turns: [] }),
+    resumeThread: async (id) => ({ id }), startThread: async () => ({ id: "early-thread" }), interruptTurn: async () => undefined,
+    startTurn: async () => {
+      const id = `early-${++starts}`;
+      emit?.({ method: "turn/completed", params: { threadId: "early-thread", turn: { id, status: "futureStatus" } } });
+      return { id };
+    },
+    onNotification: (listener) => { emit = listener; return () => undefined; },
+  };
+  const earlyService = new ConversationService({ getReadyClient: () => early });
+  await earlyService.startTurn("early-thread", "first");
+  assert.equal(earlyService.getLoadedThread("early-thread")?.turns[0]?.terminalIssue, "compatibility", "an early terminal must also reach the newly created local view");
+  assert.equal(earlyService.getLoadedThread("early-thread")?.turns[0]?.status, "failed");
+  await earlyService.startTurn("early-thread", "second explicit send");
+  assert.equal(starts, 2, "a terminal before the RPC response must not recreate a running guard");
+  earlyService.close();
 }
 
 main().catch((error: unknown) => {
