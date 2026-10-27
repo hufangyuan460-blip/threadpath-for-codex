@@ -52,3 +52,13 @@ pnpm --filter @threadpath/desktop verify:release
 ## 兼容与回退
 
 Beta.3 不变更会话、草稿或工作区存储格式。Beta.1 的历史发布保留原样；不把其过去更新过的安装包误称为严格按标签构建。当前发布流程不提供自动更新或代码签名；回退时可手动使用旧版安装包。
+
+## Beta.4 发布准备与正式发布的边界
+
+M7-A 只执行 `pnpm package:win` 与 `THREADPATH_PACKAGED_EXE` 指向实际 `win-unpacked` EXE 的 `test:packaged`，不创建标签或调用发布脚本。开发态清单中的版本、源码提交、dirty 和 tag 均来自当时实际源码；准备阶段的本地摘要不能作为未来 GitHub Actions 正式安装包摘要。
+
+Beta.4 沿用正式发布门禁：必须在后续独立授权下，将 `v0.1.0-beta.4` 指向干净发布提交，再由标签工作流重新构建、核验并发布。不要为了准备任务伪造标签或将 dirty 改为 false。实际 NSIS 安装/卸载需隔离环境另验；读取 NSIS 内 ASAR 与运行 win-unpacked 不等同安装流程测试。
+
+Beta.3 → Beta.4 不改变偏好、草稿或分支关系存储格式，没有新增格式迁移。许可证尚未决定；仓库当前没有项目 LICENSE、CONTRIBUTING 或 SECURITY 文档。维护者须决定代码与二进制分发授权（例如宽松许可 MIT/Apache-2.0、copyleft GPL，或明确的非开源授权），并核对依赖许可义务；未决定前不能宣称符合开源定义或满足要求 OSI 许可证的项目申请条件。公开源码本身不授予通用复用、修改或再分发权限。
+
+本轮发布说明见 [Beta.4](releases/v0.1.0-beta.4.md)，本地打包验证记录见 [M7-A](m7-a-beta4-preparation.md)。

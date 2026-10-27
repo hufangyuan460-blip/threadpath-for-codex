@@ -4,7 +4,7 @@
 > A desktop companion for browsing and organizing Codex history and workspaces alongside the official client.
 
 [![Status: Beta](https://img.shields.io/badge/status-beta-64748b.svg)](https://github.com/hufangyuan460-blip/threadpath-for-codex)
-[![Windows](https://img.shields.io/badge/platform-Windows-64748b.svg)](https://github.com/hufangyuan460-blip/threadpath-for-codex/releases/tag/v0.1.0-beta.3)
+[![Windows](https://img.shields.io/badge/platform-Windows_x64-64748b.svg)](https://github.com/hufangyuan460-blip/threadpath-for-codex/releases)
 
 ## 产品定位
 
@@ -18,7 +18,7 @@ ThreadPath 不替代 Codex 官方客户端，而是它的本地历史管理伴�
 - 仅在确认工作目录且服务器确认线程可写时允许发起或续聊，避免与其他客户端争用写入；
 - 收藏、隐藏、命名等整理偏好保存在 ThreadPath 本地；归档和恢复通过 Codex 协议同步实际会话状态。
 
-当前为 `v0.1.0-beta.3`。点击左上角产品名可在「关于」查看应用版本、源码提交号和构建状态。需要已安装并完成认证的 Codex CLI；安装包不包含 CLI、未签名，也暂未提供自动更新。
+当前源码版本为 `v0.1.0-beta.4`（发布准备，尚未公开 Beta.4 下载）。点击左上角产品名可在「关于」查看应用版本、源码提交号和构建状态。需要已安装并完成认证的 Codex CLI；Windows x64 安装包不包含 CLI、未签名，也暂未提供自动更新。
 
 ## 界面预览
 
@@ -43,7 +43,7 @@ ThreadPath 不替代 Codex 官方客户端，而是它的本地历史管理伴�
 
 ## 获取与运行
 
-从 [GitHub Releases](https://github.com/hufangyuan460-blip/threadpath-for-codex/releases/tag/v0.1.0-beta.3) 下载最新 Windows 安装包。首次启动时，应用会自动发现已安装的 Codex CLI；找不到时可手动选择 `codex.exe` 与工作目录。
+从 [GitHub Releases](https://github.com/hufangyuan460-blip/threadpath-for-codex/releases) 选择已公开的 Windows x64 安装包及对应构建清单、SHA-256 校验文件；Beta.4 准备完成不代表已经发布。先安装并认证 Codex CLI，再启动 ThreadPath。应用会自动发现 CLI；找不到时可手动选择 `codex.exe` 与工作目录。Windows 可能对未签名程序显示安全提示，请先核对来源与校验值。
 
 开发环境：
 
@@ -63,6 +63,10 @@ pnpm smoke
 
 ## 当前 Beta 功能与后续展望
 
+Beta.4 汇总 Beta.3 后的改进：支持「不在工作区工作」的独立会话入口、区分用户与模型的消息目录、Token Usage 与已观察压缩展示，并修复未知终态被当作成功、稀疏历史与分页重读丢失已接受输入等问题。分支继续共用源工作目录并要求只读策略；归档/恢复与来源导航保留现有语义。[中英文发布说明](docs/releases/v0.1.0-beta.4.md)。
+
+Usage 是服务器绝对快照，重启后未知，不代表精确上下文占用或费用；历史压缩项不能推断实时生命周期。真实 fork Usage 继承和实时压缩完整生命周期尚未验证（`M6_C4_FULL_LIFECYCLE: INCOMPLETE`）。[验收范围](docs/m6-c4a-resume-usage-report.md)。
+
 Beta.3 增加版本识别与发布核对：每个版本都有独立安装包、构建清单和 SHA-256 校验文件。发布前核对源码标签并在实际打包程序上执行固定验收；维护者操作见 [发布流程](docs/release-process.md)。
 
 2026-10-12 更新的 Beta 安装包包含分支讨论闭环：在已结束回合点击「从这里分支」，得到继承至该回合的新对话；通过卡片与连线切换原路线、同级分支和嵌套分支。输入区显示当前续聊对象，各会话草稿与分支关系在重启后恢复。
@@ -81,7 +85,9 @@ Beta.3 增加版本识别与发布核对：每个版本都有独立安装包、�
 
 ThreadPath is a local companion to the official Codex client, not a replacement. Use the official client for day-to-day coding and approvals; use ThreadPath to synchronize, search, read, and organize Codex history and workspaces.
 
-It connects to the local Codex CLI `app-server`, keeps workspace organization preferences locally, and allows sending only after a working directory and a writable thread have been confirmed. The current `v0.1.0-beta.3` Windows installer requires an installed and authenticated Codex CLI; it does not bundle the CLI, include code signing, or provide auto-updates yet. Click the product name at the top left for the app version and source commit. Each release includes a build manifest and SHA-256 checksum file and is verified against its source tag and packaged-app tests.
+It connects to the local Codex CLI `app-server`, keeps workspace organization preferences locally, and allows sending only after a working directory and a writable thread have been confirmed. Source version `v0.1.0-beta.4` is in release preparation, not yet available as a public Beta.4 download. Select published Windows x64 installers from [GitHub Releases](https://github.com/hufangyuan460-blip/threadpath-for-codex/releases). Install and authenticate Codex CLI separately; the unsigned installer does not bundle it or provide auto-updates. Click the product name at the top left for the version and source commit.
+
+Beta.4 adds standalone conversations outside project workspaces, role-aware message navigation, and server-reported Token Usage/observed compaction, plus history pagination and uncertain-terminal reliability fixes. Usage is not exact context occupancy or cost; snapshots are in memory only. Real fork Usage inheritance and the full live compaction lifecycle remain unverified. See the [bilingual release notes](docs/releases/v0.1.0-beta.4.md) for evidence boundaries and upgrade notes.
 
 The stack is Electron, Vite, React, TypeScript, the Codex `app-server` over stdio JSONL/JSON-RPC, `react-virtuoso`, pnpm, NSIS, and GitHub Actions. Near-term work focuses on reliability, complete history synchronization, performance, and accessibility before advanced workspace and conversation views.
 

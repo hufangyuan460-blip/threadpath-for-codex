@@ -1,6 +1,6 @@
 # 开发基线
 
-基线状态：`BASELINE_PARTIAL`；最后核对：2026-10-26（M6-C 验收边界增量；不重验无关领域）。
+基线状态：`BASELINE_PARTIAL`；最后核对：M7-A Beta.4 发布准备（增量核对构建、安装器内容、实际打包 EXE 与发布链路；不重验无关领域）。
 
 基线范围为根目录工作区配置、`threadpath-protocol` 的共享客户端、桌面端调用边界，以及随后获授权的分支导航、逐会话草稿、偏好写入、锁检查、会话归档和构建版本追溯。打包领域仅核对图标、源码标签、安装器内容和校验文件；未扫描完整 UI、安全审查或全部历史。适用的用户指令与 `AGENTS.md` 优先，任务专项证据见 [分支协议验证](protocol-fork-verification.md)、[分支讨论闭环](branch-conversation.md) 和 [发布流程](release-process.md)。
 
@@ -45,6 +45,7 @@
 | BUILD-005 | electron-vite 的 ESM 配置加载会在源码目录生成 `electron.vite.config.<timestamp>.mjs`；精确忽略该生成文件，E2E 另以实际 Git 状态核对构建信息 | electron-vite 4.0.0 配置加载器、`.gitignore`、`about.e2e.ts`；Beta.2 的 Release 工作流阻止了误标 dirty 的安装包 | 本机及线上失败路径验证 / 高 |
 | BUILD-003 | 正式构建必须来自干净源码且 `v<package.version>` 指向 HEAD；打包前后比较元数据，核对 ASAR 和安装器压缩内容；每版生成清单与 SHA-256 | `package-windows.ts`、`release-artifacts.ts`、`verify-release.ts`；缺失/错位标签、未提交文件测试与开发安装器逐字节对照 | 离线及开发产物验证 / 高 |
 | BUILD-004 | 发布工作流从版本标签构建，源码及打包 EXE 测试通过后才上传；远程标签须与产物提交一致，已有 release 不替换；上传先保留草稿再核对大小与摘要 | `.github/workflows/release.yml`、`publish-release.ts`；每个版本的线上验证结果见其工作流与公开清单 | 代码核对 / 高；线上结果按版本核对 |
+| BUILD-006 | 版本准备使用开发态 `package:win`，如实保留 commit/dirty/tag；未创建版本标签时不能运行正式发布或将本地摘要当作未来正式包摘要。win-unpacked 测试不等于 NSIS 安装/卸载 | [M7-A 记录](m7-a-beta4-preparation.md)；Beta.4 六组实际 EXE、ASAR/清单/图标/摘要验证 | 本地开发产物验证 / 高；正式 Beta.4 发布待独立授权 |
 
 接口使用 stdio JSONL 的 `method/id/params`，并非 HTTP Controller；不额外引入 HTTP 请求约定。
 
@@ -118,3 +119,5 @@
 - 2026-10-13：扩展版本与发布基线，记录冻结构建信息、干净标签检查、安装器内容对照、实际打包程序验收和独立发布约束；保留首次线上工作流验证边界。
 
 - 2026-10-13：Beta.2 正式检查发现构建器临时文件导致 dirty 误报并阻止发布，工作流 `38331407343` 未公开安装包；保留候选标签，修正精确忽略规则与独立 E2E 核对后使用 Beta.3 接续发布。
+
+M7-A 增量：桌面版本准备为 `0.1.0-beta.4`，完整离线回归、开发态 NSIS 打包和六组实际打包 EXE 合成测试通过；About 版本与清单一致，ASAR/out/安装器 payload、源图标 7 种尺寸和摘要回读均通过。没有真实 Codex 调用、标签或公开 Release。保留未签名、许可证未定、无隔离 NSIS 安装/卸载验证及 M6-C4 实时生命周期缺口；详见 [M7-A](m7-a-beta4-preparation.md)。原有部分就绪状态不扩大为完整系统保证。
