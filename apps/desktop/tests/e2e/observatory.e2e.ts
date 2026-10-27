@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, type Page, type ElectronApplication } from "playwright-core";
+import { expandHistoryWorkspaces } from "./workspace-history.ts";
 
 const desktop = fileURLToPath(new URL("../../", import.meta.url));
 const repo = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -20,6 +21,7 @@ async function launch(): Promise<{ app: ElectronApplication; page: Page }> {
   const page = await app.firstWindow();
   page.setDefaultTimeout(15_000);
   await page.waitForFunction(() => document.querySelector('[aria-label="Connection status"]')?.textContent?.includes("ready"));
+  await expandHistoryWorkspaces(page);
   return { app, page };
 }
 
@@ -84,6 +86,7 @@ async function main(): Promise<void> {
     assert.equal(reconnected.usage?.stale, true);
     // The selected route may be cleared by the existing disconnect UI; reselect via home.
     if (await page.locator(".thread-directory").count()) await page.locator(".back-history").click();
+    await expandHistoryWorkspaces(page);
     await page.locator(".thread-row").filter({ hasText: "Branch 1" }).first().click();
     await page.locator(".usage-observatory summary").filter({ hasText: "stale" }).waitFor();
     await page.locator(".usage-observatory summary").click();

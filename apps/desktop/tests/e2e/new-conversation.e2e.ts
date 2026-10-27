@@ -3,6 +3,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron } from "playwright-core";
+import { expandHistoryWorkspaces } from "./workspace-history.ts";
 
 const desktop = fileURLToPath(new URL("../../", import.meta.url));
 const repo = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -21,6 +22,8 @@ async function main(): Promise<void> {
   let { app, page } = await launch();
   try {
     await page.locator(".new-conversation-space").waitFor();
+    await expandHistoryWorkspaces(page);
+    assert.ok(await page.locator('button.workspace-toggle[aria-expanded="true"]').count() > 0, "creation scenario starts with a manually expanded workspace");
     await page.locator("#turn-input").fill("Create a conversation while history indexing lags");
     await page.locator(".composer-send").click();
     await page.locator(".conversation-heading h2").filter({ hasText: "Create a conversation while history indexing lags" }).waitFor();
@@ -42,10 +45,12 @@ async function main(): Promise<void> {
     assert.equal(await firstUser.count(), 1, "a stale manual read must not erase or duplicate accepted input");
     await page.locator("#turn-input").fill("draft on the new conversation");
     await page.getByRole("button", { name: "Back to conversation history" }).click();
+    assert.equal(await page.locator('button.workspace-toggle[aria-expanded="false"]').count(), 0, "successful creation and ordinary refresh must preserve manual expansion");
     await page.locator(".thread-row").filter({ hasText: "Create a conversation while history indexing lags" }).waitFor();
     await page.screenshot({ path: join(artifacts, "new-conversation-index-lag.png"), fullPage: true });
     await app.close();
     ({ app, page } = await launch());
+    await expandHistoryWorkspaces(page);
     await page.locator(".thread-row").filter({ hasText: "Create a conversation while history indexing lags" }).click();
     await page.locator(".conversation-heading").waitFor();
     await page.locator(".role-user").getByText("Create a conversation while history indexing lags", { exact: true }).waitFor();

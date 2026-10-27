@@ -245,6 +245,8 @@ function registerApi(): void {
   ipcMain.handle("history:get-sync-state", (): ReturnType<CodexHistorySyncService["getSnapshot"]> => historySyncService.getSnapshot());
   ipcMain.handle("history:sync", async () => {
     const result = await withReadyConnection(getSyncedThreads);
+    // Only explicit/startup sync resets expansion, never background sync/get-state.
+    preferencesService.collapseWorkspaces();
     const workspace = await workspaceService.getState(result.threads, result.snapshot);
     return { workspace, snapshot: result.snapshot };
   });

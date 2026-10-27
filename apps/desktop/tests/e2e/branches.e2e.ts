@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, type ElectronApplication, type Page } from "playwright-core";
+import { expandHistoryWorkspaces } from "./workspace-history.ts";
 
 const desktop = fileURLToPath(new URL("../../", import.meta.url));
 const repo = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -19,6 +20,7 @@ async function launch(mode = "normal"): Promise<{ app: ElectronApplication; page
   const page = await app.firstWindow();
   page.setDefaultTimeout(15_000);
   await page.waitForFunction(() => document.querySelector('[aria-label="Connection status"]')?.textContent?.includes("ready"));
+  await expandHistoryWorkspaces(page);
   return { app, page };
 }
 async function selected(page: Page, title: string): Promise<void> {

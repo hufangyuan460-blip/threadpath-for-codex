@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, type Page } from "playwright-core";
+import { expandHistoryWorkspaces } from "./workspace-history.ts";
 
 const desktop = fileURLToPath(new URL("../../", import.meta.url));
 const repo = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -32,6 +33,7 @@ async function scenario(mode: string): Promise<void> {
   page.setDefaultTimeout(15000);
   try {
     await page.waitForFunction(() => document.querySelector('[aria-label="Connection status"]')?.textContent?.includes("ready"));
+    await expandHistoryWorkspaces(page);
     await page.locator(".thread-row").filter({ hasText: "Alternative plan" }).click();
     await waitSelected(page, "Alternative plan");
     const origin = page.locator('[data-branch-source-id="branch-child"]');

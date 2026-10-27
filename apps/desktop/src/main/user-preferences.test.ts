@@ -17,6 +17,11 @@ async function main(): Promise<void> {
   const preferences = new UserPreferencesService(path, "en-US");
   await preferences.load();
   assert.equal(preferences.getLanguage(), "en-US");
+  assert.equal(preferences.getWorkspaceExpanded(directory), false, "fresh workspaces start collapsed");
+  await preferences.setWorkspaceExpanded(directory, true);
+  assert.equal(preferences.getWorkspaceExpanded(directory), true);
+  await preferences.setWorkspaceExpanded(directory, false);
+  assert.equal(preferences.getWorkspaceExpanded(directory), false);
   await preferences.setLanguage("zh-CN");
   await preferences.setThreadDisplayName("thread-1", "My local name");
   assert.equal(preferences.getThreadDisplayName("thread-1", "Server"), "My local name");
@@ -74,6 +79,50 @@ async function main(): Promise<void> {
   assert.equal(malformed.getLanguage(), "zh-CN");
   assert.deepEqual(malformed.getBranches(), []);
   assert.equal(malformed.getThreadDraft("good"), "valid");
+  const legacyPath = join(directory, "legacy-expansion.json");
+  const project = join(directory, "project"), otherProject = join(directory, "other");
+  const legacy = {
+    expandedWorkingDirectories: { [project]: true, [otherProject]: false },
+    workingDirectories: [project, otherProject], currentWorkingDirectory: project,
+    hiddenWorkingDirectories: { [otherProject]: true }, favoriteWorkingDirectories: { [project]: true },
+    threadDrafts: { existing: "keep this draft" },
+    threadBranches: { child: { threadId: "child", sourceThreadId: "existing", forkTurnId: "turn-1", forkLabel: "Keep branch", createdAt: "2026-10-12T00:00:00Z", readOnly: true } },
+  };
+  await writeFile(legacyPath, JSON.stringify(legacy));
+  const session = new UserPreferencesService(legacyPath, "en-US");
+  await session.load();
+  assert.equal(session.getWorkspaceExpanded(project), false, "legacy true must not reopen a workspace");
+  assert.equal(session.getWorkspaceExpanded(otherProject), false);
+  const beforeExpansion = await readFile(legacyPath, "utf8");
+  await session.setWorkspaceExpanded(project, true);
+  await session.setWorkspaceExpanded(otherProject, true);
+  assert.equal(session.getWorkspaceExpanded(project), true);
+  assert.equal(session.getWorkspaceExpanded(join(directory, "new-project")), false, "newly discovered paths start collapsed");
+  assert.equal(session.getWorkspaceExpanded(project), true, "ordinary preference reads retain manual expansion");
+  await session.flush();
+  assert.equal(await readFile(legacyPath, "utf8"), beforeExpansion, "expansion must not write preferences");
+  session.collapseWorkspaces();
+  assert.equal(session.getWorkspaceExpanded(project), false);
+  assert.equal(session.getWorkspaceExpanded(otherProject), false);
+  assert.equal(session.getCurrentWorkingDirectory(), project);
+  assert.equal(session.isWorkspaceFavorite(project), true);
+  assert.equal(session.isWorkspaceHidden(otherProject), true);
+  assert.equal(session.getThreadDraft("existing"), "keep this draft");
+  assert.equal(session.getBranch("child")?.forkTurnId, "turn-1");
+  assert.equal(await readFile(legacyPath, "utf8"), beforeExpansion, "collapse must not delete legacy values or other data");
+  await session.setWorkspaceExpanded(project, true);
+  await session.setLanguage("zh-CN");
+  const savedLegacy = JSON.parse(await readFile(legacyPath, "utf8"));
+  assert.deepEqual(savedLegacy.expandedWorkingDirectories, legacy.expandedWorkingDirectories, "unrelated saves preserve legacy data");
+  const newSession = new UserPreferencesService(legacyPath, "en-US");
+  await newSession.load();
+  assert.equal(newSession.getWorkspaceExpanded(project), false, "restart discards manual expansion even if legacy true remains");
+  assert.equal(newSession.getWorkspaceExpanded(otherProject), false);
+  assert.equal(newSession.getCurrentWorkingDirectory(), project);
+  assert.equal(newSession.getThreadDraft("existing"), "keep this draft");
+  assert.equal(newSession.isWorkspaceFavorite(project), true);
+  assert.equal(newSession.isWorkspaceHidden(otherProject), true);
+  assert.equal(newSession.getBranch("child")?.forkTurnId, "turn-1");
   const saved = await readFile(path, "utf8");
   assert.ok(!saved.includes("token"));
   console.log("[desktop-test] user preference checks passed");

@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, realpath } from "node:fs/promises";
+import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, type Page } from "playwright-core";
+import { expandHistoryWorkspaces, waitForHistorySync } from "./workspace-history.ts";
 
 const desktop = fileURLToPath(new URL("../../", import.meta.url));
 const repo = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -13,21 +14,76 @@ const userData = join(artifacts, "user-data", `workspace-archive-${process.pid}-
 const statePath = join(userData, "synthetic-archive-state.json");
 const logPath = join(userData, "archive-requests.jsonl");
 const extraWorkspace = join(await realpath(tmpdir()), `a-long-workspace-directory-to-check-the-composer-layout-${process.pid}-${Date.now()}`);
+const legacyWorkspace = join(await realpath(tmpdir()), `threadpath-legacy-collapsed-${process.pid}-${Date.now()}`);
+const legacyExpanded = { [repo.replace(/[\\/]+$/, "")]: true, [legacyWorkspace]: false };
+function workspaceToggle(page: Page, path: string) {
+  return page.locator("button.workspace-toggle").filter({ has: page.locator(".workspace-name").and(page.getByTitle(path, { exact: true })) });
+}
+async function assertAllCollapsed(page: Page): Promise<void> {
+  await page.waitForFunction(() => document.querySelectorAll("button.workspace-toggle[aria-expanded]").length >= 2);
+  const toggles = page.locator("button.workspace-toggle[aria-expanded]");
+  assert.ok(await toggles.count() >= 2, "fixture must exercise multiple real workspaces");
+  assert.deepEqual(await toggles.evaluateAll((elements) => elements.map((element) => element.getAttribute("aria-expanded"))), Array(await toggles.count()).fill("false"));
+  assert.equal(await page.locator(".workspace-thread-list").count(), 0);
+}
+async function assertLegacyPreferences(): Promise<void> {
+  const preferences = JSON.parse(await readFile(join(userData, "threadpath-ui.json"), "utf8")) as { expandedWorkingDirectories?: Record<string, boolean> };
+  assert.deepEqual(preferences.expandedWorkingDirectories, legacyExpanded, "legacy true/false entries must remain on disk, not become session state");
+}
 async function launch(mode = "normal", directory = userData) {
   await mkdir(directory, { recursive: true });
   const app = await electron.launch({ executablePath: process.env.THREADPATH_PACKAGED_EXE ?? join(desktop, "node_modules", "electron", "dist", "electron.exe"), args: ["--no-sandbox", "--disable-gpu", `--user-data-dir=${directory}`, ...(process.env.THREADPATH_PACKAGED_EXE === undefined ? [join(desktop, "out", "main", "index.js")] : [])], env: { ...process.env, CODEX_EXECUTABLE: join(desktop, "tests", "e2e", "fake-archive-app-server.cmd"), CODEX_CWD: repo, ARCHIVE_STATE_PATH: statePath, ARCHIVE_REQUEST_LOG: logPath, ARCHIVE_FIXTURE_MODE: mode, ELECTRON_IS_DEV: "0", THREADPATH_E2E: "1", THREADPATH_E2E_LANGUAGE: "en-US" } });
   const page = await app.firstWindow();
   page.setDefaultTimeout(15000);
   await page.waitForFunction(() => document.querySelector('[aria-label="Connection status"]')?.textContent?.includes("ready"));
-  await page.locator(".thread-row").first().waitFor();
+  await waitForHistorySync(page);
   return { app, page };
 }
 function targetRow(page: Page) { return page.locator(".thread-row-wrap").filter({ hasText: "Archive test conversation" }); }
 async function openMenu(page: Page) { await targetRow(page).locator(".thread-actions-button").click(); }
 async function requests() { return (await readFile(logPath, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as { method: string; threadId: string | null }); }
 async function main(): Promise<void> {
+  await mkdir(userData, { recursive: true });
+  await mkdir(legacyWorkspace, { recursive: true });
+  await writeFile(join(userData, "threadpath-ui.json"), JSON.stringify({ workingDirectories: [repo, legacyWorkspace], currentWorkingDirectory: repo, expandedWorkingDirectories: legacyExpanded }));
   let { app, page } = await launch();
   try {
+    await assertAllCollapsed(page);
+    await assertLegacyPreferences();
+    const repositoryPath = repo.replace(/[\\/]+$/, "");
+    await workspaceToggle(page, repositoryPath).click();
+    await targetRow(page).waitFor();
+    assert.equal(await workspaceToggle(page, repositoryPath).getAttribute("aria-expanded"), "true");
+    assert.equal(await workspaceToggle(page, legacyWorkspace).getAttribute("aria-expanded"), "false", "expanding one workspace must not expand another");
+    await workspaceToggle(page, repositoryPath).click();
+    await targetRow(page).waitFor({ state: "detached" });
+    await workspaceToggle(page, repositoryPath).click();
+    await targetRow(page).waitFor();
+    await workspaceToggle(page, legacyWorkspace).click();
+    await workspaceToggle(page, legacyWorkspace).locator('xpath=self::*[@aria-expanded="true"]').waitFor();
+    const ordinaryState = await page.evaluate(() => window.threadPath.getWorkspaceState());
+    assert.ok(ordinaryState.directories.every((directory) => directory.expanded), "ordinary workspace:get-state must preserve manual expansion");
+    await targetRow(page).locator(".thread-row").click();
+    await page.locator(".conversation-heading").waitFor();
+    await page.locator(".refresh-status").click();
+    await page.getByRole("button", { name: "Back to conversation history" }).click();
+    await targetRow(page).waitFor();
+    await page.locator(".thread-row").filter({ hasText: "Externally running conversation" }).click();
+    await page.locator(".conversation-heading").waitFor();
+    await page.getByRole("button", { name: "Back to conversation history" }).click();
+    await targetRow(page).waitFor();
+    assert.equal(await workspaceToggle(page, repositoryPath).getAttribute("aria-expanded"), "true", "switching conversations must retain expansion");
+    assert.equal(await workspaceToggle(page, legacyWorkspace).getAttribute("aria-expanded"), "true", "route changes and ordinary refresh must retain expansion");
+    const beforeFocus = (await page.evaluate(() => window.threadPath.getWorkspaceState())).sync.syncedAt;
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.blur());
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.focus());
+    await page.waitForFunction(async (previous) => {
+      const state = await window.threadPath.getWorkspaceState();
+      return state.sync.state !== "syncing" && state.sync.syncedAt !== previous;
+    }, beforeFocus);
+    const focusedState = await page.evaluate(() => window.threadPath.getWorkspaceState());
+    assert.ok(focusedState.directories.every((directory) => directory.expanded), "completed background focus sync must preserve all manual expansion");
+    assert.equal(await workspaceToggle(page, repositoryPath).getAttribute("aria-expanded"), "true");
     const picker = page.locator(".composer-workspace-picker");
     assert.ok((await picker.textContent())?.includes(repositoryName), "homepage must show current workspace without hovering");
     assert.equal(await picker.getAttribute("title"), repo.replace(/[\\/]+$/, ""));
@@ -37,6 +93,9 @@ async function main(): Promise<void> {
     await picker.click();
     await page.locator(".workspace-menu").getByRole("menuitem", { name: "Add workspace" }).click();
     await page.waitForFunction((path) => document.querySelector(".composer-workspace-picker")?.getAttribute("title") === path, extraWorkspace);
+    await workspaceToggle(page, extraWorkspace).waitFor();
+    assert.equal(await workspaceToggle(page, extraWorkspace).getAttribute("aria-expanded"), "false", "new workspace starts collapsed");
+    assert.equal(await workspaceToggle(page, repositoryPath).getAttribute("aria-expanded"), "true", "adding a workspace must preserve existing expansion");
     assert.ok((await picker.textContent())?.includes("a-long-workspace-directory"));
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(760, 480));
     await page.locator(".theme-switch").selectOption("light");
@@ -54,12 +113,21 @@ async function main(): Promise<void> {
     await picker.click();
     await page.locator(".workspace-menu").getByRole("menuitem", { name: `📁 ${repositoryName}`, exact: true }).click();
     await page.waitForFunction((name) => document.querySelector(".composer-workspace-picker")?.textContent?.includes(name), repositoryName);
+    await page.getByRole("button", { name: "Sync history", exact: true }).click();
+    await page.waitForFunction(() => document.querySelector('button.workspace-toggle[aria-expanded="true"]') === null);
+    await waitForHistorySync(page);
+    await assertAllCollapsed(page);
+    await assertLegacyPreferences();
+    await expandHistoryWorkspaces(page);
 
     await openMenu(page);
     await page.getByRole("menuitem", { name: "Archive conversation", exact: true }).click();
     await targetRow(page).waitFor({ state: "detached" });
     await page.getByRole("button", { name: "Sync history", exact: true }).click();
-    await page.waitForFunction(() => document.querySelector(".sync-note")?.textContent?.startsWith("Synced"));
+    await page.waitForFunction(() => document.querySelector('button.workspace-toggle[aria-expanded="true"]') === null);
+    await waitForHistorySync(page);
+    await assertAllCollapsed(page);
+    await expandHistoryWorkspaces(page);
     assert.equal(await targetRow(page).count(), 0, "delayed index cannot bring an archived thread back to regular history");
     await page.locator("#history-filter").selectOption("archived");
     await targetRow(page).waitFor();
@@ -87,6 +155,9 @@ async function main(): Promise<void> {
     await app.close();
 
     ({ app, page } = await launch());
+    await assertAllCollapsed(page);
+    await assertLegacyPreferences();
+    await expandHistoryWorkspaces(page);
     assert.equal(await targetRow(page).count(), 0, "archived state survives restart");
     await page.locator("#history-filter").selectOption("archived");
     await targetRow(page).locator(".thread-row").click();
@@ -106,6 +177,10 @@ async function main(): Promise<void> {
     await app.close();
 
     ({ app, page } = await launch("failure", `${userData}-failure`));
+    // The persisted fixture moved to this cwd while changing workspaces above.
+    // Wait for its asynchronous identity resolution before expanding history.
+    await workspaceToggle(page, extraWorkspace).waitFor();
+    await expandHistoryWorkspaces(page);
     await openMenu(page);
     await page.getByRole("menuitem", { name: "Archive conversation", exact: true }).click();
     await page.locator(".archive-error").getByText("Synthetic archive failure", { exact: false }).waitFor();

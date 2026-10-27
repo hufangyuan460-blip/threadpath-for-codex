@@ -63,6 +63,8 @@ export class UserPreferencesService {
   private readonly defaultLanguage: Language;
   private data: UserPreferencesFile = {};
   private writes: Promise<void> = Promise.resolve();
+  // Expansion is session UI state; legacy persisted values are ignored.
+  private readonly expandedWorkspaces = new Set<string>();
 
   constructor(configPath: string, defaultLanguage: Language) {
     this.configPath = configPath;
@@ -116,7 +118,7 @@ export class UserPreferencesService {
 
   getWorkingDirectories(): string[] { return [...(this.data.workingDirectories ?? [])]; }
   getCurrentWorkingDirectory(): string | undefined { return this.data.currentWorkingDirectory; }
-  getWorkspaceExpanded(path: string): boolean { return this.data.expandedWorkingDirectories?.[path] ?? true; }
+  getWorkspaceExpanded(path: string): boolean { return this.expandedWorkspaces.has(path); }
   isWorkspaceHidden(path: string): boolean { return this.data.hiddenWorkingDirectories?.[path] === true; }
   isWorkspaceFavorite(path: string): boolean { return this.data.favoriteWorkingDirectories?.[path] === true; }
   getThreadWorkingDirectory(threadId: string): string | undefined { return this.data.threadWorkingDirectories?.[threadId]; }
@@ -177,9 +179,11 @@ export class UserPreferencesService {
   }
 
   async setWorkspaceExpanded(path: string, expanded: boolean): Promise<void> {
-    this.data = { ...this.data, expandedWorkingDirectories: { ...(this.data.expandedWorkingDirectories ?? {}), [path]: expanded } };
-    await this.persist();
+    if (expanded) this.expandedWorkspaces.add(path);
+    else this.expandedWorkspaces.delete(path);
   }
+
+  collapseWorkspaces(): void { this.expandedWorkspaces.clear(); }
 
   async setWorkspaceHidden(path: string, hidden: boolean): Promise<void> {
     const directories = { ...(this.data.hiddenWorkingDirectories ?? {}) };

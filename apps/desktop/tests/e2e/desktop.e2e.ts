@@ -3,6 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, type ElectronApplication, type Page } from "playwright-core";
+import { expandHistoryWorkspaces } from "./workspace-history.ts";
 
 const desktopDirectory = fileURLToPath(new URL("../../", import.meta.url));
 const repositoryDirectory = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -45,6 +46,7 @@ async function waitForText(page: Page, selector: string, text: string): Promise<
 
 async function openThread(page: Page): Promise<void> {
   await waitForText(page, '[aria-label="Connection status"]', "ready");
+  await expandHistoryWorkspaces(page);
   const thread = page.locator('.thread-row').filter({ hasText: "First E2E user question" }).first();
   await thread.waitFor({ state: "visible" });
   await thread.click();
@@ -96,6 +98,7 @@ async function runScenario(name: string, mode: string, action: ScenarioAction, e
 async function runCompletedPath(): Promise<void> {
   await runScenario("completed", "e2e-completed", async (page) => {
     await waitForText(page, '[aria-label="Connection status"]', "ready");
+    await expandHistoryWorkspaces(page);
     const historyList = page.locator(".thread-list");
     await historyList.waitFor({ state: "visible" });
     const nestedHistoryScrollers = await page.locator(".workspace-history *").evaluateAll((elements) => elements.filter((element) => {
@@ -208,6 +211,7 @@ async function runCompletedPath(): Promise<void> {
 async function runLocalHidePath(): Promise<void> {
   await runScenario("local-hide", "e2e-completed", async (page) => {
     await waitForText(page, '[aria-label="Connection status"]', "ready");
+    await expandHistoryWorkspaces(page);
     const thread = page.locator(".thread-row").first();
     await thread.waitFor({ state: "visible" });
     const title = await thread.textContent();
@@ -238,6 +242,7 @@ async function runLocalHidePath(): Promise<void> {
 async function runHistoryOrganizationPath(): Promise<void> {
   await runScenario("history-organization", "e2e-completed", async (page) => {
     await waitForText(page, '[aria-label="Connection status"]', "ready");
+    await expandHistoryWorkspaces(page);
     const firstThread = page.locator(".thread-row").first();
     const firstTitle = await firstThread.textContent();
     await page.getByRole("button", { name: /Thread actions:/ }).first().click();
@@ -274,6 +279,7 @@ async function runGlobalHistorySearchPath(): Promise<void> {
     await page.locator(".conversation-heading h2").getByText("User turn 1", { exact: true }).waitFor({ state: "visible" });
     await page.getByRole("button", { name: "Back to conversation history" }).click();
 
+    await expandHistoryWorkspaces(page);
     const firstThreadActions = page.getByRole("button", { name: /Thread actions:/ }).first();
     await firstThreadActions.click();
     await page.getByRole("menuitem", { name: "Hide conversation", exact: true }).click();

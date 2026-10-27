@@ -975,7 +975,7 @@ function App(): React.JSX.Element {
           setRunningTurnByThreadId((current) => ({ ...current, [result.threadId]: result.turnId }));
           setTurnTimings((current) => ({ ...current, [result.turnId]: { threadId: result.threadId, startedAt: Date.now() } }));
         }
-        void loadThreads();
+        void refreshWorkspaceState();
       } catch (error: unknown) {
         setNewSendError(errorMessage(error));
       } finally { setStartingTurn(false); }

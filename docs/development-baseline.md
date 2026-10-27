@@ -40,6 +40,7 @@
 | DATA-008 | 服务器返回回合 ID 不代表用户正文已可用；本地已接受输入保留至历史包含原输入，服务器消息 ID 与本地占位 ID 不同也必须去重 | `ConversationService.rememberAcceptedInput/preserveAcceptedInput`；完成前后稀疏历史、正文视口与重启 E2E | 离线验证 / 高 |
 | DATA-009 | Codex 归档与本地隐藏分开；已核实筛选能力时由查询补全 archived；成功操作在历史索引确认前不能被迟到扫描撤销，确认后接受外部变更 | `AppServerClient.archiveThread/unarchiveThread`、`CodexHistorySyncService.confirmArchived`；两类列表及并发扫描测试、真实专用会话归档/恢复 | 本机及离线验证 / 高 |
 | UI-003 | 首页工作区入口显示现有 Git 根归组后的目录名称和完整路径；已归档历史可读，恢复后续聊；主进程锁和只读核对先于归档，草稿与分支关系保留 | `main.tsx`、`threads:set-archived`、`WorkspaceService`；目录切换、最小窗口、活动拒绝与重启 E2E | 离线验证 / 高 |
+| UI-005 | 项目展开只属于当前应用会话，默认 false；旧 `expandedWorkingDirectories` 保留但不控制新会话。仅显式 `history:sync` 完成后清空展开集合；普通 `workspace:get-state`、会话切换及窗口聚焦后台同步不清空，新建后的列表更新走普通刷新 | `UserPreferencesService` 内存集合、`index.ts` IPC、`main.tsx`；偏好/工作区单测及 `workspace-archive`、`new-conversation` fake-server E2E，完整类型/单元/E2E/构建通过 | 离线验证 / 高；不改收藏、隐藏、当前目录、草稿或分支持久化 |
 | BUILD-001 | Windows 图标需同时配置主 EXE 资源编辑、NSIS 图标和 BrowserWindow 运行时资源；仅设置 `win.icon` 而禁用 `signAndEditExecutable` 不足以更新主 EXE | `electron-builder.yml`、electron-builder 26.0.12 的 `winPackager.signApp`；实际 PE 资源与 ICO 对照 | 产物验证 / 高 |
 | BUILD-002 | 应用版本、源码提交和未提交状态在构建时固定，经已有 IPC 提供给「关于」；运行时不依赖 Git；源码归档不能借用上级仓库提交 | `scripts/build-info.ts`、`electron.vite.config.ts`、`app:get-info`；Git 临时仓库 guard 测试和 About E2E | 离线及开发产物验证 / 高 |
 | BUILD-005 | electron-vite 的 ESM 配置加载会在源码目录生成 `electron.vite.config.<timestamp>.mjs`；精确忽略该生成文件，E2E 另以实际 Git 状态核对构建信息 | electron-vite 4.0.0 配置加载器、`.gitignore`、`about.e2e.ts`；Beta.2 的 Release 工作流阻止了误标 dirty 的安装包 | 本机及线上失败路径验证 / 高 |

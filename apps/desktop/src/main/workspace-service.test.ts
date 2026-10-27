@@ -29,6 +29,7 @@ async function main(): Promise<void> {
     { id: "thread-b", title: "B", status: "active", turnCount: 2 },
   ];
   const state = await service.getState(threads);
+  assert.ok(state.directories.every((directory) => !directory.expanded), "all initial projects are collapsed");
   assert.equal(state.currentPath, second);
   assert.deepEqual(state.directories.map((directory) => directory.name), ["threadPath", "another-project"]);
   assert.deepEqual(state.directories[0]?.threads.map((thread) => thread.id), ["thread-a"]);
@@ -43,7 +44,27 @@ async function main(): Promise<void> {
   await service.setHidden(first, false);
   assert.equal((await service.getState(threads)).directories[0]?.hidden, undefined);
   await service.toggle(first);
+  const manuallyExpanded = await service.getState(threads);
+  assert.equal(manuallyExpanded.directories[0]?.expanded, true);
+  assert.equal((await service.getState(threads, { state: "complete", threadCount: threads.length, missingThreadIds: [] })).directories[0]?.expanded, true, "background state refresh must retain expansion");
+  await service.setCurrent(second);
+  assert.equal((await service.getState(threads)).directories[0]?.expanded, true, "switching current project must retain expansion");
+  preferences.collapseWorkspaces();
+  const collapsed = await service.getState(threads);
+  assert.ok(collapsed.directories.every((directory) => !directory.expanded));
+  assert.deepEqual(collapsed.directories.map(({ expanded: _expanded, ...directory }) => directory), manuallyExpanded.directories.map(({ expanded: _expanded, ...directory }) => directory), "reset only affects expansion, not favorite/hidden/thread grouping");
+  assert.equal(collapsed.currentPath, second);
+  await service.toggle(first);
+  await service.toggle(first);
   assert.equal((await service.getState(threads)).directories[0]?.expanded, false);
+  const discovered = join(root, "new-synced-project");
+  await mkdir(discovered);
+  await service.identityResolver.resolve(discovered);
+  await service.toggle(first);
+  const withDiscovered = await service.getState([...threads, { id: "thread-c", title: "New history", status: "active", turnCount: 0, workspacePath: discovered }]);
+  assert.equal(withDiscovered.directories.find((directory) => directory.path === discovered)?.expanded, false, "new history project defaults collapsed");
+  assert.equal(withDiscovered.directories.find((directory) => directory.path === first)?.expanded, true, "discovering another project must not reset manual expansion");
+  preferences.collapseWorkspaces();
   assert.equal(workspaceDisplayName(`${first}\\`), "threadPath");
   const standalone = join(root, "standalone-runtime");
   await mkdir(standalone);
