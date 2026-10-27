@@ -68,10 +68,6 @@ async function main(): Promise<void> {
     await page.locator(".refresh-status").click();
     await page.getByRole("button", { name: "Back to conversation history" }).click();
     await targetRow(page).waitFor();
-    await page.locator(".thread-row").filter({ hasText: "Externally running conversation" }).click();
-    await page.locator(".conversation-heading").waitFor();
-    await page.getByRole("button", { name: "Back to conversation history" }).click();
-    await targetRow(page).waitFor();
     assert.equal(await workspaceToggle(page, repositoryPath).getAttribute("aria-expanded"), "true", "switching conversations must retain expansion");
     assert.equal(await workspaceToggle(page, legacyWorkspace).getAttribute("aria-expanded"), "true", "route changes and ordinary refresh must retain expansion");
     const beforeFocus = (await page.evaluate(() => window.threadPath.getWorkspaceState())).sync.syncedAt;
@@ -137,14 +133,6 @@ async function main(): Promise<void> {
     await page.locator("#history-filter").selectOption("all");
     await targetRow(page).waitFor();
 
-    // Server-side activity must prevent the actual archive RPC, even from stale history rows.
-    const active = page.locator(".thread-row-wrap").filter({ hasText: "Externally running conversation" });
-    await active.locator(".thread-actions-button").click();
-    await page.getByRole("menuitem", { name: "Archive conversation", exact: true }).click();
-    await page.locator(".archive-error").waitFor();
-    assert.ok(!(await requests()).some((request) => request.method === "thread/archive" && request.threadId === "archive-active"));
-    await page.locator(".archive-error button").click();
-
     await targetRow(page).locator(".thread-row").click();
     await page.locator(".conversation-heading").waitFor();
     await page.locator("#turn-input").fill("Keep this draft across archive and restore");
@@ -174,6 +162,37 @@ async function main(): Promise<void> {
     await page.waitForFunction(() => document.querySelector<HTMLTextAreaElement>("#turn-input")?.disabled === false);
     assert.equal(await page.locator("#turn-input").inputValue(), "Keep this draft across archive and restore");
     assert.ok(!(await requests()).some((request) => request.method === "thread/resume" || request.method === "turn/start"), "archive and reads must not resume or invoke the model");
+
+    // B: Before opening the active thread, the renderer has not discovered its activity.
+    // The real preload IPC must still reconcile server activity and reject the request.
+    await page.getByRole("button", { name: "Back to conversation history" }).click();
+    await targetRow(page).waitFor();
+    const active = page.locator(".thread-row-wrap").filter({ hasText: "Externally running conversation" });
+    await active.locator(".thread-actions-button").click();
+    assert.equal(await active.getByRole("menuitem", { name: "Archive conversation", exact: true }).isDisabled(), false, "fixture must exercise undiscovered activity, not an already-disabled UI");
+    const beforeRefusal = await requests();
+    assert.ok(!beforeRefusal.some((request) => request.method === "thread/read" && request.threadId === "archive-active"), "active thread must not have been opened before the IPC guard check");
+    const activeRefusal = await page.evaluate(async () => {
+      try { await window.threadPath.setThreadArchived("archive-active", true); return "unexpected success"; }
+      catch (error: unknown) { return String(error); }
+    });
+    assert.match(activeRefusal, /Wait for the running conversation before archiving/);
+    const refusalRequests = (await requests()).slice(beforeRefusal.length).filter((request) => request.threadId === "archive-active");
+    assert.ok(refusalRequests.some((request) => request.method === "thread/read"), "main process must refresh the active thread before refusing");
+    assert.ok(refusalRequests.some((request) => request.method === "thread/turns/list"), "main process must inspect the server turns");
+    assert.ok(!refusalRequests.some((request) => request.method === "thread/archive"), "refused IPC must not send an archive RPC");
+    await active.locator(".thread-actions-button").click();
+
+    // A: Wait for rendered activity, not merely a possibly stale conversation heading.
+    // Run after normal archive/restore checks because confirmed activity holds a workspace lock.
+    await active.locator(".thread-row").click();
+    await page.locator(".conversation-heading .thread-status").getByText("This conversation is responding.", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "Back to conversation history" }).click();
+    await active.locator(".thread-actions-button").click();
+    assert.equal(await active.getByRole("menuitem", { name: "Archive conversation", exact: true }).isDisabled(), true, "known active thread must disable archival in history");
+    assert.ok(!(await requests()).some((request) => request.method === "thread/archive" && request.threadId === "archive-active"), "neither guard may archive an active thread");
+    await active.locator(".thread-actions-button").click();
+    console.log("[e2e] passed undiscovered-activity IPC reconciliation/refusal and known-activity disabled archive menu");
     await app.close();
 
     ({ app, page } = await launch("failure", `${userData}-failure`));
