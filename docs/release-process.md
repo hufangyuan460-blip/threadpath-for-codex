@@ -62,3 +62,9 @@ Beta.4 沿用正式发布门禁：必须在后续独立授权下，将 `v0.1.0-b
 Beta.3 → Beta.4 不改变偏好、草稿或分支关系存储格式，没有新增格式迁移。许可证尚未决定；仓库当前没有项目 LICENSE、CONTRIBUTING 或 SECURITY 文档。维护者须决定代码与二进制分发授权（例如宽松许可 MIT/Apache-2.0、copyleft GPL，或明确的非开源授权），并核对依赖许可义务；未决定前不能宣称符合开源定义或满足要求 OSI 许可证的项目申请条件。公开源码本身不授予通用复用、修改或再分发权限。
 
 本轮发布说明见 [Beta.4](releases/v0.1.0-beta.4.md)，本地打包验证记录见 [M7-A](m7-a-beta4-preparation.md)。
+
+## Beta.4 标签结果与 Beta.5 接续
+
+`v0.1.0-beta.4`（`27c4dec8324cdecc44fc4b2253084a5f220c4a80`）的 Release 工作流在桌面 E2E 阶段失败：旧测试把前端禁用按钮与主进程复核拒绝两层活动归档保护混在一起，等待一个被正确禁用的按钮变为可用直到超时。修复只改 E2E 测试与断言，未放宽产品安全保护，也没有修改业务代码。该标签保留，不删除、不移动、不重发；Beta.4 没有公开安装包。
+
+下一个公开发布使用 `v0.1.0-beta.5`：`apps/desktop/package.json` 版本为 `0.1.0-beta.5`，发布说明见 [Beta.5](releases/v0.1.0-beta.5.md)。面向用户的升级路径以 Beta.3 为参照；Beta.3 → Beta.5 不改变偏好、草稿或分支关系存储格式。Windows x64 Beta、未签名、无自动更新、未验收实际 NSIS 安装/卸载、`M6_C4_FULL_LIFECYCLE: INCOMPLETE` 与许可证未定保持不变。

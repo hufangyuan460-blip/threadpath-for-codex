@@ -4,10 +4,10 @@
 
 A Windows desktop companion for browsing, organizing, and exploring branches of your Codex conversation history.
 
-[![Beta.4](https://img.shields.io/badge/version-0.1.0--beta.4-64748b)](https://github.com/hufangyuan460-blip/threadpath-for-codex/releases/tag/v0.1.0-beta.4)
+[![Beta.5](https://img.shields.io/badge/version-0.1.0--beta.5-64748b)](https://github.com/hufangyuan460-blip/threadpath-for-codex/releases)
 [![Windows x64](https://img.shields.io/badge/platform-Windows_x64-64748b)](https://github.com/hufangyuan460-blip/threadpath-for-codex/releases)
 
-[下载 / Download](https://github.com/hufangyuan460-blip/threadpath-for-codex/releases/tag/v0.1.0-beta.4) · [发布说明 / Release notes](docs/releases/v0.1.0-beta.4.md) · [快速开始 / Getting started](#getting-started--快速开始)
+[下载 / Download](https://github.com/hufangyuan460-blip/threadpath-for-codex/releases) · [发布说明 / Release notes](docs/releases/v0.1.0-beta.5.md) · [快速开始 / Getting started](#getting-started--快速开始)
 
 讨论变长、项目变多后，不必从头翻找每个决定：按工作区找到历史，跳到具体消息，再从已结束回合分出一条替代方案路线。
 
@@ -19,8 +19,8 @@ ThreadPath works alongside the official Codex client. Keep using it for everyday
 
 ## In the app / 界面预览
 
-以下均为当前 Beta.4 代码构建的真实 Electron 应用截图，使用石墨灰主题与合成演示会话，不含私人历史。
-Screenshots use synthetic demonstration conversations in the actual Beta.4 app, with the Graphite theme.
+以下均为真实 Electron 应用截图，使用石墨灰主题与合成演示会话，不含私人历史；截图取自 Beta.4 代码，Beta.5 未改动界面。
+Screenshots were captured in the actual Electron app with synthetic demonstration conversations and the Graphite theme; they come from the Beta.4 code, whose interface Beta.5 leaves unchanged.
 
 ### Explore a branch / 分支探索
 
@@ -62,9 +62,9 @@ Projects start collapsed; expand the ones you need. The home view lists workspac
 
 ## Installation / 安装
 
-从 [Beta.4 Release](https://github.com/hufangyuan460-blip/threadpath-for-codex/releases/tag/v0.1.0-beta.4) 下载 Windows x64 安装器，并核对同版 `SHA256SUMS.txt` 与 `build.json`。其他已公开版本见 [全部 Releases](https://github.com/hufangyuan460-blip/threadpath-for-codex/releases)。
+从 [GitHub Releases](https://github.com/hufangyuan460-blip/threadpath-for-codex/releases) 下载最新的 Windows x64 安装器（当前正式版本为 Beta.5），并核对同版 `SHA256SUMS.txt` 与 `build.json`。
 
-Download the Windows x64 installer from the [Beta.4 release](https://github.com/hufangyuan460-blip/threadpath-for-codex/releases/tag/v0.1.0-beta.4). Check its SHA-256 against that release's checksum file and build manifest.
+Download the latest Windows x64 installer (Beta.5 is the current release) from [GitHub Releases](https://github.com/hufangyuan460-blip/threadpath-for-codex/releases). Check its SHA-256 against that release's checksum file and build manifest.
 
 - **前置条件 / Prerequisites：** Windows x64；单独安装并完成认证的 Codex CLI；使用模型时需要可用网络。Install and authenticate Codex CLI separately; model operations need network access.
 - **当前分发方式 / Distribution：** 安装器不包含 CLI，暂未代码签名，也没有自动更新。The installer does not bundle the CLI, is unsigned, and has no auto-updater.
@@ -85,7 +85,7 @@ An empty history is supported. Start a new conversation in a selected workspace,
 - **本地伴侣 / Local companion：** 应用连接本机 CLI，整理偏好和草稿保存在本地；草稿为本地明文。模型请求仍由 Codex CLI 按其配置发送至服务提供方。The app connects locally and stores organization preferences and plaintext drafts locally; Codex CLI sends model requests to its configured provider.
 - **分支边界 / Branch scope：** 分支共用源目录，要求服务器确认只读策略；不提供文件快照、目录隔离或分支合并。Branches share the source directory and require server-confirmed read-only policy; file snapshots, directory isolation, and branch merging are unavailable. [详细说明 / Details](docs/branch-conversation.md)
 - **观测边界 / Observatory scope：** Usage 不是精确 Context Occupancy、剩余上下文或费用；快照只存内存，重启后未知，单纯浏览历史可能没有用量。历史压缩项不能证明实时生命周期。Usage is not exact occupancy, remaining context, or cost. Snapshots are memory-only and may be absent when browsing history. Historical compaction items do not prove a live lifecycle. [语义与验证范围 / Semantics and evidence](docs/token-usage-observatory.md)
-- **Beta 状态 / Beta status：** 真实 fork Usage 继承及完整实时压缩生命周期仍未验证；本版尚未验收实际 NSIS 安装/卸载流程。Real fork Usage inheritance and the complete live compaction lifecycle remain unverified; actual NSIS install/uninstall flows have not been validated for this version. [已知限制 / Known limitations](docs/releases/v0.1.0-beta.4.md#known-limitations--已知限制)
+- **Beta 状态 / Beta status：** 真实 fork Usage 继承及完整实时压缩生命周期仍未验证；本版尚未验收实际 NSIS 安装/卸载流程。Real fork Usage inheritance and the complete live compaction lifecycle remain unverified; actual NSIS install/uninstall flows have not been validated for this version. [已知限制 / Known limitations](docs/releases/v0.1.0-beta.5.md#known-limitations--已知限制)
 
 ## Development / 开发
 
