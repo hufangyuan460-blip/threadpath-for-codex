@@ -1,6 +1,6 @@
 # 开发基线
 
-基线状态：`BASELINE_PARTIAL`；最后核对：2026-10-17。
+基线状态：`BASELINE_PARTIAL`；最后核对：2026-10-26（M6-C 验收边界增量；不重验无关领域）。
 
 基线范围为根目录工作区配置、`threadpath-protocol` 的共享客户端、桌面端调用边界，以及随后获授权的分支导航、逐会话草稿、偏好写入、锁检查、会话归档和构建版本追溯。打包领域仅核对图标、源码标签、安装器内容和校验文件；未扫描完整 UI、安全审查或全部历史。适用的用户指令与 `AGENTS.md` 优先，任务专项证据见 [分支协议验证](protocol-fork-verification.md)、[分支讨论闭环](branch-conversation.md) 和 [发布流程](release-process.md)。
 
@@ -11,6 +11,9 @@
 | AUTH-001 | 修改前阅读文件；保持严格 TypeScript、ESM；保留已有修改；不得记录凭据或敏感对话 | `AGENTS.md`；`threadpath-protocol/tsconfig.json` | 已核对 / 高 |
 | TOOL-001 | 根工作区使用 pnpm；声明 Node `>=24.0.0 <25.0.0`；协议子包可以独立使用 npm 脚本 | 根及协议 `package.json`；本次 `node --version` 为 `v24.19.0` | 已核对 / 高 |
 | QA-001 | 协议修改至少执行 `npm run smoke`；类型修改同时执行 `npx tsc --noEmit`；离线测试与真实模型调用分开报告 | `AGENTS.md`；协议 README；`npm test`、`npx tsc --noEmit` | 已核对 / 高 |
+| QA-002 | M6-C 默认真实验收仅握手/模型/线程元数据；不自动读取首个会话正文。专用历史要求显式 ID 与确认；既有 fork 写入子集要求 `--write --confirm-cost-and-state`，不能替代完整矩阵 | `src/real-acceptance.ts`、`src/real-acceptance-tests.ts`；2026-10-26 CLI `0.163.0-alpha.11` 真实只读验收、离线安全回归；[矩阵与剩余门禁](m6-c-real-protocol-acceptance.md) | 本机只读及离线验证 / 高；写入未执行 |
+| QA-003 | Fork 验收写模式必须先独占并持久保留 `artifacts/m6c-fork-execution.json`，旧目录/报告同样拒绝重跑；总报告和固定子报告在 runner 前以 wx 取得所有权，子进程仅继承 owned fd。失败/超时/崩溃不退还执行权，无自动清理或强制重跑 | `real-acceptance.ts`、`fork-smoke.ts` 的报告适配；默认安全测试的两个独立 Node 进程竞争、崩溃重跑与报告保留负例；[安全修复记录](m6-final-safety-fix.md) | 离线验证 / 高；仅保护包装器入口，不拦截外部直接 smoke |
+| QA-004 | 总报告与受保护路径均对最长现存祖先进行原生 realpath 检查，拒绝 symlink/junction 别名重叠；解析失败则停止 | `real-acceptance.ts`、临时目录别名离线测试 | 仅预检，不消除恶意并发替换 TOCTOU；文件 fsync 不保证断电后目录项持久 |
 
 ## 共享设施与默认行为
 
@@ -24,6 +27,7 @@
 | DATA-002 | 只有服务器明确给出能力集合时才做调用前拒绝；缺省集合不能当作完整能力发现。未知方法仍须处理真实 RPC 错误 | `requireCapability`、`supports`；fork/transport tests | 离线验证 / 高 |
 | DATA-003 | 普通 fork 来源使用 `forkedFromId`；协议 `parentThreadId` 是子代理关系；保留 `sessionId`，但不能用其相等推断普通 fork 关系 | 本机生成的 `Thread.ts`；2026-10-12 专用线程实际 fork/read；fork tests | 本机及离线验证 / 高 |
 | DATA-004 | 展示回合身份使用稳定 ID；本次本机查询验证 `thread/turns/list` 默认最新优先，`thread/read` 最早优先；不能根据时间猜测祖先关系 | `AppServerClient` 的顺序事实；本机专用测试线程；fixtures | 本机及离线验证 / 高 |
+| DATA-010 | 本次 CLI `0.163.0-alpha.11` 的 `thread/list(useStateDbOnly:true)` 对专用 fork 返回 null 来源，metadata-only `thread/read` 才给出实际 forkedFromId；不可按索引 null 推断无分支。summary 不保证完整 item 集合，主分支实测 summary 8 项/full 9 项 | 2026-10-26 [C2 真实历史验收](m6-c2-real-history-acceptance.md)、`real-history-acceptance.ts`；三条归档历史与三视图 limit:1 分页；现有 parser/合并回放 | 本机真实只读及回放验证 / 高；仅限该次版本与样本 |
 | OPS-001 | 服务端请求不支持时显式回复 `-32601`；网络超时、请求超时、进程错误与协议错误分开处理 | `replyUnsupportedServerRequest`；错误类；transport tests | 离线验证 / 高 |
 | TOOL-002 | 离线测试通过 Node `--experimental-strip-types` 运行；不要新增需转换的 TypeScript 参数属性等语法 | 桌面及协议 package scripts；`pnpm test` | 离线验证 / 高 |
 | UI-001 | renderer 只用 preload 的类型化 IPC；新分支操作复用主进程连接、源状态协调和工作目录锁 | `preload/index.ts`、`main/index.ts`、`ConversationService`、`WorkspaceLockService`；桌面 E2E | 离线验证 / 高 |
@@ -76,6 +80,18 @@
 2026-10-13 增量验证：类型检查、全部离线测试、原有桌面 E2E 和最终 About 增量测试通过；Beta.2 开发包通过五组实际打包程序 E2E，应用与安装器的 7 种图标资源均匹配。开发包明确记录未提交状态；正式干净标签的线上结果由 Release 工作流与公开构建清单提供，不把开发包当作正式发布结果。
 
 ## 变更记录
+
+- M6 最终安全修复：补齐 fork 包装入口持久原子预留与所有报告 owned-descriptor 防覆盖；真实旧证据摘要不变，默认只读不创建写入预留。并发/崩溃/失败 runner 与路径冲突均用临时目录离线验证，不执行真实 CLI/RPC，不改业务协议与历史结果。见 [修复记录](m6-final-safety-fix.md)。
+
+- 2026-10-26：C4A 独立单次预算执行确认 metadata-only resume 回执后收到 1 条合法 Usage；total/last 六字段、number window 与客户端 resumed 接收路径实测通过，source 已恢复归档且历史不变。真实重复/null 样本仍缺失，保存样本的幂等/隔离仅标 LOCAL_REPLAY。未发起模型生成、fork 或 compact；[C4A 报告](m6-c4a-resume-usage-report.md) 保留 RESUME_USAGE: PASS / M6_C4: INCOMPLETE，不变更 OBS-001 语义。
+
+- 2026-10-26：M6-C4 只读采集确认三条历史不变、历史压缩 id/type 保留且不能推断 completed；历史/派生信封回放单独标 LOCAL_REPLAY。当前没有合法实时 Usage 或 item 生命周期样本，线程估算 API 也未给出可用数据；结果 NEED_APPROVAL，不把 schema/fixture/旧报告当作实时证明。未改变 OBS-001 语义或业务代码，证据和待授权零普通回合方案见 [C4 报告](m6-c4-real-observatory-acceptance.md)。
+
+- 2026-10-26：M6-C3 在同一 CLI/commit 上完成单条 C2 专用线程的归档读取、unarchive、active 读取、excludeTurns:true resume 和恢复归档，五步真实验收通过；2 回合/4 items/正文及来源指纹不变。验收工具默认只读、写入各一次预算、日志前置防重跑；未调用模型或修改业务功能。证据与适用范围见 [C3 报告](m6-c3-real-archive-recovery.md)，不替代 Observatory 真实生命周期验收。
+
+- 2026-10-26：M6-C2 增量核对历史正文。3 条专用归档线程的 read、notLoaded/summary/full、真实分页、合成正文和分支边界均通过；真实响应的本地合并/迟到回放另行标记。首次列表来源链不足导致门禁阻止，补 metadata-only 身份确认后通过，旧报告保留。没有模型/状态变更 RPC 或业务代码修改；全局基线仍为部分就绪。
+
+- 2026-10-26：M6-C 只读验收与安全边界增量。新 CLI 握手、7 模型、两类线程元数据与游标通过；未获批准的模型/写入操作未执行。schema 生成与离线回归不作为真实完整链路证据，未更改业务协议处理。详见 [M6-C 报告](m6-c-real-protocol-acceptance.md)。
 
 - 2026-10-17：局部修复 Observatory 投递隔离、resume 确认/取消和正文重读压缩状态保护；专项回归覆盖三个原始复现、真实分支元数据登记、断连及完整 identity。复用现有 transport、IPC 和内存观测，无新增依赖或持久化。
 

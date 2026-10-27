@@ -4,11 +4,15 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { AppServerClient } from "./app-server-client.ts";
 import { AppServerError, ConfigurationError, ProtocolError, TimeoutError, isJsonObject, type JsonObject, type Thread, type Turn } from "./protocol.ts";
+import { writeOwnedReport } from "./real-acceptance.ts";
 
 const workspace = process.env.CODEX_FORK_SMOKE_CWD ?? resolve("../artifacts/fork-smoke-workspace");
 const reportPath = process.env.CODEX_FORK_SMOKE_REPORT ?? resolve("../artifacts/protocol-fork-report.json");
 const timeoutMs = Number(process.env.CODEX_SMOKE_TIMEOUT_MS ?? 300_000);
 const executable = process.env.CODEX_EXECUTABLE?.trim() || undefined;
+// The guarded wrapper passes an already-owned report descriptor, not path write permission.
+const reportFd = process.env.CODEX_FORK_SMOKE_REPORT_FD;
+const executionBatchId = process.env.CODEX_FORK_SMOKE_BATCH_ID;
 const model = process.env.CODEX_FORK_SMOKE_MODEL?.trim() || undefined;
 const compactEnabled = process.env.CODEX_FORK_SMOKE_COMPACT !== "0";
 const suffix = randomUUID().replaceAll("-", "");
@@ -116,6 +120,7 @@ async function compact(api: AppServerClient, threadId: string): Promise<void> {
   } finally { clearTimeout(timeout); unsubscribe(); }
 }
 async function main(): Promise<void> {
+  if (reportFd !== undefined && (reportFd !== "3" || executionBatchId === undefined || executionBatchId.trim() === "")) throw new ConfigurationError("invalid owned report descriptor/batch");
   await mkdir(workspace, { recursive: true });
   currentClient = createClient();
   try {
@@ -200,6 +205,7 @@ async function main(): Promise<void> {
     await mkdir(resolve(reportPath, ".."), { recursive: true });
     const report: JsonObject = {
       verifiedAt: new Date().toISOString(), platform: process.platform, nodeVersion: process.version,
+      ...(executionBatchId === undefined ? {} : { executionBatchId }),
       ...(serverVersion === undefined ? {} : { serverVersion }),
       passed: failure === undefined && archivePassed, compactionRequested: compactEnabled,
       checks: checks.map((item) => ({ ...item })), createdThreadCount: ownedThreads.length,
@@ -207,7 +213,8 @@ async function main(): Promise<void> {
       ...(failure === undefined ? {} : { failedStage: stage, failureCategory: failure instanceof AppServerError ? failure.category : failure instanceof assert.AssertionError ? "assertion" : "unexpected" }),
     };
     // Deliberately omit thread ids, paths, prompts, replies and marker values.
-    await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+    if (reportFd === undefined) await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, { flag: "wx" });
+    else writeOwnedReport(3, report);
     log("report written", { passed: report.passed, archivePassed });
   }
   if (failure !== undefined) {

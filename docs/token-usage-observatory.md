@@ -54,3 +54,19 @@ ThreadPath 当前展示服务器报告的 Token Usage，**不是精确 Context O
 | 文档 | `README.md`、`threadpath-protocol/README.md`、`threadpath-protocol/fixtures/README.md`、`docs/development-baseline.md`、`docs/token-usage-observatory.md` |
 
 ThreadPath does NOT claim exact context occupancy.
+
+## M6-C4 只读真实证据补充（2026-10-26）
+
+CLI `0.163.0-alpha.11` / SHA-256 `00c0f1e4099246fddcd67ec620ca8ed50827c7d70e113b7224f7a2933cf2d67c` 上，三条已确认归档历史的指纹与 C2/C3 一致。真实主分支历史含一个只有 id/type、无 status 的 contextCompaction；所属回合 completed 不改变该项应显示 unknown 的结论。
+
+本轮没有执行 resume、fork、compact、归档或模型生成。没有捕获实时 Usage/item 生命周期通知，既有报告也没有保存对应 payload；不能把旧文档中的 smoke 观察、schema 或合成 fixture 当作本次版本的实时证明。四项真实历史/派生信封的本地回放通过，三项基于真实 Usage 的回放因无样本而 SKIP，均与 REAL_SERVER_OBSERVATION 分开。
+
+当前 `account/usage/read({threadId})` 可以请求单线程估算 ThreadUsage，但其 credits/group totals 不是 ThreadTokenUsage 的 total/last/window。本次三次线程限定请求未提供可用 threadUsage，未回退账户级查询，也不将缺省值填零或推导费用。
+
+现有 Observatory/parser 语义和业务实现未修改；本轮结果为 `M6_C4: NEED_APPROVAL`。完整证据、回归结果及零普通 turn/start 的待授权探针方案见 [C4 报告](m6-c4-real-observatory-acceptance.md)。未获得新的明确授权前，不实施其中任何状态操作或压缩。
+
+## C4A 单次真实恢复通知补证
+
+2026-10-26 的独立 C4A 授权执行中，source 在 metadata-only resume 回执后实际收到 1 条合法 thread/tokenUsage/updated；total/last 六字段与 number window 均通过严格 parser，客户端 source=resumed、revision=1。unarchive/resume/archive 各一次，source 的 3 回合/6 items/正文指纹不变且恢复归档，没有模型生成请求。source=resumed 仍只是客户端观察标签。
+
+只有一条实际通知，真实重复和 null-window 继续 SKIP；随后以保存样本做本地幂等/隔离回放，通过不等于又收到服务器通知。未重新执行探针、fork 或 compact。完整证据见 [C4A 报告](m6-c4a-resume-usage-report.md)。结论 RESUME_USAGE: PASS；fork 用量与实时压缩生命周期等缺口保留，M6_C4: INCOMPLETE。

@@ -33,6 +33,52 @@ Omit or clear `CODEX_EXECUTABLE` to return to the default command:
 Remove-Item Env:CODEX_EXECUTABLE -ErrorAction SilentlyContinue
 ```
 
+## M6-C current CLI acceptance (safe default)
+
+Use `npm.cmd run acceptance:real -- --executable <absolute-codex.exe-path>` for metadata-only live acceptance. It records the actual CLI version, binary SHA-256, app commit, execution identity, handshake, model count, active/archived list queries and an observed thread-list cursor. It never automatically selects an existing thread body. Raw stderr, error messages, titles, previews, prompts and replies are withheld.
+
+Reading a dedicated test thread requires **both** `--test-thread <id>` and `--confirm-test-thread`. No resume or model call occurs in that mode. Body integrity remains unverified without known synthetic expected text; observing an itemsView only verifies that actual field/parser path, not desktop merge behavior. The scan is bounded to 100 turn pages and fails rather than claiming complete pagination beyond that bound.
+
+Writing requires **both** `--write` and `--confirm-cost-and-state`; it cannot target an existing thread. This delegates to the existing fork smoke in `artifacts/m6c-fork-workspace`, including model calls, manual compaction and archival of its own test threads. It does not delete history. It does **not** cover the complete M6-C matrix: unarchive/restoration, usage payload/lifecycle/duplicate observations and unknown-terminal behavior still need separate evidence. The aggregate result deliberately remains `NEED_USER_VALIDATION`. Do not interpret exit code 0 as full M6-C acceptance. Inspect individual statuses and the separate fork report.
+
+`--report <path>` optionally writes the redacted JSON output. Without it only stdout is used. The output file is **exclusively reserved before any CLI process starts**; an existing path rejects the invocation without touching its contents. Only the descriptor owned by that invocation is updated, and reports carry an `executionBatchId`. Errors or blocked checks return nonzero. Safety/argument/redaction tests run as part of `npm test` using only fake servers/Node fake runners.
+
+Write execution additionally requires a fresh workspace, a new fixed fork report, and an atomic exclusive reservation at `artifacts/m6c-fork-execution.json`. `openSync(..., "wx")` plus `fsyncSync` establishes the cross-process owner before the child can start. The reservation remains after success, failure, spawn error, timeout or process exit; it is never automatically deleted or reused. Legacy `artifacts/m6c-fork-workspace` or `artifacts/m6c-fork-report.json` also blocks the runner, even if no new reservation exists. Do not delete/rename old evidence to rerun: a future batch needs fresh review and explicit authorization; there is no force/retry switch.
+
+The wrapper exclusively owns the fixed fork report before launching the child and passes that descriptor as fd 3, bound to the same batch ID. The child writes the owned descriptor rather than reopening/truncating a path. The total report cannot overlap these reserved paths or the fork workspace. Safety tests cover first ownership, real concurrent Node processes, abrupt exit, failed/uncertain runners, total/fork report conflicts and preserved old bytes/SHA-256. This guarantees the guarded wrapper's entry path, **not** external direct invocations of `smoke:fork`. Direct smoke does not acquire the wrapper's execution reservation; its pathname report write now uses `wx` too, but that alone is not a model-call authorization guard.
+
+The original successful C1–C4A evidence is not rerun by this fix. Since this checkout already has the real fork workspace/report, the guarded write mode must now refuse another execution. Default read-only requests do not create a write reservation, fork workspace or fork report. See [the offline safety fix record](../docs/m6-final-safety-fix.md) for exact changes and verification.
+
+On 2026-10-26, normal Windows user execution with CLI `0.163.0-alpha.11` passed the metadata-only checks (7 models, both archive filters, two distinct cursor pages). No user conversation bodies or state-changing RPCs were accessed. The original `npm run smoke` was intentionally **not** run: it selects the first existing history and starts a model turn, contrary to the M6-C approval boundary. Historical smoke successes do not prove compatibility of this CLI. See [M6-C acceptance and remaining gates](../docs/m6-c-real-protocol-acceptance.md) for the complete matrix, environment and copyable commands.
+
+### M6-C2 dedicated history integrity (read-only)
+
+`apps/desktop/scripts/real-history-acceptance.ts` reuses the protocol client/parsers and the desktop `ConversationService` without changing product behavior. Its only live operations after initialize are scoped `thread/list`, `thread/read`, and `thread/turns/list`. It accepts `--executable`, `--execution-record` (the prior successful fork execution envelope), and `--report` (a **new** output path); it has no write mode or arbitrary existing-thread selector. Run it from the repository root with `node --experimental-strip-types apps/desktop/scripts/real-history-acceptance.ts` followed by those options; the desktop package also exposes `acceptance:history`.
+
+Identity must match the prior run's workspace, three archived thread IDs, execution time window and fork ancestry. Because the observed state-DB list returned null fork sources, only metadata-only reads are allowed for validated candidates; full history is enabled only after ancestry is confirmed. Missing/ambiguous identity blocks all body reads. This targeted runner pins the reviewed CLI version/SHA and user identity; it is not a general-purpose history export tool.
+
+Each itemsView is explicitly requested with limit 1, all cursors are consumed, raw bodies are compared with parser output, full read/page bodies and known synthetic prompts/replies are checked, then actual responses are replayed locally for completeness, overlap, thread switching and late-response protection. Replays are labelled separately from real RPC evidence. Reports omit bodies/markers and are created exclusively, never overwritten.
+
+On 2026-10-26, CLI `0.163.0-alpha.11` passed the 3/5/2-turn archived histories, all three loading views and real pagination. The branch had 8 summary items versus 9 full items, including one historical compaction item only available in full. All 28 checks passed (21 real checks and 7 replay records), with zero model/state-changing requests. This closes the tested short-history gate, not unarchive or live Observatory acceptance. See [the complete C2 report](../docs/m6-c2-real-history-acceptance.md) for original blocked evidence, the final report, boundaries and regression results.
+
+### M6-C3 single-thread archive recovery
+
+`apps/desktop/scripts/real-archive-acceptance.ts` (desktop command `acceptance:archive`) defaults to read-only. It requires `--executable`, `--history-report` (the pinned successful C2 report), `--execution-record` (the C1 successful run envelope), and `--report` (a new file). Only `--write --confirm-archive-recovery` together enable the approved state changes. No arbitrary thread ID, model override or message is accepted. Read-only preflight is not a full recovery PASS.
+
+The target is the C2-verified historical fork, reidentified through workspace/time/archived metadata, ID digests and metadata-only ancestry. Before any mutation its full history must match C2. The live allowlist permits only scoped reads and one attempt each of unarchive, metadata-only resume and archive. Resume uses excludeTurns:true and the existing read-only sandbox, without input, history/path or model overrides. No turn/start is available.
+
+A durable one-shot execution journal is reserved before the first mutation, and each budget is consumed before transport. Existing `artifacts/m6c3-archive-recovery.mutations.jsonl` blocks another write run, even with a new report name. Do not delete it to bypass a consumed authorization. Functional failure stops further functional writes; only the remaining archive is allowed when the same active identity can still be verified. All A–E assertions and restoration must pass for exit code 0/full C3 PASS. Reports are redacted and exclusively created; offline safety tests exercise 13 success/failure lifecycles without a live CLI.
+
+On 2026-10-26, CLI `0.163.0-alpha.11` passed archived read → unarchive → active read → metadata-only resume → rearchive, with exactly one call of each authorized mutation. The same 2 turns/4 items and body/origin digests survived; the target was confirmed archived again and absent from active listing. There were zero model-generation/turn-start requests. This closes the tested archive recovery gate, not live Observatory acceptance or a new model continuation test. See [the C3 report](../docs/m6-c3-real-archive-recovery.md) for actual evidence, file hashes and regression results.
+
+### M6-C4 Observatory evidence collection (read-only only)
+
+`apps/desktop/scripts/real-observatory-acceptance.ts` (desktop command `acceptance:observatory`) has no write mode. It requires `--executable`, the pinned C2 `--history-report`, C3 `--archive-report`, C1 `--execution-record`, and a new `--report`. It reuses C2's candidate/confirmed-ID gates and full-history parser. The only post-initialize calls are scoped thread/list, thread/read, thread/turns/list and `account/usage/read` with **exactly one confirmed threadId**. Account-wide fallback, messages and all activity RPCs are rejected.
+
+The estimated ThreadUsage response from account/usage/read is not the notification's ThreadTokenUsage: credits/group totals must not become total/last/window snapshots or billing/occupancy calculations. The collector discards amounts/account summary and records only availability/known field types. Real callbacks and local replay use separate stores; derived lifecycle envelopes from real history are explicitly LOCAL_REPLAY, never counted as live server notifications.
+
+On 2026-10-26, the 3/5/2-turn archived histories matched C2/C3 and retained one historical compaction item with id/type but no lifecycle status. Four local history/derived-event replay checks passed; three Usage replay checks were SKIP for lack of a captured real payload. No live Usage or item lifecycle notifications were observed in the bounded read-only window, and all three thread estimates were unavailable. Model/activity RPC counts were zero. The outcome is **M6_C4: NEED_APPROVAL**, not full compatibility PASS. Exit code 0 only means permitted collection completed. See [C4 evidence, gaps and the minimum approval request](../docs/m6-c4-real-observatory-acceptance.md). The proposed activity path is not implemented/enabled by this command and requires separate authorization.
+
 ## Verification
 
 Run the deterministic checks first. They start a local fake app-server and require neither Codex authentication nor network access:
@@ -88,7 +134,7 @@ Run the live protocol smoke test separately:
 npm run smoke
 ```
 
-It starts `codex app-server --stdio` in `D:\threadPath` by default, then runs:
+It starts `codex app-server --stdio` in the legacy fixed Windows project directory by default (see `app-server-smoke.ts`); set `CODEX_SMOKE_CWD` for your project. It then runs:
 
 ```text
 initialize → initialized → thread/list → optional thread/read + thread/turns/list
@@ -178,3 +224,11 @@ The script requests `low` reasoning effort only when the selected catalog model 
 On 2026-10-12, the full live run on local CLI `0.162.0-alpha.17.2` / Node `v24.19.0` passed all 10 checks, including compaction, and archived all 3 test threads. The changed protocol also passed the basic live smoke, workspace type checks, and protocol/desktop offline tests. See [the dated verification record](../docs/protocol-fork-verification.md) for actual results and limitations. A successful short synthetic run is not a guarantee for every CLI version, long conversation or compression history. Forking conversation history does not restore or isolate code files in the working directory.
 
 After adding desktop discussion branches, the basic live smoke passed again. A second live fork run with `CODEX_FORK_SMOKE_COMPACT=0` passed 7 checks, including the explicit read-only override on restart resume, and archived its 2 dedicated threads. Its redacted report is `artifacts/branch-readonly-report.json`; the reduced run does not claim new compaction coverage. See [the desktop acceptance record](../docs/branch-conversation.md) for the UI, drafts, IPC, and fake-server E2E scope.
+
+## M6-C4A Resume Usage probe
+
+`apps/desktop/scripts/resume-usage-probe.ts` / desktop `acceptance:resume-usage` defaults to read-only. It accepts the reviewed `--executable`, pinned C2 `--history-report`, C3 `--archive-report`, C4 `--observatory-report`, C1 `--execution-record`, and a new `--report`. Only `--write --confirm-resume-usage` together enable the separately approved C4A budget: one unarchive, one metadata-only resume, one archive on the C2 source. No model input, arbitrary target, fork, compact or account usage query is available. A persistent `artifacts/m6c4a-resume-usage.mutations.jsonl` blocks another write run; never delete it to replay consumed approval.
+
+The listener is installed before resume and validates the known thread/turn identities. A validated metadata-only/read-only acknowledgement starts a 5000 ms observation window; pre-response snapshots remain pending until acknowledgement. A valid snapshot only counts when restoration and all history checks succeed. No notification yields NOT_OBSERVED, not protocol non-support. Exit code 0 can mean PASS or NOT_OBSERVED; inspect finalResult. Default read-only checks cannot prove resume behavior.
+
+On 2026-10-26, one approved execution received one valid real Usage notification after the resume response, with all six fields in total/last and a numeric window; source was restored archived with unchanged 3-turn/6-item history. No generation request, fork or compact occurred. Real duplicate/null samples were not observed. Local replay of the saved token values passed separately and is not a second server notification. See [C4A report](../docs/m6-c4a-resume-usage-report.md); full C4 remains INCOMPLETE. The same execution was not rerun when the task instructions were subsequently restated.
